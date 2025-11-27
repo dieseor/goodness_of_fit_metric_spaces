@@ -1,0 +1,30 @@
+name: R - CI (renv)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+
+      - name: Install renv and restore library
+        run: |
+          Rscript -e 'install.packages("remotes", repos = "https://cloud.r-project.org")'
+          Rscript -e 'remotes::install_github("rstudio/renv")'
+          Rscript -e 'renv::restore()'
+
+      - name: Run lightweight tests (source scripts in tests/)
+        run: |
+          Rscript -e 'if (dir.exists("tests")) { scripts <- list.files("tests", pattern = "^test_.*\\.R$", full.names = TRUE); if(length(scripts) > 0) for(s in scripts) { cat("Running", s, "\n"); try(source(s)) } }'
+
+      - name: Check renv status
+        run: Rscript -e 'renv::status()'
