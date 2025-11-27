@@ -41,3 +41,36 @@ The project automatically installs these packages if needed:
 - here (path management)
 
 Add additional packages to the `.Rprofile` file as needed.
+
+## Reproducible development environment (renv)
+
+This project uses `renv` to capture package dependencies so others can reproduce the environment.
+
+To restore the project environment locally (recommended):
+
+```bash
+# From project root
+# Install renv if needed and restore the environment
+Rscript -e "install.packages('remotes', repos='https://cloud.r-project.org')"
+Rscript -e "remotes::install_github('rstudio/renv')"
+Rscript -e "renv::restore()"
+```
+
+After restoring, you can run the test scripts under `tests/` by sourcing them:
+
+```bash
+Rscript -e "source('tests/test_vectorization_improvement.R')"
+```
+
+Tip: To create or update the lockfile after adding packages on your local machine, run:
+
+```bash
+Rscript -e "renv::snapshot(prompt = FALSE)"
+git add renv.lock
+git commit -m 'Update renv lockfile'
+git push origin main
+```
+
+Notes:
+- Some packages (e.g., `rgl`) may require system libraries or X11/OpenGL support when installed. On macOS this is usually available; on Linux (CI) you may need to install system packages. In CI, the workflow is configured to restore `renv` and source the test scripts but may skip tests that require interactive graphics.
+- If you encounter package installation problems, try manually installing missing package system prerequisites then re-run `renv::restore()`.
