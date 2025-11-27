@@ -74,3 +74,14 @@ git push origin main
 Notes:
 - Some packages (e.g., `rgl`) may require system libraries or X11/OpenGL support when installed. On macOS this is usually available; on Linux (CI) you may need to install system packages. In CI, the workflow is configured to restore `renv` and source the test scripts but may skip tests that require interactive graphics.
 - If you encounter package installation problems, try manually installing missing package system prerequisites then re-run `renv::restore()`.
+
+## System requirements
+
+Some packages (e.g., `rgl`, `rotasym`, `RhpcBLASctl`) may require system-level dependencies:
+
+- macOS: For `rgl` and other graphics packages, install XQuartz:
+	- `brew install --cask xquartz` (restart required after installation)
+- Ubuntu/Debian: For `rgl` and compiled packages, common dependencies include:
+	- `sudo apt-get update && sudo apt-get install -y libxml2-dev libssl-dev libcurl4-openssl-dev libglu1-mesa-dev libx11-dev libxt-dev libgsl-dev` (adjust as needed)
+
+If a package fails to build on CI due to missing OS-level libraries, install those dependencies in the CI image before calling `renv::restore()` or use a runner image that includes them.
