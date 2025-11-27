@@ -32,6 +32,10 @@ output/
 # Ignore environment files
 .Renviron
 .renv/
+renv/library/
+renv/python-virtualenv/
+renv/staging/
+renv/cache/
 
 # Ignore logs
 *.log
