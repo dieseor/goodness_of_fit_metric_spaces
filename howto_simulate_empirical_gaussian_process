@@ -1,0 +1,27 @@
+What we want to do is compare two histograms in the case where \(X\) follows a univariate normal distribution \((\mu, \sigma)\) (starting with \(\mu=0, \sigma=1\) and then generalizing).  
+
+On one hand, we have the histogram of the limiting Gaussian process. We need to simulate the limiting Gaussian process with a certain covariance. What we need to do is take a grid on \(\Omega \times \mathbb{R}_{\ge 0}\), which in this case is \(\mathbb{R} \times \mathbb{R}_{\ge 0}\). We simulate the Gaussian process using a multivariate normal distribution.  
+
+Specifically, we take \(t_1,\dots,t_n\) and \(w_1,\dots,w_n\) and simulate 
+
+\[
+(X_{t_1,w_1}, X_{t_1,w_2}, \dots, X_{t_1,w_n}, X_{t_2,w_1}, \dots, X_{t_2,w_n}, \dots, X_{t_n,w_n})
+\] 
+
+as an \(n^2\)-dimensional multivariate normal. Then, we take the **supremum of the absolute value** of all these simulated values, which would give the supremum of \(|G_\mu|\).  
+
+That is, we would repeat this simulation many times (say \(M=1000\)), each time simulating 
+
+\[
+(X_{t_1,w_1}, X_{t_1,w_2}, \dots, X_{t_1,w_n}, X_{t_2,w_1}, \dots, X_{t_2,w_n}, \dots, X_{t_n,w_n})
+\] 
+
+as an \(n^2\)-dimensional multivariate normal, take the absolute value and the supremum for each simulation, and then, from all \(M\) values, we build a histogram. This gives the histogram for the limiting process.  
+
+On the other hand, we can do this for the empirical process for a moderately large \(n\), for example \(n=1000\). We simulate a sample of size \(n=1000\) from the normal \((\mu, \sigma)\), compute the **empirical distance profile** for each \(\omega\), and compare it with the distance profile in \(\omega\) and \(t\) (on the grid), using the formula we have calculated for the multivariate normal (reduced to the univariate case). We then take the absolute value and supremum, which gives a single number. We repeat this for \(M\) independent samples. From these \(M\) values we create a histogram.  
+
+Finally, we have two histograms: one from the limiting process and one from the empirical process. This allows us to compare the two histograms that are generated.
+
+
+
+% Lo que queremos hacer es comparar dos histogramas, en el caso de que X sigue una normal univariante (mu, sigma) (empieza poir mu=0 sigma=1 y luego vamos generalizando). por un lado, el histograma del proceso gaussiano límite. Tenemos que simular del proceso gaussiano limite con cierta covarianza. Lo que tenemos que hacer es tomar un grid en Omega \times R>=0, que en este caso es R \times R>=0. Simulamos el proceso gaussiano mediante normal multivariante. La cuestión seria tomar t_1,...,t_n, w_1,...,w_n y simular (X_{t_1,w_1}, X_{t_1,w_2}, ..., X_{t_1,w_n}, X_{t_2,w_1}, ..., X_{t_2,w_n},... X_{t_n,w_n}) con una normal multivariante n^2 dimensional. Luego, tomamos el supremo sobre el valor absoluto de todos esos valores simulados y ese seria el valor del supremo de |G_mu|. O sea que simulariamos muchas veces (ponle M=1000) (X_{t_1,w_1}, X_{t_1,w_2}, ..., X_{t_1,w_n}, X_{t_2,w_1}, ..., X_{t_2,w_n},... X_{t_n,w_n}) con una normal multivariante n^2 dimensional, tomaríamos el valor absoluto y el supremo en cada simulacion y con todos los (M) valores que obtenemos, sacamos un histograma y eso lo comparamos con el proceso empriico para un n medianamente grande, prueba por ejemplo con n=1000. Eso lo conseguimos de forma similar. Nos simulamos una muestra de tamaño n=1000 de la normal (mu, sigma), con eso calculamos el empirical distance profile para cada omega y lo comparamos con el distance profile en omega y t (en el grid), usando al formula que hemos calculado para la normal multivariante (reducida al caso univariante). Tomamos el v abs y el supremo de eso, y obtenemos un número. hariamos esto para M muestras distintas. Y eso nos permite crear un histograma con esos M valores. Entonces, tenemos dos histogramas, el del proceso limite y el del proceso empírico, y asi puedo comaprar los dos histogramas que se generan.

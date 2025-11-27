@@ -1,0 +1,45 @@
+# R
+.Rhistory
+.RData
+.Rproj.user/
+.Rproj.user
+.Ruserdata
+
+# RStudio
+.Rhistory
+.RData
+.Rproj.user/
+.Rproj.user
+.Rstudio-*
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Project artifacts
+output/
+/tmp/
+
+# Cache and large generated files
+*.rds
+*.Rds
+*.RData
+*.csv
+
+# Ignore environment files
+.Renviron
+.renv/
+
+# Ignore logs
+*.log
+
+# Ignore compiled artifacts and packages
+*.so
+*.dll
+*/packrat/
+
+# Ignore large debug files
+debug_*.csv
