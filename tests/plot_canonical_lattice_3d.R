@@ -4,8 +4,8 @@
 library(rotasym)
 library(rgl)
 
-source("R/utils.R")
-source("R/gaussian_process_vmf.R")
+source("utils.R")
+source(file.path("convergence_empirical_process", "gaussian_process_vmf.R"))
 
 cat("=== INTERACTIVE 3D VISUALIZATION OF CANONICAL LATTICE ===\n\n")
 

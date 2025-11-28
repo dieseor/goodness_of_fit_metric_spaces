@@ -1,3 +1,4 @@
+source("renv/activate.R")
 # .Rprofile for the goodness_of_fit_metric_spaces project
 # This file is executed when R starts in this directory
 

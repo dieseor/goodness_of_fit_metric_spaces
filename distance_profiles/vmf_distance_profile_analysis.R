@@ -12,9 +12,9 @@ suppressPackageStartupMessages({
 })
 
 # Load the main framework
-source(file.path("R", "distance_profile_analysis.R"))
+source(file.path("distance_profiles", "distance_profile_analysis.R"))
 # Load utilities (centralized implementations)
-source(file.path("R", "utils.R"))
+source(file.path("utils.R"))
 
 #' Generate samples from von Mises-Fisher distribution on sphere
 #' @param n Sample size

@@ -1,8 +1,8 @@
 # Test vectorization and edge case fixes for vMF Gaussian process
 
 library(rotasym)
-source("R/gaussian_process_vmf.R")
-source("R/utils.R")
+source(file.path("convergence_empirical_process", "gaussian_process_vmf.R"))
+source("utils.R")
 
 cat("=== Testing vMF Edge Cases and Vectorization ===\n\n")
 

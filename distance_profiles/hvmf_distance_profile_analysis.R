@@ -15,7 +15,7 @@ suppressPackageStartupMessages({
 })
 
 # Load the main framework
-source(file.path("R", "distance_profile_analysis.R"))
+source(file.path("distance_profiles", "distance_profile_analysis.R"))
 
 # HvMF Sampling Functions (from your implementation)
 

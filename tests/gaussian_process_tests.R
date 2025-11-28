@@ -11,116 +11,21 @@
 library(mvtnorm)
 
 # Source the main analysis file for vectorized functions
-source("gaussian_process_analysis.R")
+source(file.path("tests", "gaussian_process_analysis.R"))
+# Source canonical normal functions for testing
+source(file.path("convergence_empirical_process", "gaussian_process_normal.R"))
+# Source test helpers
+source(file.path("tests", "test_utils.R"))
 
 # ============================================================================
 # BASELINE IMPLEMENTATIONS (for comparison only)
 # ============================================================================
 
-#' Simulate empirical process WITHOUT vectorization (ORIGINAL - SLOW)
-#' @param omega_grid Vector of omega values
-#' @param t_grid Vector of t values
-#' @param n Sample size
-#' @param mu Mean of X
-#' @param sigma Standard deviation of X
-#' @param M Number of Monte Carlo simulations
-#' @return Vector of M supremum values
-simulate_empirical_process_loops <- function(omega_grid, t_grid, n, mu, sigma, M = 1000) {
-  supremum_values <- numeric(M)
-  
-  for (i in 1:M) {
-    # Generate sample
-    sample_x <- rnorm(n, mean = mu, sd = sigma)
-    
-    # Nested loops over grid (SLOW)
-    max_difference <- 0
-    for (omega in omega_grid) {
-      for (t in t_grid) {
-        # Empirical distance profile
-        empirical_distances <- abs(sample_x - omega)
-        F_hat_omega_t <- mean(empirical_distances <= t)
-        
-        # Theoretical distance profile
-        F_omega_t <- compute_distance_profile(omega, mu, sigma, t)
-        
-        # Scaled difference
-        scaled_difference <- sqrt(n) * abs(F_hat_omega_t - F_omega_t)
-        
-        # Update maximum
-        max_difference <- max(max_difference, scaled_difference)
-      }
-    }
-    
-    supremum_values[i] <- max_difference
-  }
-  
-  return(supremum_values)
-}
+## NOTE: The baseline looped implementation moved into tests/test_utils.R
 
-#' Compute covariance between two grid points (SCALAR VERSION - SLOW)
-#' @param omega1 First location parameter
-#' @param t1 First distance threshold
-#' @param omega2 Second location parameter
-#' @param t2 Second distance threshold
-#' @param mu Mean of X
-#' @param sigma Standard deviation of X
-#' @return Covariance value
-covariance_gaussian_process <- function(omega1, t1, omega2, t2, mu, sigma) {
-  if (t1 <= 0 || t2 <= 0) {
-    return(0)
-  }
-  
-  # Joint probability
-  joint_prob <- compute_joint_probability(omega1, t1, omega2, t2, mu, sigma)
-  
-  # Marginal probabilities
-  f_omega1_t1 <- compute_distance_profile(omega1, mu, sigma, t1)
-  f_omega2_t2 <- compute_distance_profile(omega2, mu, sigma, t2)
-  
-  # Covariance
-  return(joint_prob - f_omega1_t1 * f_omega2_t2)
-}
+## NOTE: The scalar covariance helper moved into tests/test_utils.R
 
-#' Create covariance matrix using nested loops (ORIGINAL VERSION - SLOW)
-#' @param omega_grid Vector of omega values
-#' @param t_grid Vector of t values
-#' @param mu Mean of X
-#' @param sigma Standard deviation of X
-#' @return Covariance matrix
-create_covariance_matrix_loops <- function(omega_grid, t_grid, mu, sigma) {
-  n_omega <- length(omega_grid)
-  n_t <- length(t_grid)
-  n_total <- n_omega * n_t
-  
-  grid_combinations <- expand.grid(omega = omega_grid, t = t_grid)
-  cov_matrix <- matrix(0, n_total, n_total)
-  
-  total_iterations <- n_total * n_total
-  progress_interval <- max(1, floor(total_iterations / 5))
-  iteration_count <- 0
-  
-  for (i in 1:n_total) {
-    for (j in 1:n_total) {
-      iteration_count <- iteration_count + 1
-      
-      if (iteration_count %% progress_interval == 0) {
-        progress_pct <- round(100 * iteration_count / total_iterations, 1)
-        cat("  Progress:", progress_pct, "%\n")
-      }
-      
-      cov_matrix[i, j] <- covariance_gaussian_process(
-        grid_combinations$omega[i],
-        grid_combinations$t[i],
-        grid_combinations$omega[j],
-        grid_combinations$t[j],
-        mu, sigma
-      )
-    }
-  }
-  
-  cat("Covariance matrix created successfully\n")
-  return(cov_matrix)
-}
+## NOTE: The nested loop covariance matrix helper moved into tests/test_utils.R
 
 # ============================================================================
 # PERFORMANCE TESTING
@@ -184,7 +89,7 @@ test_covariance_vectorization <- function() {
     # Test vectorized method WITHOUT parallelization (n_cores = 1)
     cat("  Running vectorized method (single core, no parallelization)...\n")
     start_time <- Sys.time()
-    cov_matrix_vectorized <- create_covariance_matrix(omega_grid, t_grid, mu, sigma, n_cores = 1)
+    cov_matrix_vectorized <- cov_normal(omega_grid, t_grid, mu, sigma, n_cores = 1)
     end_time <- Sys.time()
     time_vectorized <- as.numeric(difftime(end_time, start_time, units = "secs"))
     
@@ -306,7 +211,7 @@ test_empirical_vectorization <- function() {
     # Test vectorized method (1 core = no parallelization)
     cat("  Running vectorized method (1 core, no parallelization)...\n")
     start_time <- Sys.time()
-    supremum_vectorized <- simulate_empirical_process(omega_grid, t_grid, n, mu, sigma, M, n_cores = 1)
+    supremum_vectorized <- simulate_empirical_process_normal(omega_grid, t_grid, n, mu, sigma, M, n_cores = 1)
     end_time <- Sys.time()
     time_vectorized <- as.numeric(difftime(end_time, start_time, units = "secs"))
     

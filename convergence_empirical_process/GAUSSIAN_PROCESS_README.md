@@ -2,19 +2,12 @@
 
 ## 📁 Files
 
-### Main Analysis
-- **`gaussian_process_analysis.R`** (16KB) - PRODUCTION CODE
-  - Clean, optimized implementation for generating comparison plots
-  - Uses vectorized + parallelized computation
-  - Main function: `compare_processes()`
-  - Functions included:
-    - `compute_distance_profile()` - Theoretical distance profile
-    - `compute_joint_probability()` - Joint probability for covariance
-    - `compute_covariance_row()` - Vectorized row computation (internal)
-    - `create_covariance_matrix()` - Full matrix creation (vectorized + parallel)
-    - `simulate_limit_gaussian()` - Simulate Gaussian process limit
-    - `simulate_empirical_process()` - Simulate empirical process
-    - `compare_processes()` - Main comparison function
+### Main Analysis (Canonical implementations)
+- `gaussian_process_normal.R` — Normal distribution canonical implementation (vectorized & parallelized)
+  - Functions: `cov_normal`, `row_cov_normal`, `simulate_limit_gaussian_normal`, `simulate_empirical_process_normal`.
+- `gaussian_process_vmf.R` — vMF canonical implementation (vectorized & parallelized)
+  - Functions: `cov_vmf`, `row_cov_vmf`, `simulate_limit_gaussian_vmf`, `simulate_empirical_process_vmf`.
+  - `gaussian_process_analysis.R` was a legacy analysis script that duplicated functionality; it has been deprecated and removed in favor of the canonical files above.
 
 ### Performance Testing
 - **`gaussian_process_tests.R`** (7.9KB) - TESTING/BENCHMARKING
@@ -27,11 +20,11 @@
 ## 🎯 Usage
 
 ### Run Main Analysis
+Use the canonical functions in `convergence_empirical_process/gaussian_process_normal.R` and `convergence_empirical_process/gaussian_process_vmf.R`.
+Example: source the canonical file and call the wrapper:
 ```r
-source("gaussian_process_analysis.R")
-# Adjust parameters in the CONFIGURATION section (lines 15-35)
-# Then run the script or call:
-result <- compare_processes()
+source(file.path("convergence_empirical_process", "gaussian_process_normal.R"))
+result <- simulate_limit_gaussian_normal(omega_grid, t_grid, mu, sigma)
 ```
 
 ### Run Performance Tests

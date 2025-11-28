@@ -160,7 +160,6 @@ cov_normal <- function(omega_grid, t_grid, mu, sigma, n_cores = 7, h0 = c("simpl
     }
     return(local_rows)
   })
-  
   # Assemble matrix
   cat("Assembling matrix from parallel results...\n")
   cov_matrix <- matrix(0, n_total, n_total)
@@ -346,7 +345,7 @@ simulate_empirical_process_normal <- function(omega_grid, t_grid, n, mu, sigma, 
 #' @param M Number of Monte Carlo simulations
 #' @param n_cores Number of cores for parallelization
 #' @return List with all simulated values and convergence plot
-visualize_convergence_to_limit_normal <- function(n_values = c(10, 50, 100, 500), 
+visualize_convergence_to_limit_normal <- function(n_values = c(50, 100, 500), 
                                                   mu = 0, 
                                                   sigma = 1,
                                                   omega_points = 50,
@@ -404,11 +403,6 @@ visualize_convergence_to_limit_normal <- function(n_values = c(10, 50, 100, 500)
   
   # Prepare data for plotting
   n_max <- max(n_values)
-  histogram_data <- data.frame(
-    values = c(limit_values, empirical_data[[as.character(n_max)]]),
-    process = rep(c("Limit Gaussian", paste0("Empirical (n=", n_max, ")")), 
-                  each = M)
-  )
   
   # Density curves: All n values
   density_data <- data.frame()
@@ -425,158 +419,62 @@ visualize_convergence_to_limit_normal <- function(n_values = c(10, 50, 100, 500)
   }
   
   # Add limit process to density data
+  limit_label <- "G"
   density_data_full <- rbind(
     density_data,
     data.frame(
       values = limit_values,
       n = Inf,
-      label = "Limit Gaussian"
+      label = limit_label
     )
   )
   
-  # Create color palette
-  limit_color <- "#0066CC"
+  # Create color palette (limit is black now)
+  limit_color <- "#000000"
   n_colors <- length(n_values)
   empirical_colors <- rev(rainbow(n_colors))
   all_colors <- c(empirical_colors, limit_color)
-  names(all_colors) <- c(paste0("n=", n_values), "Limit Gaussian")
+  names(all_colors) <- c(paste0("n=", n_values), limit_label)
   
   # Create plot
   library(ggplot2)
   p_convergence <- ggplot() +
-    geom_histogram(
-      data = histogram_data,
-      aes(x = values, y = after_stat(density), fill = process),
-      alpha = 0.3,
-      position = "identity",
-      bins = 50,
-      show.legend = FALSE
-    ) +
     geom_density(
       data = density_data_full,
       aes(x = values, color = label, linetype = label),
       linewidth = 1.0,
       adjust = 1.0,
-      show.legend = FALSE
+      show.legend = TRUE,
+      key_glyph = draw_key_path
     ) +
-    scale_color_manual(values = all_colors) +
-    scale_linetype_manual(values = rep("solid", n_colors + 1)) +
-    scale_fill_manual(
-      values = setNames(
-        c(limit_color, "#FF3333"),
-        c("Limit Gaussian", paste0("Empirical (n=", n_max, ")"))
-      )
-    ) +
+        scale_color_manual(values = all_colors) +
+        scale_linetype_manual(values = rep("solid", n_colors + 1)) +
     labs(
       x = "Supremum of the process",
-      y = "Density"
+      y = "Density",
+      color = "Process",
+      linetype = "Process"
     ) +
     theme_minimal() +
     theme(
+      legend.position = c(0.98, 0.98),
+      legend.justification = c("right", "top"),
+      legend.text = element_text(size = 19),
+      legend.title = element_text(size = 19),
       axis.text.x = element_text(size = 19),
       axis.text.y = element_text(size = 19),
       axis.title.x = element_text(size = 19),
       axis.title.y = element_text(size = 19)
     ) +
-    # Apply x-axis limits if provided, otherwise auto-scale using data
-    if (!is.null(xlim) && length(xlim) == 2 && !any(is.na(xlim))) {
-      p_convergence <- p_convergence + coord_cartesian(xlim = xlim)
-    }
-  
-  # Manual legend positioning (computed relative to x-axis limits or data)
+    guides(
+      color = guide_legend(override.aes = list(linetype = "solid", shape = NA, size = 2)),
+      linetype = guide_legend(override.aes = list(linetype = "solid", shape = NA, size = 2))
+    )
   if (!is.null(xlim) && length(xlim) == 2 && !any(is.na(xlim))) {
-    x_upper <- xlim[2]
-  } else {
-    x_candidates <- histogram_data$values
-    if (exists('limit_values') && !is.null(limit_values)) x_candidates <- c(x_candidates, limit_values)
-    x_data_max <- if (length(x_candidates) > 0) max(x_candidates, na.rm = TRUE) else 2.0
-    x_upper <- max(2.0, x_data_max * 1.05)
-  }
-  legend_x <- x_upper * 0.76
-  legend_y_start <- 1.55
-  legend_spacing <- 0.09
-  legend_line_length <- x_upper * 0.03
-  legend_rect_height <- 0.023
-  legend_rect_half_width <- max(0.2, x_upper * 0.12)
-  legend_line_x_start <- legend_x - legend_rect_half_width * 0.4
-  legend_text_x <- legend_x - legend_rect_half_width * 0.23 + 0.03
-  
-  # Add legend elements
-  p_convergence <- p_convergence +
-    annotate("rect",
-             xmin = legend_x - legend_rect_half_width, xmax = legend_x + legend_rect_half_width,
-             ymin = legend_y_start - (n_colors + 2) * legend_spacing - 0.03,
-             ymax = legend_y_start + 0.02,
-             fill = "transparent")
-  
-  # Empirical density curves
-  for (i in 1:n_colors) {
-    y_pos <- legend_y_start - (i-1) * legend_spacing
-    p_convergence <- p_convergence +
-      annotate("segment",
-           x = legend_line_x_start, xend = legend_line_x_start + legend_line_length,
-               y = y_pos, yend = y_pos,
-               color = all_colors[i],
-               linetype = "solid",
-               linewidth = 1.0) +
-      annotate("text",
-           x = legend_text_x,
-               y = y_pos,
-               label = paste0("italic(n)==", n_values[i]),
-               parse = TRUE,
-               hjust = 0,
-               size = 5.5,
-               color = "black")
+    p_convergence <- p_convergence + coord_cartesian(xlim = xlim)
   }
   
-  # Limit Gaussian density line
-  y_pos_limit <- legend_y_start - n_colors * legend_spacing
-  p_convergence <- p_convergence +
-    annotate("segment",
-         x = legend_line_x_start, xend = legend_line_x_start + legend_line_length,
-             y = y_pos_limit, yend = y_pos_limit,
-             color = limit_color,
-             linetype = "solid",
-             linewidth = 1.0) +
-    annotate("text",
-         x = legend_text_x,
-             y = y_pos_limit,
-             label = "'𝔾'[mu[theta[0]]]",
-             parse = TRUE,
-             hjust = 0,
-             size = 5.5,
-             color = "black")
-  
-  # Histogram boxes
-  y_pos_hist1 <- legend_y_start - (n_colors + 1) * legend_spacing
-  p_convergence <- p_convergence +
-    annotate("rect",
-         xmin = legend_line_x_start, xmax = legend_line_x_start + legend_line_length,
-             ymin = y_pos_hist1 - legend_rect_height, ymax = y_pos_hist1 + legend_rect_height,
-             fill = limit_color, alpha = 0.3, color = NA) +
-    annotate("text",
-         x = legend_text_x,
-             y = y_pos_hist1,
-             label = "'𝔾'[mu[theta[0]]]",
-             parse = TRUE,
-             hjust = 0,
-             size = 5.5,
-             color = "black")
-  
-  y_pos_hist2 <- legend_y_start - (n_colors + 2) * legend_spacing
-  p_convergence <- p_convergence +
-    annotate("rect",
-         xmin = legend_line_x_start, xmax = legend_line_x_start + legend_line_length,
-             ymin = y_pos_hist2 - legend_rect_height, ymax = y_pos_hist2 + legend_rect_height,
-             fill = "#FF3333", alpha = 0.3, color = NA) +
-    annotate("text",
-         x = legend_text_x,
-             y = y_pos_hist2,
-             label = paste0("italic(n)==", n_max),
-             parse = TRUE,
-             hjust = 0,
-             size = 5.5,
-             color = "black")
+  # No manual legend: using ggplot2 automatic legend
   
   # Statistical comparison
   cat("=== Kolmogorov-Smirnov Tests vs Limit ===\n")

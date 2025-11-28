@@ -26,13 +26,13 @@ source(file.path("convergence_empirical_process", "gaussian_process_normal.R"))
 set.seed(42)  # Fixed seed for reproducible results across runs
 
 # Grid parameters
-OMEGA_MIN <- -5      # Minimum omega value
-OMEGA_MAX <- 5       # Maximum omega value
-OMEGA_POINTS <- 25     # Number of omega points in grid
+OMEGA_MIN <- -2.5      # Minimum omega value
+OMEGA_MAX <- 2.5       # Maximum omega value
+OMEGA_POINTS <- 5       # Number of omega points in grid
 
 T_MIN <- 0             # Minimum t value
-T_MAX <- 10           # Maximum t value
-T_POINTS <- 25         # Number of t points in grid
+T_MAX <- 5           # Maximum t value
+T_POINTS <- 5         # Number of t points in grid
 
 # Simulation parameters
 M_SIMULATIONS <- 10000 # Number of Monte Carlo simulations
@@ -76,7 +76,7 @@ run_simple_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULAT
     cat("====================================================================\n")
     cat("\n")
     convergence_result <- visualize_convergence_to_limit_normal(
-      n_values = c(10, 50, 100, 500),
+      n_values = c(50, 100, 500),
       mu = scenario$mu,
       sigma = scenario$sigma,
       omega_points = omega_points,
@@ -88,11 +88,11 @@ run_simple_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULAT
       h0 = H0_TYPE, density_adjust = density_adjust
     )
     convergence_filename <- sprintf("simple_mu%g_sigma%g_M%d_grid%dx%d.png",
-                                    scenario$mu,
-                                    scenario$sigma,
-                                    M,
-                                    omega_points,
-                                    t_points)
+                    scenario$mu,
+                    scenario$sigma,
+                    as.integer(M),
+                    as.integer(omega_points),
+                    as.integer(t_points))
     convergence_path <- file.path(output_dir, convergence_filename)
     ggsave(convergence_path, convergence_result$plot, width = 12, height = 8, dpi = 300)
     cat("\nSaved plot for", scenario$label, "to:", convergence_path, "\n")
@@ -123,7 +123,7 @@ run_composite_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMU
     for (unk in unknown_param) {
       cat("\n  COMPOSITE H0: scenario =", scenario$label, "unknown_param =", unk, "\n")
       convergence_result_comp <- visualize_convergence_to_limit_normal(
-      n_values = c(10, 50, 100, 500),
+        n_values = c(50, 100, 500),
       mu = scenario$mu,
       sigma = scenario$sigma,
       omega_points = omega_points,

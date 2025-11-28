@@ -16,7 +16,6 @@ suppressPackageStartupMessages({
 
 # Load utils and Bahadur analysis functions
 source(file.path("utils.R"))
-source("bahadur/bahadur_functions.R")
 
 #' Run complete Bahadur representation analysis
 #' @param mu_true True mean direction (unit vector on S^q)
@@ -71,7 +70,7 @@ run_bahadur_analysis <- function(mu_true, kappa_true = 1, n_trajectories = 20,
         library(rotasym)
       })
       # Source utils and functions file so compute_mle_xi is available on workers
-      source(file.path("R", "utils.R"))
+      source(file.path("utils.R"))
       source("bahadur_functions.R")
     })
     

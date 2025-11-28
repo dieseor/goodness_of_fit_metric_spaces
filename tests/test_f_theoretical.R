@@ -2,8 +2,8 @@
 
 library(rotasym)
 
-source(file.path("R", "utils.R"))
-source(file.path("R", "gaussian_process_vmf.R"))
+source(file.path("utils.R"))
+source(file.path("convergence_empirical_process", "gaussian_process_vmf.R"))
 
 omega_grid <- generate_canonical_lattice(10)
 t_grid <- seq(0 + 1e-8, 2 - 1e-8, length.out = 10)
@@ -13,7 +13,7 @@ kappa <- 2.0
 # Compute F_theoretical
 F_theoretical_matrix <- matrix(0, nrow = 10, ncol = 10)
 for (i in 1:10) {
-  F_theoretical_matrix[i, ] <- compute_distance_profile_vmf(
+  F_theoretical_matrix[i, ] <- theoretical_distance_profile_vmf(
     omega_grid[i, ], mu, kappa, t_grid, "chordal"
   )
 }

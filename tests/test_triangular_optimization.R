@@ -4,8 +4,9 @@
 library(rotasym)
 library(parallel)
 
-source(file.path("R", "utils.R"))
-source(file.path("R", "gaussian_process_vmf.R"))
+source(file.path("utils.R"))
+source(file.path("tests", "test_utils.R"))
+source(file.path("convergence_empirical_process", "gaussian_process_vmf.R"))
 
 cat("\n")
 cat("=========================================================\n")
@@ -106,28 +107,6 @@ for (DISTANCE_TYPE in c("chordal", "geodesic")) {
   # Test WITHOUT optimization
   cat("--- Testing WITHOUT triangular inequality optimization ---\n")
   
-  # Create version without optimization
-  compute_joint_probability_vmf_no_opt <- function(omega1, t1, omega2, t2, mu, kappa, 
-                                                   distance_type, mc_samples) {
-    if (t1 <= 0 || t2 <= 0) return(0)
-    
-    # SKIP the triangular inequality check
-    
-    # Compute distances to samples (vectorized)
-    dot1 <- mc_samples %*% omega1
-    dot2 <- mc_samples %*% omega2
-    
-    if (distance_type == "chordal") {
-      dist1 <- sqrt(2 * (1 - dot1))
-      dist2 <- sqrt(2 * (1 - dot2))
-    } else {
-      dist1 <- acos(pmax(-1, pmin(1, dot1)))
-      dist2 <- acos(pmax(-1, pmin(1, dot2)))
-    }
-    
-    joint_indicator <- (dist1 <= t1) & (dist2 <= t2)
-    return(mean(joint_indicator))
-  }
   
   start_time_without <- Sys.time()
   

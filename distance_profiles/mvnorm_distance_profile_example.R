@@ -2,7 +2,7 @@
 # Complete implementation for validating distance profiles
 
 # Load the analysis framework
-source(file.path("R", "distance_profile_analysis.R"))
+source(file.path("distance_profiles", "distance_profile_analysis.R"))
 
 # Set random seed for reproducibility
 set.seed(12345)

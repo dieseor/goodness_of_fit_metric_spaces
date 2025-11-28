@@ -98,7 +98,7 @@ c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values 
     cat('Running composite variants for vMF unknown param =', unk, '\n')
     results[[unk]] <- list()
     for (scn in scenarios) {
-      res <- visualize_convergence_to_limit_vmf(n_values = c(10, 50, 100, 500), mu = scn$mu, kappa = scn$kappa, distance_type = distance_type, omega_grid = omega_grid_global, t_grid = t_grid_global, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, density_adjust = density_adjust, verbose = FALSE, h0 = 'composite', unknown_param = unk)
+      res <- visualize_convergence_to_limit_vmf(n_values = c(50, 100, 500), mu = scn$mu, kappa = scn$kappa, distance_type = distance_type, omega_grid = omega_grid_global, t_grid = t_grid_global, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, density_adjust = density_adjust, h0 = 'composite', unknown_param = unk)
       fname <- file.path(output_dir, sprintf('comp_vmf_%s_kappa%g_%s_%s_M%d_grid%dx%d.png', unk, scn$kappa, scn$mu_label, distance_type, M, omega_points, t_points))
       ggsave(fname, res$plot, width = 12, height = 8, dpi = 300)
       results[[unk]][[scn$label]] <- res
@@ -127,7 +127,7 @@ c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values 
   t_grid_global <- seq(0 + 1e-8, ifelse(distance_type == 'chordal', 2 - 1e-8, pi - 1e-8), length.out = t_points)
   cat('Running simple variants for vMF (h0 = simple)\n')
   for (scn in scenarios) {
-    res <- visualize_convergence_to_limit_vmf(n_values = c(10, 50, 100, 500), mu = scn$mu, kappa = scn$kappa, distance_type = distance_type, omega_grid = omega_grid_global, t_grid = t_grid_global, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, density_adjust = density_adjust, verbose = FALSE, h0 = 'simple')
+    res <- visualize_convergence_to_limit_vmf(n_values = c(50, 100, 500), mu = scn$mu, kappa = scn$kappa, distance_type = distance_type, omega_grid = omega_grid_global, t_grid = t_grid_global, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, density_adjust = density_adjust, h0 = 'simple')
     fname <- file.path(output_dir, sprintf('simple_vmf_kappa%g_%s_%s_M%d_grid%dx%d.png', scn$kappa, scn$mu_label, distance_type, M, omega_points, t_points))
     ggsave(fname, res$plot, width = 12, height = 8, dpi = 300)
     results[[scn$label]] <- res
@@ -148,7 +148,7 @@ run_simple_vmf <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATION
   }
   results <- list()
   for (s in scenarios) {
-    res <- visualize_convergence_to_limit_vmf(n_values = c(10, 50, 100, 500), mu = s$mu, kappa = s$kappa, distance_type = distance_type, omega_points = omega_points, t_points = t_points, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, density_adjust = density_adjust, verbose = FALSE, h0 = 'simple')
+    res <- visualize_convergence_to_limit_vmf(n_values = c(50, 100, 500), mu = s$mu, kappa = s$kappa, distance_type = distance_type, omega_points = omega_points, t_points = t_points, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, density_adjust = density_adjust, h0 = 'simple')
     fname <- file.path(output_dir, sprintf('simple_vmf_kappa%g_%s_%s_M%d_grid%dx%d.png', s$kappa, s$mu_label, distance_type, M, omega_points, t_points))
     ggsave(fname, res$plot, width = 12, height = 8, dpi = 300)
     results[[s$label]] <- res
@@ -166,7 +166,7 @@ run_composite_vmf <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULAT
   results <- list()
   for (s in scenarios) {
     for (unk in unknown_param) {
-      res <- visualize_convergence_to_limit_vmf(n_values = c(10, 50, 100, 500), mu = s$mu, kappa = s$kappa, distance_type = distance_type, omega_points = omega_points, t_points = t_points, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, density_adjust = density_adjust, verbose = FALSE, h0 = 'composite', unknown_param = unk)
+      res <- visualize_convergence_to_limit_vmf(n_values = c(50, 100, 500), mu = s$mu, kappa = s$kappa, distance_type = distance_type, omega_points = omega_points, t_points = t_points, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, density_adjust = density_adjust, h0 = 'composite', unknown_param = unk)
       fname <- file.path(output_dir, sprintf('comp_vmf_%s_kappa%g_%s_%s_M%d_grid%dx%d.png', unk, s$kappa, s$mu_label, distance_type, M, omega_points, t_points))
       ggsave(fname, res$plot, width = 12, height = 8, dpi = 300)
       results[[paste0(s$label, '_comp_', unk)]] <- res
