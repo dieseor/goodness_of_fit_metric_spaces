@@ -119,7 +119,7 @@ simulate_empirical_process_loops <- function(omega_grid, t_grid, n, mu, sigma, M
 }
 
 
-## Covariance scalar function used by baseline nested loops
+## Covariance function used by baseline nested loops (one element at a time)
 covariance_gaussian_process <- function(omega1, t1, omega2, t2, mu, sigma) {
   if (t1 <= 0 || t2 <= 0) return(0)
   joint_prob <- compute_joint_probability_normal(omega1, t1, omega2, t2, mu, sigma)

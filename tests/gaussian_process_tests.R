@@ -21,11 +21,6 @@ source(file.path("tests", "test_utils.R"))
 # BASELINE IMPLEMENTATIONS (for comparison only)
 # ============================================================================
 
-## NOTE: The baseline looped implementation moved into tests/test_utils.R
-
-## NOTE: The scalar covariance helper moved into tests/test_utils.R
-
-## NOTE: The nested loop covariance matrix helper moved into tests/test_utils.R
 
 # ============================================================================
 # PERFORMANCE TESTING
@@ -118,7 +113,7 @@ test_covariance_vectorization <- function() {
     
     cat("    🚀 Vectorization speedup:", round(speedup, 2), "x faster\n")
     if (time_reduction > 0) {
-      cat("    💡 Vectorization reduced time by", round(time_reduction, 1), "%\n")
+      cat("    ✅ Vectorization reduced time by", round(time_reduction, 1), "%\n")
     } else {
       cat("    ⚠️  Vectorization increased time by", round(abs(time_reduction), 1), "% (overhead dominates)\n")
     }
@@ -245,7 +240,7 @@ test_empirical_vectorization <- function() {
     
     cat("    🚀 Vectorization speedup:", round(speedup, 2), "x faster\n")
     if (time_reduction > 0) {
-      cat("    💡 Vectorization reduced time by", round(time_reduction, 1), "%\n")
+      cat("    ✅ Vectorization reduced time by", round(time_reduction, 1), "%\n")
     } else {
       cat("    ⚠️  Vectorization increased time by", round(abs(time_reduction), 1), "% (overhead dominates)\n")
     }
