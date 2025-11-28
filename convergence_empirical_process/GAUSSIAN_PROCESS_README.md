@@ -1,4 +1,4 @@
-# Gaussian Process Analysis - Code Structure
+# Gaussian process analysis - code structure
 
 The goal is to show that the empirical process converges to the correct Gaussian process under the null hypotesis. This is tested for simple and composite hypotheses, for the normal and thw vMF distributions.
 
@@ -10,7 +10,7 @@ The goal is to show that the empirical process converges to the correct Gaussian
 - `gaussian_process_vmf.R` — Specific functions for the vMF distribution (vectorized & parallelized)
   - Functions: `cov_vmf()`, `row_cov_vmf()`, `simulate_limit_gaussian_vmf()`, `simulate_empirical_process_vmf()`, `visualize_convergence_to_limit_vmf()`.
 
-### Performance Testing
+### Performance testing
 - **`gaussian_process_tests.R`** (7.9KB) - TESTING/BENCHMARKING
   - Performance comparison between original and vectorized implementations
   - Main function: `test_vectorization_performance()`
@@ -20,7 +20,7 @@ The goal is to show that the empirical process converges to the correct Gaussian
 
 ### Obtain results
 - `run_gaussian_normal.R` - Produce results for the normal dsitribution
-### Run Performance Tests
+### Run performance tests
 ```r
 source("gaussian_process_tests.R")
 performance_results <- test_vectorization_performance()
@@ -42,7 +42,7 @@ Parameters in `gaussian_process_analysis.R` (lines 19-37):
 - KS test results printed to console
 - Returns list with `limit_values`, `empirical_values`, `plot`, `ks_test`
 
-## Function Naming Convention
+## Function naming convention
 
 - `compute_*` - Auxiliary/internal functions
 - `simulate_*` - Main simulation functions

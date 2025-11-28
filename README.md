@@ -1,8 +1,8 @@
-# Goodness of Fit in Metric Spaces
+# Goodness-of-fit in metric spaces
 
 This project explores goodness of fit tests and methods in metric space contexts.
 
-## Project Structure
+## Project structure
 
 ```
 goodness_of_fit_metric_spaces/
