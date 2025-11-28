@@ -11,7 +11,7 @@ The goal is to show that the empirical process converges to the correct Gaussian
   - Functions: `cov_vmf()`, `row_cov_vmf()`, `simulate_limit_gaussian_vmf()`, `simulate_empirical_process_vmf()`, `visualize_convergence_to_limit_vmf()`.
 
 ### Performance testing
-- **`gaussian_process_tests.R`** (7.9KB) - TESTING/BENCHMARKING
+- **`gaussian_process_tests.R`** (7.9KB) - testing/benchmarking
   - Performance comparison between original and vectorized implementations
   - Main function: `test_vectorization_performance()`
   - Baseline implementations for comparison, used to calculate the covariance matrix computing one element at a time: `covariance_gaussian_process()` and `create_covariance_matrix_loops()`.
