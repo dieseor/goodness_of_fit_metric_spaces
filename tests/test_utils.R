@@ -175,6 +175,71 @@ compute_joint_probability_vmf_no_opt <- function(omega1, t1, omega2, t2, mu, kap
 }
 
 
+## QQ plot helpers
+## Compare empirical process supremums vs limit (Gaussian) quantiles for Normal
+qqplot_empirical_vs_limit_normal <- function(omega_grid, t_grid, mu, sigma, n_values = c(10,50,100), M = 500, n_cores = 1, seed = NULL, save_plot = NULL) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Please install ggplot2 to generate QQ plots")
+  if (!is.null(seed)) set.seed(seed)
+  # Simulate limit process
+  limit_supremums <- simulate_limit_gaussian_normal(omega_grid, t_grid, mu, sigma, M = M, n_cores = n_cores)
+  # Prepare plotting dataframe
+  df_all <- data.frame()
+  probs <- ppoints(M)
+  limit_qs <- as.numeric(quantile(limit_supremums, probs = probs, type = 8))
+  for (n in n_values) {
+    empirical_supremums <- simulate_empirical_process_normal(omega_grid, t_grid, n = n, mu = mu, sigma = sigma, M = M, n_cores = n_cores)
+    empirical_qs <- as.numeric(quantile(empirical_supremums, probs = probs, type = 8))
+    df <- data.frame(
+      sample_size = as.factor(n),
+      p = probs,
+      theoretical = limit_qs,
+      empirical = empirical_qs
+    )
+    df_all <- rbind(df_all, df)
+  }
+  # Plot
+  library(ggplot2)
+  p <- ggplot2::ggplot(df_all, ggplot2::aes(x = theoretical, y = empirical, color = sample_size)) +
+    ggplot2::geom_point(alpha = 0.7, size = 1.5) +
+    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    ggplot2::labs(x = "Limit quantiles", y = "Empirical quantiles", color = "n") +
+    ggplot2::theme_minimal()
+  if (!is.null(save_plot)) ggplot2::ggsave(save_plot, plot = p)
+  return(p)
+}
+
+
+## QQ plot helper for vMF
+qqplot_empirical_vs_limit_vmf <- function(omega_grid, t_grid, mu, kappa, n_values = c(10,50,100), M = 500, n_mc_samples = 1000, n_cores = 1, seed = NULL, save_plot = NULL) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Please install ggplot2 to generate QQ plots")
+  if (!is.null(seed)) set.seed(seed)
+  # Simulate limit process for vMF
+  limit_supremums <- simulate_limit_gaussian_vmf(omega_grid, t_grid, mu, kappa, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores)
+  probs <- ppoints(M)
+  limit_qs <- as.numeric(quantile(limit_supremums, probs = probs, type = 8))
+  df_all <- data.frame()
+  for (n in n_values) {
+    empirical_supremums <- simulate_empirical_process_vmf(omega_grid, t_grid, n = n, mu = mu, kappa = kappa, M = M, n_cores = n_cores)
+    empirical_qs <- as.numeric(quantile(empirical_supremums, probs = probs, type = 8))
+    df <- data.frame(
+      sample_size = as.factor(n),
+      p = probs,
+      theoretical = limit_qs,
+      empirical = empirical_qs
+    )
+    df_all <- rbind(df_all, df)
+  }
+  library(ggplot2)
+  p <- ggplot2::ggplot(df_all, ggplot2::aes(x = theoretical, y = empirical, color = sample_size)) +
+    ggplot2::geom_point(alpha = 0.7, size = 1.5) +
+    ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    ggplot2::labs(x = "Limit quantiles", y = "Empirical quantiles", color = "n") +
+    ggplot2::theme_minimal()
+  if (!is.null(save_plot)) ggplot2::ggsave(save_plot, plot = p)
+  return(p)
+}
+
+
 # Basic smoke tests for moved helpers (run when executing this test file directly)
 if (identical(environment(), globalenv())) {
   cat("Running basic smoke checks for test helpers...\n")

@@ -120,8 +120,8 @@ run_vmf_distance_profile_analysis <- function(distance_type = "chordal", output_
     # For chordal: omega = (1, 0, 0) -> top_left, omega = (0, 0, -1) -> top_left
     legend_positions <- c("bottom_right", "top_left", "top_left")
   } else if (distance_type == "geodesic") {
-    # For geodesic: omega = (1, 0, 0) -> top_left (note: you mentioned (-1,0,0) but omega_2 is (1,0,0))
-    legend_positions <- c("bottom_right", "top_left", "bottom_right")
+    # For geodesic: omega = (1, 0, 0) and omega = (0, 0, -1) use the same legend position
+    legend_positions <- c("bottom_right", "top_left", "top_left")
   }
   
 

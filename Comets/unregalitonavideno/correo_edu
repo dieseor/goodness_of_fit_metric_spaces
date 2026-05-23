@@ -1,0 +1,21 @@
+Hola Diego,
+
+¡Feliz año! Espero que estés disfrutando de las navidades. Por mi lado, he estado trabajando en cerrar asuntos antes de que venga la niña. En particular, un artículo para un número especial de Metrika in memorian de Simos Meintanis. Al final me he emocionado de más y me ha salido un artículo bastante completo. Lo bueno es que me han surgido ideas para aprovechar fácilmente en siguientes artículos.
+
+Para ti, el artículo es relevante por lo siguiente:
+Usa el abordaje projected-ecdf, muy relacionado con los distance profiles. La diferencia es que en las proyecciones el signo se tiene en cuenta.
+La distribución de las proyecciones en la cardioide es más sencilla que la de la vMF, por lo que será más fácil de usar con la filosofía de los distance profiles. En la prueba del Teorema 8 tienes la "representación de Bahadur" del estimador MLE.
+Se discuten varios pesos en el estadístico de CvM. No encontré grandes diferencias, por lo que podría estar justificado tomar el más sencillo (Pn). Si bien los estudios numéricos no son exhaustivos y por tanto tampoco concluyentes.
+Puedes replicar el test de los long-period comets con el abordaje de los distance profiles.
+El regalito: el resultado del análisis de los short-period comets te lo deja a huevo (historia + justificación) para continuar el análisis de datos reales en tu artículo: el modelo adecuado para estos cometas es uno rotacionalmente simétrico y unimodal (más fácil) pero que se concentra rápidamente en su moda. Creo que una distribución esférica Cauchy (hay dos tipos) o la distribución de Jones and Pewsey podrían ser buenas candidatas. La vMF creo que no va a dar un buen ajuste porque no se concentra lo suficientemente rápido en la moda.
+Bonus: debido a la equivalencia entre la cardioide y Watson para concentraciones bajas, podría ser que los long-period comets también se pudiesen modelar adecuadamente con una distribución de Watson. Esto sería doblemente interesante, porque si consideras una distribución small circle (generaliza a la Watson) y calculas su maquinaria de proyecciones, esta podría ser doblemente útil: para modelar los long-period comets y para modelar las manchas solares (en este caso, con una mixtura de dos o más small circles con el mismo eje).
+Sobre las distribuciones:
+Ver Jones and Pewsey (2005), Sección 5. Tendrás que ver cómo simularla. Inversión de la cdf proyectada es lo más directo: mira r_sph_car() en el código que te mando como plantilla.
+Mira la prueba del Teorema 9, página 47, para ver cómo calcular distribuciones proyectadas de modelos rotacionalmente simétricos.
+En el artículo de Alberto y mío en TEST puedes ver una variante de la spherical Cauchy, Sección B.1. Puedes simumarla con ?sphunif::r_alt(alt = "C").
+Si tienes algún comentario sobre el artículo, adelante :)
+
+Te adjunto el código asociado.
+
+¡Feliz año!
+Edu

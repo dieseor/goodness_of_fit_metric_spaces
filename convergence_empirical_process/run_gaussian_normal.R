@@ -14,9 +14,18 @@ library(ggplot2)
 library(dplyr)
 library(parallel)
 
+# Get script directory for proper sourcing
+script_path <- sub("--file=", "", grep("--file=", commandArgs(), value = TRUE))
+if (length(script_path) == 0 || script_path == "") {
+  script_dir <- getwd()
+} else {
+  script_dir <- dirname(normalizePath(script_path))
+}
+project_root <- dirname(script_dir)
+
 # Load generic utilities and Normal-specific functions
-source(file.path("utils.R"))
-source(file.path("convergence_empirical_process", "gaussian_process_normal.R"))
+source(file.path(project_root, "utils.R"))
+source(file.path(script_dir, "gaussian_process_normal.R"))
 
 # ============================================================================
 # CONFIGURATION PARAMETERS
@@ -28,11 +37,11 @@ set.seed(42)  # Fixed seed for reproducible results across runs
 # Grid parameters
 OMEGA_MIN <- -2.5      # Minimum omega value
 OMEGA_MAX <- 2.5       # Maximum omega value
-OMEGA_POINTS <- 5       # Number of omega points in grid
+OMEGA_POINTS <- 10      # Number of omega points in grid
 
 T_MIN <- 0             # Minimum t value
 T_MAX <- 5           # Maximum t value
-T_POINTS <- 5         # Number of t points in grid
+T_POINTS <- 10        # Number of t points in grid
 
 # Simulation parameters
 M_SIMULATIONS <- 10000 # Number of Monte Carlo simulations
@@ -85,8 +94,16 @@ run_simple_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULAT
       t_grid = t_grid,
       M = M,
       n_cores = n_cores,
-      h0 = H0_TYPE, density_adjust = density_adjust
+      h0 = H0_TYPE,
+      qqplot = TRUE
     )
+    # Also save QQ plot (if present) - file prefixed with qq_
+    if (!is.null(convergence_result$qq_plot)) {
+      qq_path <- file.path(output_dir, sprintf("qq_simple_mu%g_sigma%g_M%d_grid%dx%d.png",
+                                                scenario$mu, scenario$sigma, as.integer(M), as.integer(omega_points), as.integer(t_points)))
+      ggsave(qq_path, convergence_result$qq_plot, width = 8, height = 6, dpi = 300)
+      cat("Saved QQ plot for", scenario$label, "to:", qq_path, "\n")
+    }
     convergence_filename <- sprintf("simple_mu%g_sigma%g_M%d_grid%dx%d.png",
                     scenario$mu,
                     scenario$sigma,
@@ -134,7 +151,7 @@ run_composite_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMU
       n_cores = n_cores,
       h0 = 'composite',
       unknown_param = unk,
-      density_adjust = density_adjust
+      qqplot = TRUE
     )
       convergence_filename_comp <- sprintf("comp_unk_%s_mu_%g_sigma_%g_M%d_grid%dx%d.png",
                         unk,
@@ -145,6 +162,13 @@ run_composite_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMU
                                         t_points)
     convergence_path_comp <- file.path(output_dir, convergence_filename_comp)
     ggsave(convergence_path_comp, convergence_result_comp$plot, width = 12, height = 8, dpi = 300)
+    # Save QQ plot in composite case with prefix qq_
+    if (!is.null(convergence_result_comp$qq_plot)) {
+      qq_path_comp <- file.path(output_dir, sprintf("qq_comp_unk_%s_mu_%g_sigma_%g_M%d_grid%dx%d.png",
+                                                  unk, scenario$mu, scenario$sigma, M, omega_points, t_points))
+      ggsave(qq_path_comp, convergence_result_comp$qq_plot, width = 8, height = 6, dpi = 300)
+      cat("Saved composite QQ plot for", scenario$label, "unknown_param=", unk, "to:", qq_path_comp, "\n")
+    }
     cat("\nSaved composite-null plot for", scenario$label, "to:", convergence_path_comp, "\n")
     cat("  limit mean:", round(mean(as.numeric(convergence_result_comp$limit_values), na.rm=TRUE), 4), "sd:", round(sd(as.numeric(convergence_result_comp$limit_values), na.rm=TRUE), 4), " (unknown_param=", unk, ")\n")
     all_results[[paste0(scenario$label, "_comp_unk_", unk)]] <- convergence_result_comp

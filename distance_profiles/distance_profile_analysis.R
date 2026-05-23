@@ -94,7 +94,7 @@ analyze_distance_profile <- function(omega, n_samples, n_simulations = 10, dista
 
 #' Create a single distance profile plot
 #' @param analysis_result Result from analyze_distance_profile()
-#' @param title Plot title (optional, will be auto-generated)
+#' @param title Plot title (unused; validation plots are generated without titles)
 #' @param legend_position Position for legend: "bottom_right" or "top_left"
 #' @return ggplot object
 plot_distance_profile <- function(analysis_result, title = NULL, legend_position = "bottom_right") {
@@ -126,13 +126,7 @@ plot_distance_profile <- function(analysis_result, title = NULL, legend_position
   )
   
   # Create y-axis label with mathematical notation
-  y_label <- bquote(F[omega]^X * (t))
-  
-  # Create title with omega and sample size
-  if (is.null(title)) {
-    omega_latex <- paste0("(", paste(round(omega, 3), collapse = ", "), ")")
-    title <- bquote(bolditalic(omega) ~ "=" ~ .(omega_latex) * "," ~ italic(n) ~ "=" ~ .(n_samples))
-  }
+  y_label <- bquote(F[omega]^mu * (t))
   
   # Calculate legend positioning
   if (legend_position == "top_left") {
@@ -151,7 +145,7 @@ plot_distance_profile <- function(analysis_result, title = NULL, legend_position
     hjust_val <- 0
   }
 
-  # Create the plot with title and proper legend
+  # Create the plot without title and with proper legend
   p <- ggplot() +
     # Confidence bands
     geom_ribbon(data = theoretical_df, 
@@ -171,7 +165,6 @@ plot_distance_profile <- function(analysis_result, title = NULL, legend_position
     
     # Create manual legend using annotate (no gaps)
     labs(
-      title = title,
       x = "t",
       y = y_label
     ) +
@@ -194,7 +187,6 @@ plot_distance_profile <- function(analysis_result, title = NULL, legend_position
     
     theme_minimal() +
     theme(
-      plot.title = element_text(size = 15, hjust = 0.5, margin = margin(b = 10)),
       axis.title = element_text(size = 14, hjust = 0.5),
       axis.text = element_text(size = 13),
       plot.margin = margin(t = 5, r = 5, b = 5, l = 5)
