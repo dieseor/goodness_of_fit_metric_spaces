@@ -6,7 +6,14 @@
 # ============================================================================
 
 # Load generic utilities
-source(file.path("utils.R"))
+utils_path <- if (file.exists("utils.R")) {
+  "utils.R"
+} else if (file.exists(file.path("..", "utils.R"))) {
+  file.path("..", "utils.R")
+} else {
+  stop("Could not find utils.R in current directory or parent directory.")
+}
+source(utils_path)
 
 # ============================================================================
 # COVARIANCE MATRIX COMPUTATION FOR NORMAL MODEL
@@ -356,8 +363,10 @@ visualize_convergence_to_limit_normal <- function(n_values = c(50, 100, 500),
                                                   n_cores = 7,
                                                   h0 = c("simple","composite"),
                                                   unknown_param = NULL,
-                                                  density_adjust = 1.5,
-                                                  xlim = NULL) {
+                                                  n50_adjust_multiplier = 2,
+                                                  xlim = NULL,
+                                                  qqplot = FALSE,
+                                                  qqplot_save = NULL) {
   h0 <- match.arg(h0)
   
   cat("=== Visualizing Convergence to Gaussian Limit (Normal Distribution) ===\n")
@@ -432,23 +441,59 @@ visualize_convergence_to_limit_normal <- function(n_values = c(50, 100, 500),
   # Create color palette (limit is black now)
   limit_color <- "#000000"
   n_colors <- length(n_values)
-  empirical_colors <- rev(rainbow(n_colors))
-  all_colors <- c(empirical_colors, limit_color)
-  names(all_colors) <- c(paste0("n=", n_values), limit_label)
+  empirical_colors <- scales::hue_pal()(n_colors)
+  all_labels <- c(paste0("n=", n_values), limit_label)
+  all_colors <- setNames(c(empirical_colors, limit_color), all_labels)
+  linetype_vals <- setNames(c(rep("solid", n_colors), "dashed"), all_labels)
+  density_data_full$label <- factor(density_data_full$label, levels = all_labels)
   
   # Create plot
   library(ggplot2)
-  p_convergence <- ggplot() +
-    geom_density(
-      data = density_data_full,
-      aes(x = values, color = label, linetype = label),
-      linewidth = 1.0,
-      adjust = 1.0,
-      show.legend = TRUE,
-      key_glyph = draw_key_path
-    ) +
-        scale_color_manual(values = all_colors) +
-        scale_linetype_manual(values = rep("solid", n_colors + 1)) +
+  has_n50 <- any(n_values == 50)
+  base_adjust <- 1.0
+  adjust_n50 <- n50_adjust_multiplier * base_adjust
+  if (has_n50) {
+    cat(sprintf("[density] n=50 detected -> using adjust=%.1f for n=50 only (base adjust=%.1f, multiplier=%.1f)\n", adjust_n50, base_adjust, n50_adjust_multiplier))
+  }
+  p_convergence <- ggplot()
+  if (has_n50) {
+    p_convergence <- p_convergence +
+      geom_density(
+        data = subset(density_data_full, label != "n=50"),
+        aes(x = values, color = label, linetype = label),
+        bw = "bcv",
+        fill = NA,
+        linewidth = 1.0,
+        adjust = base_adjust,
+        show.legend = TRUE,
+        key_glyph = draw_key_path
+      ) +
+      geom_density(
+        data = subset(density_data_full, label == "n=50"),
+        aes(x = values, color = label, linetype = label),
+        bw = "bcv",
+        fill = NA,
+        linewidth = 1.0,
+        adjust = adjust_n50,
+        show.legend = TRUE,
+        key_glyph = draw_key_path
+      )
+  } else {
+    p_convergence <- p_convergence +
+      geom_density(
+        data = density_data_full,
+        aes(x = values, color = label, linetype = label),
+        bw = "bcv",
+        fill = NA,
+        linewidth = 1.0,
+        adjust = base_adjust,
+        show.legend = TRUE,
+        key_glyph = draw_key_path
+      )
+  }
+  p_convergence <- p_convergence +
+        scale_color_manual(values = all_colors, breaks = all_labels, drop = FALSE) +
+        scale_linetype_manual(values = linetype_vals, breaks = all_labels, drop = FALSE) +
     labs(
       x = "Supremum of the process",
       y = "Density",
@@ -467,8 +512,8 @@ visualize_convergence_to_limit_normal <- function(n_values = c(50, 100, 500),
       axis.title.y = element_text(size = 19)
     ) +
     guides(
-      color = guide_legend(override.aes = list(linetype = "solid", shape = NA, size = 2)),
-      linetype = guide_legend(override.aes = list(linetype = "solid", shape = NA, size = 2))
+      color = guide_legend(override.aes = list(linetype = "solid", fill = NA, alpha = 1, linewidth = 1.5)),
+      linetype = "none"
     )
   if (!is.null(xlim) && length(xlim) == 2 && !any(is.na(xlim))) {
     p_convergence <- p_convergence + coord_cartesian(xlim = xlim)
@@ -496,12 +541,35 @@ visualize_convergence_to_limit_normal <- function(n_values = c(50, 100, 500),
     }
   }
   cat("\n")
+  # Optional QQ plot: use same simulated data
+  qq_plot <- NULL
+  if (isTRUE(qqplot)) {
+    if (!requireNamespace("ggplot2", quietly = TRUE)) warning("ggplot2 required for QQ plot. Skipping QQ plot.")
+    else {
+      probs <- ppoints(M)
+      limit_qs <- as.numeric(quantile(limit_values, probs = probs, type = 8, na.rm = TRUE))
+      df_all <- data.frame()
+      for (n in n_values) {
+        empirical_qs <- as.numeric(quantile(empirical_data[[as.character(n)]], probs = probs, type = 8, na.rm = TRUE))
+        df <- data.frame(sample_size = as.factor(n), p = probs, theoretical = limit_qs, empirical = empirical_qs)
+        df_all <- rbind(df_all, df)
+      }
+      qq_plot <- ggplot2::ggplot(df_all, ggplot2::aes(x = theoretical, y = empirical, color = sample_size)) +
+        ggplot2::geom_point(alpha = 0.7, size = 1.5) +
+        ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+        ggplot2::scale_color_manual(values = setNames(empirical_colors, as.character(n_values))) +
+        ggplot2::labs(x = "Limit quantiles", y = "Empirical quantiles", color = "n") +
+        ggplot2::theme_minimal()
+      if (!is.null(qqplot_save)) ggplot2::ggsave(qqplot_save, plot = qq_plot)
+    }
+  }
   
   return(list(
     limit_values = limit_values,
     empirical_data = empirical_data,
     n_values = n_values,
     plot = p_convergence,
+    qq_plot = qq_plot,
     ks_results = ks_results
   ))
 }

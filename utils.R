@@ -52,36 +52,94 @@ check_dot_products <- function(dot_products, tolerance = 1e-10) {
 # Functions that work for ANY distribution (Normal, vMF, etc.)
 # ============================================================================
 
+#' Validate a covariance matrix before simulation
+#' @param cov_matrix Numeric square matrix
+#' @param symmetry_tol Maximum accepted symmetry gap
+#' @param psd_tol Maximum accepted negativity in the minimum eigenvalue
+#' @param stop_on_failure Whether to stop when validation fails
+#' @return Named list with validation diagnostics
+validate_covariance_matrix <- function(cov_matrix,
+                                       symmetry_tol = 1e-8,
+                                       psd_tol = 1e-8,
+                                       stop_on_failure = TRUE) {
+  cov_matrix <- as.matrix(cov_matrix)
+  if (nrow(cov_matrix) != ncol(cov_matrix)) {
+    stop("Covariance matrix must be square.")
+  }
+  if (!all(is.finite(cov_matrix))) {
+    stop("Covariance matrix contains non-finite entries.")
+  }
+
+  symmetry_gap <- max(abs(cov_matrix - t(cov_matrix)))
+  eigenvalues <- eigen(cov_matrix, symmetric = TRUE, only.values = TRUE)$values
+  min_eigenvalue <- min(eigenvalues)
+  max_eigenvalue <- max(eigenvalues)
+  negative_eigenvalues <- sum(eigenvalues < -psd_tol)
+  is_valid <- symmetry_gap <= symmetry_tol && min_eigenvalue >= -psd_tol
+
+  diagnostics <- list(
+    valid = is_valid,
+    symmetry_gap = symmetry_gap,
+    min_eigenvalue = min_eigenvalue,
+    max_eigenvalue = max_eigenvalue,
+    negative_eigenvalues = negative_eigenvalues,
+    symmetry_tol = symmetry_tol,
+    psd_tol = psd_tol
+  )
+
+  if (!is_valid && isTRUE(stop_on_failure)) {
+    reasons <- character(0)
+    if (symmetry_gap > symmetry_tol) {
+      reasons <- c(
+        reasons,
+        sprintf("symmetry gap %.3e exceeds tolerance %.3e", symmetry_gap, symmetry_tol)
+      )
+    }
+    if (min_eigenvalue < -psd_tol) {
+      reasons <- c(
+        reasons,
+        sprintf("minimum eigenvalue %.3e is below tolerance %.3e", min_eigenvalue, -psd_tol)
+      )
+    }
+    stop(
+      sprintf(
+        "Covariance matrix rejected for simulation: %s.",
+        paste(reasons, collapse = "; ")
+      )
+    )
+  }
+
+  diagnostics
+}
+
 #' Simulate the limiting Gaussian process
-#' Works for any distribution once covariance matrix is computed. 
-#' If the covariance matrix is invalid (e.g., not numerically positive semi-definite) sampling may fail. There are no internal automatic covariance corrections performed.
+#' Works for any distribution once covariance matrix is computed.
+#' The covariance matrix is validated before sampling, and execution stops if it
+#' is rejected. No automatic corrections are applied.
 #' @param cov_matrix Pre-computed covariance matrix
 #' @param M Number of Monte Carlo simulations
 #' @return Vector of M supremum values from the Gaussian process
 simulate_limit_gaussian <- function(cov_matrix, M = 10000, seed = NULL, tol = 1e-10) {
+  cov_matrix <- as.matrix(cov_matrix)
   n_total <- nrow(cov_matrix)
 
-  # No automatic PSD correction. We will attempt to sample and warn on failure.
+  validate_covariance_matrix(
+    cov_matrix,
+    symmetry_tol = tol,
+    psd_tol = tol,
+    stop_on_failure = TRUE
+  )
+
   cat("Generating", M, "multivariate normal samples from", n_total, "dimensional process...\n")
   if (!is.null(seed)) set.seed(seed)
-  # Sample directly without any automatic PSD correction.
-  # If mvtnorm::rmvnorm errors due to a non-PD sigma, we will stop() and raise an error.
-  gaussian_samples <- tryCatch({
-    mvtnorm::rmvnorm(M, mean = rep(0, n_total), sigma = cov_matrix)
-  }, error = function(e) {
-    warning(sprintf("simulate_limit_gaussian: Sampling failed due to non-PD covariance or other error: %s. No PSD correction applied; returning NA vector.", e$message))
-    return(rep(NA_real_, M))
-  })
-  
-  # Compute supremum for each sample
+  gaussian_samples <- tryCatch(
+    mvtnorm::rmvnorm(M, mean = rep(0, n_total), sigma = cov_matrix),
+    error = function(e) {
+      stop(sprintf("simulate_limit_gaussian failed: %s", e$message))
+    }
+  )
+
   supremum_values <- apply(gaussian_samples, 1, function(row) max(abs(row)))
-  
-  # cat("Supremum statistics, limiting Gaussian process:\n")
-  # cat("  Mean:", round(mean(supremum_values), 4), "\n")
-  # cat("  Median:", round(median(supremum_values), 4), "\n")
-  # cat("  Max:", round(max(supremum_values), 4), "\n")
-  # cat("  Min:", round(min(supremum_values), 4), "\n\n")
-  
   return(supremum_values)
 }
 
@@ -150,6 +208,777 @@ generate_canonical_lattice <- function(n, dim = 3) {
   }
 }
 
+# ----------------------------------------------------------------------------
+# S^1-specific helpers for deterministic angular computations
+# ----------------------------------------------------------------------------
+
+#' Wrap angles to [0, 2*pi)
+#' @param theta Numeric scalar or vector of angles
+#' @return Angles reduced modulo 2*pi
+wrap_angle_2pi <- function(theta) {
+  wrapped <- theta %% (2 * pi)
+  wrapped[wrapped < 0] <- wrapped[wrapped < 0] + 2 * pi
+  wrapped
+}
+
+#' Generate a deterministic angular grid on the unit circle
+#' @param n_angles Number of angles on S^1
+#' @param theta0 Starting angle offset
+#' @return Data frame with columns theta, x, y, label
+generate_circle_grid <- function(n_angles, theta0 = 0) {
+  if (!is.numeric(n_angles) || length(n_angles) != 1 || n_angles < 2) {
+    stop("`n_angles` must be a single integer >= 2.")
+  }
+  theta <- wrap_angle_2pi(theta0 + 2 * pi * (0:(n_angles - 1)) / n_angles)
+  theta <- sort(theta)
+  data.frame(
+    theta = theta,
+    x = cos(theta),
+    y = sin(theta),
+    label = sprintf("%.2f", theta),
+    stringsAsFactors = FALSE
+  )
+}
+
+#' Convert a point on S^1 to its angular coordinate
+#' @param omega Numeric vector of length 2
+#' @param tol Tolerance for the unit-norm check
+#' @return Angle in [0, 2*pi)
+circle_angle_from_point <- function(omega, tol = 1e-8) {
+  omega <- as.numeric(omega)
+  if (length(omega) != 2) {
+    stop("`omega` must have length 2 for S^1 computations.")
+  }
+  omega_norm <- sqrt(sum(omega^2))
+  if (abs(omega_norm - 1) > tol) {
+    stop("`omega` must have unit norm for S^1 computations.")
+  }
+  wrap_angle_2pi(atan2(omega[2], omega[1]))
+}
+
+#' Convert a matrix of points on S^1 to their angular coordinates
+#' @param omega_grid Matrix with 2 columns
+#' @return Numeric vector of angles in [0, 2*pi)
+circle_angles_from_matrix <- function(omega_grid) {
+  omega_grid <- as.matrix(omega_grid)
+  if (ncol(omega_grid) != 2) {
+    stop("`omega_grid` must have exactly 2 columns for S^1 computations.")
+  }
+  apply(omega_grid, 1, circle_angle_from_point)
+}
+
+#' Angular half-width for chordal balls on S^1
+#' @param t Chordal distance threshold
+#' @return Half-width delta(t) = 2 * asin(t / 2)
+s1_chordal_half_width <- function(t) {
+  t <- pmin(pmax(t, 0), 2)
+  2 * asin(t / 2)
+}
+
+#' Convert a wrapped angular interval to non-wrapping segments
+#' @param start Interval start
+#' @param end Interval end
+#' @param tol Tolerance for detecting empty/full intervals
+#' @return Matrix with 0, 1, or 2 rows and columns start/end
+s1_interval_to_segments <- function(start, end, tol = 1e-12) {
+  width <- end - start
+  if (width <= tol) {
+    return(matrix(numeric(0), ncol = 2, dimnames = list(NULL, c("start", "end"))))
+  }
+  if (width >= 2 * pi - tol) {
+    return(matrix(c(0, 2 * pi), ncol = 2, byrow = TRUE,
+                  dimnames = list(NULL, c("start", "end"))))
+  }
+
+  start_wrapped <- wrap_angle_2pi(start)
+  end_wrapped <- wrap_angle_2pi(end)
+  if (start_wrapped < end_wrapped) {
+    return(matrix(c(start_wrapped, end_wrapped), ncol = 2, byrow = TRUE,
+                  dimnames = list(NULL, c("start", "end"))))
+  }
+
+  rbind(
+    c(0, end_wrapped),
+    c(start_wrapped, 2 * pi)
+  )
+}
+
+#' Wrapped arc associated with a chordal ball on S^1
+#' @param omega Point on S^1
+#' @param t Chordal distance threshold
+#' @param tol Numerical tolerance
+#' @return Matrix of non-wrapping segments covering the event arc
+s1_event_segments_chordal <- function(omega, t, tol = 1e-12) {
+  if (t <= tol) {
+    return(matrix(numeric(0), ncol = 2, dimnames = list(NULL, c("start", "end"))))
+  }
+  if (t >= 2 - tol) {
+    return(matrix(c(0, 2 * pi), ncol = 2, byrow = TRUE,
+                  dimnames = list(NULL, c("start", "end"))))
+  }
+  theta <- circle_angle_from_point(omega)
+  delta <- s1_chordal_half_width(t)
+  s1_interval_to_segments(theta - delta, theta + delta, tol = tol)
+}
+
+#' Intersect two segment unions on S^1
+#' @param seg1 Matrix of interval segments
+#' @param seg2 Matrix of interval segments
+#' @param tol Numerical tolerance
+#' @return Matrix of intersected segments
+s1_intersect_segments <- function(seg1, seg2, tol = 1e-12) {
+  if (length(seg1) == 0 || length(seg2) == 0 || nrow(seg1) == 0 || nrow(seg2) == 0) {
+    return(matrix(numeric(0), ncol = 2, dimnames = list(NULL, c("start", "end"))))
+  }
+
+  intersections <- list()
+  idx <- 0
+  for (i in seq_len(nrow(seg1))) {
+    for (j in seq_len(nrow(seg2))) {
+      lower <- max(seg1[i, 1], seg2[j, 1])
+      upper <- min(seg1[i, 2], seg2[j, 2])
+      if (upper - lower > tol) {
+        idx <- idx + 1
+        intersections[[idx]] <- c(lower, upper)
+      }
+    }
+  }
+
+  if (length(intersections) == 0) {
+    return(matrix(numeric(0), ncol = 2, dimnames = list(NULL, c("start", "end"))))
+  }
+
+  do.call(rbind, intersections)
+}
+
+#' Angular density of the vMF distribution on S^1
+#' @param phi Angle(s) in radians
+#' @param mu Mean direction on S^1
+#' @param kappa Concentration parameter
+#' @param log Whether to return the log-density
+#' @return Density values
+vmf_s1_angle_density <- function(phi, mu, kappa, log = FALSE) {
+  mu <- as.numeric(mu)
+  if (length(mu) != 2) {
+    stop("`mu` must have length 2 for S^1 computations.")
+  }
+  mu <- mu / sqrt(sum(mu^2))
+  mu_angle <- circle_angle_from_point(mu)
+  log_i0 <- log(besselI(kappa, nu = 0, expon.scaled = TRUE)) + kappa
+  log_density <- kappa * cos(phi - mu_angle) - log(2 * pi) - log_i0
+  if (log) {
+    return(log_density)
+  }
+  exp(log_density)
+}
+
+#' Build a deterministic angular CDF approximation for vMF on S^1
+#' @param mu Mean direction on S^1
+#' @param kappa Concentration parameter
+#' @param n_grid Number of points in the angular grid
+#' @return List with phi, density, and cdf
+build_vmf_s1_cdf <- function(mu, kappa, n_grid = 16385) {
+  if (!is.numeric(n_grid) || length(n_grid) != 1 || n_grid < 3) {
+    stop("`n_grid` must be an integer >= 3.")
+  }
+  phi <- seq(0, 2 * pi, length.out = n_grid)
+  density <- vmf_s1_angle_density(phi, mu, kappa)
+  dx <- diff(phi)
+  cdf <- numeric(n_grid)
+  cdf[-1] <- cumsum((density[-n_grid] + density[-1]) * dx / 2)
+  total_mass <- cdf[n_grid]
+  if (!is.finite(total_mass) || total_mass <= 0) {
+    stop("Failed to build a deterministic angular CDF for vMF on S^1.")
+  }
+  cdf <- cdf / total_mass
+  cdf[n_grid] <- 1
+  list(
+    mu = as.numeric(mu) / sqrt(sum(mu^2)),
+    kappa = kappa,
+    phi = phi,
+    density = density,
+    cdf = cdf
+  )
+}
+
+#' Evaluate a deterministic angular CDF approximation on S^1
+#' @param phi Angle(s)
+#' @param cdf_object Output of build_vmf_s1_cdf()
+#' @param tol Tolerance for identifying 2*pi
+#' @return CDF values
+evaluate_vmf_s1_cdf <- function(phi, cdf_object, tol = 1e-12) {
+  phi <- as.numeric(phi)
+  phi_wrapped <- phi %% (2 * pi)
+  is_full_turn <- abs(phi_wrapped) < tol & phi > 0
+  phi_wrapped[is_full_turn] <- 2 * pi
+  approx(
+    x = cdf_object$phi,
+    y = cdf_object$cdf,
+    xout = phi_wrapped,
+    method = "linear",
+    ties = "ordered",
+    rule = 2
+  )$y
+}
+
+#' Probability of a union of angular segments under vMF on S^1
+#' @param segments Matrix of segments
+#' @param cdf_object Output of build_vmf_s1_cdf()
+#' @return Probability mass of the segment union
+vmf_s1_segments_probability <- function(segments, cdf_object) {
+  if (length(segments) == 0 || nrow(segments) == 0) {
+    return(0)
+  }
+  sum(vapply(seq_len(nrow(segments)), function(i) {
+    evaluate_vmf_s1_cdf(segments[i, 2], cdf_object) -
+      evaluate_vmf_s1_cdf(segments[i, 1], cdf_object)
+  }, numeric(1)))
+}
+
+#' Exact deterministic distance profile for vMF on S^1 with chordal distance
+#' @param omega Reference point on S^1
+#' @param mu Mean direction on S^1
+#' @param kappa Concentration parameter
+#' @param t_values Chordal thresholds
+#' @param cdf_object Optional deterministic angular CDF
+#' @param cdf_grid_size Grid size used when cdf_object is not supplied
+#' @return Vector of probabilities
+theoretical_distance_profile_vmf_s1_chordal <- function(omega,
+                                                        mu,
+                                                        kappa,
+                                                        t_values,
+                                                        cdf_object = NULL,
+                                                        cdf_grid_size = 16385) {
+  if (is.matrix(omega)) {
+    n <- nrow(omega)
+    if (length(t_values) == 1) t_values <- rep(t_values, n)
+    stopifnot(length(t_values) == n)
+    return(vapply(seq_len(n), function(i) {
+      theoretical_distance_profile_vmf_s1_chordal(
+        omega = omega[i, ],
+        mu = mu,
+        kappa = kappa,
+        t_values = t_values[i],
+        cdf_object = cdf_object,
+        cdf_grid_size = cdf_grid_size
+      )
+    }, numeric(1)))
+  }
+
+  if (is.null(cdf_object)) {
+    cdf_object <- build_vmf_s1_cdf(mu, kappa, n_grid = cdf_grid_size)
+  }
+
+  t_values <- as.numeric(t_values)
+  vapply(t_values, function(t) {
+    if (t <= 0) return(0)
+    if (t >= 2) return(1)
+    segments <- s1_event_segments_chordal(omega, t)
+    vmf_s1_segments_probability(segments, cdf_object)
+  }, numeric(1))
+}
+
+#' Exact deterministic joint probability for chordal balls on S^1
+#' @param omega1 First point on S^1
+#' @param t1 First threshold
+#' @param omega2 Second point on S^1
+#' @param t2 Second threshold
+#' @param mu Mean direction on S^1
+#' @param kappa Concentration parameter
+#' @param cdf_object Optional deterministic angular CDF
+#' @param cdf_grid_size Grid size used when cdf_object is not supplied
+#' @return Joint probability
+joint_probability_vmf_s1_chordal_exact <- function(omega1,
+                                                   t1,
+                                                   omega2,
+                                                   t2,
+                                                   mu,
+                                                   kappa,
+                                                   cdf_object = NULL,
+                                                   cdf_grid_size = 16385) {
+  if (t1 <= 0 || t2 <= 0) return(0)
+  if (is.null(cdf_object)) {
+    cdf_object <- build_vmf_s1_cdf(mu, kappa, n_grid = cdf_grid_size)
+  }
+  seg1 <- s1_event_segments_chordal(omega1, t1)
+  seg2 <- s1_event_segments_chordal(omega2, t2)
+  overlap <- s1_intersect_segments(seg1, seg2)
+  vmf_s1_segments_probability(overlap, cdf_object)
+}
+
+#' Deterministic inversion of the S^1 chordal distance profile
+#' @param omega Reference point on S^1
+#' @param mu Mean direction on S^1
+#' @param kappa Concentration parameter
+#' @param u_values Probabilities in [0, 1]
+#' @param cdf_object Optional deterministic angular CDF
+#' @param cdf_grid_size Grid size used when cdf_object is not supplied
+#' @param tol Root-finding tolerance
+#' @return Vector of chordal thresholds t in [0, 2]
+invert_distance_profile_vmf_s1_chordal <- function(omega,
+                                                   mu,
+                                                   kappa,
+                                                   u_values,
+                                                   cdf_object = NULL,
+                                                   cdf_grid_size = 16385,
+                                                   tol = 1e-8) {
+  if (is.null(cdf_object)) {
+    cdf_object <- build_vmf_s1_cdf(mu, kappa, n_grid = cdf_grid_size)
+  }
+
+  u_values <- as.numeric(u_values)
+  vapply(u_values, function(u) {
+    if (u <= 0) return(0)
+    if (u >= 1) return(2)
+    root_fun <- function(t) {
+      theoretical_distance_profile_vmf_s1_chordal(
+        omega = omega,
+        mu = mu,
+        kappa = kappa,
+        t_values = t,
+        cdf_object = cdf_object,
+        cdf_grid_size = cdf_grid_size
+      ) - u
+    }
+    uniroot(root_fun, interval = c(0, 2), tol = tol)$root
+  }, numeric(1))
+}
+
+#' Deterministic covariance matrix for the simple vMF process on S^1
+#' @param omega_grid Matrix of points on S^1
+#' @param t_grid Vector of chordal thresholds
+#' @param mu Mean direction on S^1
+#' @param kappa Concentration parameter
+#' @param cdf_object Optional deterministic angular CDF
+#' @param cdf_grid_size Grid size used when cdf_object is not supplied
+#' @return Covariance matrix on the flattened grid
+cov_vmf_s1_simple_exact <- function(omega_grid,
+                                    t_grid,
+                                    mu,
+                                    kappa,
+                                    cdf_object = NULL,
+                                    cdf_grid_size = 16385) {
+  omega_grid <- as.matrix(omega_grid)
+  t_grid <- as.numeric(t_grid)
+  if (ncol(omega_grid) != 2) {
+    stop("`omega_grid` must have exactly 2 columns for exact S^1 covariance.")
+  }
+  if (any(t_grid < 0) || any(t_grid > 2)) {
+    stop("`t_grid` must lie in [0, 2] for chordal distance on S^1.")
+  }
+  if (is.null(cdf_object)) {
+    cdf_object <- build_vmf_s1_cdf(mu, kappa, n_grid = cdf_grid_size)
+  }
+
+  n_omega <- nrow(omega_grid)
+  n_t <- length(t_grid)
+  n_total <- n_omega * n_t
+  F_matrix <- t(vapply(seq_len(n_omega), function(i) {
+    theoretical_distance_profile_vmf_s1_chordal(
+      omega = omega_grid[i, ],
+      mu = mu,
+      kappa = kappa,
+      t_values = t_grid,
+      cdf_object = cdf_object,
+      cdf_grid_size = cdf_grid_size
+    )
+  }, numeric(n_t)))
+  F_vec <- as.vector(F_matrix)
+
+  segment_list <- vector("list", n_total)
+  for (t_idx in seq_len(n_t)) {
+    for (omega_idx in seq_len(n_omega)) {
+      flat_idx <- omega_idx + (t_idx - 1) * n_omega
+      segment_list[[flat_idx]] <- s1_event_segments_chordal(
+        omega = omega_grid[omega_idx, ],
+        t = t_grid[t_idx]
+      )
+    }
+  }
+
+  cov_matrix <- matrix(0, nrow = n_total, ncol = n_total)
+  for (i in seq_len(n_total)) {
+    for (j in i:n_total) {
+      joint_prob <- vmf_s1_segments_probability(
+        s1_intersect_segments(segment_list[[i]], segment_list[[j]]),
+        cdf_object = cdf_object
+      )
+      cov_value <- joint_prob - F_vec[i] * F_vec[j]
+      cov_matrix[i, j] <- cov_value
+      cov_matrix[j, i] <- cov_value
+    }
+  }
+
+  cov_matrix
+}
+
+#' Convert a distance threshold on the sphere into a dot-product threshold
+#' @param t Distance threshold
+#' @param distance_type Either "chordal" or "geodesic"
+#' @return Threshold a such that d(x, omega) <= t iff omega^T x >= a
+sphere_distance_to_dot_threshold <- function(t, distance_type = "chordal") {
+  distance_type <- match.arg(distance_type, choices = c("chordal", "geodesic"))
+  t <- as.numeric(t)
+  if (distance_type == "chordal") {
+    threshold <- 1 - (t^2) / 2
+  } else {
+    threshold <- cos(t)
+  }
+  pmin(pmax(threshold, -1), 1)
+}
+
+#' Exact projected density on S^2 for U = omega^T X under vMF(mu, kappa)
+#' @param u Scalar or vector in [-1, 1]
+#' @param omega Unit vector in R^3
+#' @param mu Mean direction in R^3
+#' @param kappa Concentration parameter
+#' @param log Whether to return log-density
+#' @return Density values of U
+vmf_s2_projected_density <- function(u, omega, mu, kappa, log = FALSE) {
+  omega <- as.numeric(omega)
+  mu <- as.numeric(mu)
+  if (length(omega) != 3 || length(mu) != 3) {
+    stop("`omega` and `mu` must both have length 3 for S^2 projected densities.")
+  }
+  omega <- omega / sqrt(sum(omega^2))
+  mu <- mu / sqrt(sum(mu^2))
+
+  u <- as.numeric(u)
+  out <- rep(if (log) -Inf else 0, length(u))
+  valid <- u >= -1 & u <= 1
+  if (!any(valid)) {
+    return(out)
+  }
+
+  m1 <- sum(mu * omega)
+  m1 <- pmin(pmax(m1, -1), 1)
+  radial_sq <- pmax(0, 1 - u[valid]^2)
+  tangential_sq <- max(0, 1 - m1^2)
+  lambda <- kappa * sqrt(radial_sq * tangential_sq)
+
+  log_density <- rotasym::c_vMF(p = 3, kappa = kappa, log = TRUE) +
+    kappa * m1 * u[valid] -
+    rotasym::c_vMF(p = 2, kappa = lambda, log = TRUE)
+
+  out[valid] <- if (log) log_density else exp(log_density)
+  out
+}
+
+#' Exact symmetric-arc probability for a von Mises law on S^1
+#' @param lambda Concentration parameter of the S^1 conditional law
+#' @param alpha Angle between the mean direction and the arc center
+#' @param b Dot-product threshold defining the arc
+#' @param rel.tol Relative tolerance for integrate()
+#' @param abs.tol Absolute tolerance for integrate()
+#' @param subdivisions Maximum subdivisions for integrate()
+#' @param tol Numerical tolerance
+#' @return P(cos(Phi) >= b) for Phi distributed as vM(alpha, lambda)
+vmf_s1_cap_probability_integral <- function(lambda,
+                                            alpha,
+                                            b,
+                                            rel.tol = 1e-8,
+                                            abs.tol = 1e-10,
+                                            subdivisions = 200L,
+                                            tol = 1e-10) {
+  lambda <- as.numeric(lambda)
+  alpha <- as.numeric(alpha)
+  b <- as.numeric(b)
+
+  if (b <= -1 + tol) return(1)
+  if (b >= 1 - tol) return(0)
+
+  delta <- acos(pmin(pmax(b, -1), 1))
+  if (delta >= pi - tol) return(1)
+  if (lambda <= tol) {
+    return(delta / pi)
+  }
+
+  i0_scaled <- besselI(lambda, nu = 0, expon.scaled = TRUE)
+  integrand <- function(phi) {
+    exp(lambda * (cos(phi - alpha) - 1)) / (2 * pi * i0_scaled)
+  }
+  integrate(
+    f = integrand,
+    lower = -delta,
+    upper = delta,
+    rel.tol = rel.tol,
+    abs.tol = abs.tol,
+    subdivisions = subdivisions
+  )$value
+}
+
+#' Exact marginal distance profile on S^2 under vMF by 1D integration
+#' @param omega Reference point on S^2
+#' @param mu Mean direction in R^3
+#' @param kappa Concentration parameter
+#' @param t_values Distance thresholds
+#' @param distance_type Either "chordal" or "geodesic"
+#' @param rel.tol Relative tolerance for integrate()
+#' @param abs.tol Absolute tolerance for integrate()
+#' @param subdivisions Maximum subdivisions for integrate()
+#' @return Vector of probabilities P(d(X, omega) <= t)
+distance_profile_vmf_s2_integral <- function(omega,
+                                             mu,
+                                             kappa,
+                                             t_values,
+                                             distance_type = "chordal",
+                                             rel.tol = 1e-8,
+                                             abs.tol = 1e-10,
+                                             subdivisions = 200L) {
+  omega <- as.numeric(omega)
+  mu <- as.numeric(mu)
+  if (length(omega) != 3 || length(mu) != 3) {
+    stop("`omega` and `mu` must both have length 3 for S^2 distance profiles.")
+  }
+
+  if (is.matrix(omega)) {
+    n <- nrow(omega)
+    if (length(t_values) == 1) t_values <- rep(t_values, n)
+    stopifnot(length(t_values) == n)
+    return(vapply(seq_len(n), function(i) {
+      distance_profile_vmf_s2_integral(
+        omega = omega[i, ],
+        mu = mu,
+        kappa = kappa,
+        t_values = t_values[i],
+        distance_type = distance_type,
+        rel.tol = rel.tol,
+        abs.tol = abs.tol,
+        subdivisions = subdivisions
+      )
+    }, numeric(1)))
+  }
+
+  omega <- omega / sqrt(sum(omega^2))
+  mu <- mu / sqrt(sum(mu^2))
+  distance_type <- match.arg(distance_type, choices = c("chordal", "geodesic"))
+  t_values <- as.numeric(t_values)
+
+  vapply(t_values, function(t) {
+    a <- sphere_distance_to_dot_threshold(t, distance_type)
+    if (a <= -1) return(1)
+    if (a >= 1) return(0)
+    integrate(
+      f = function(u) vmf_s2_projected_density(u, omega = omega, mu = mu, kappa = kappa),
+      lower = a,
+      upper = 1,
+      rel.tol = rel.tol,
+      abs.tol = abs.tol,
+      subdivisions = subdivisions
+    )$value
+  }, numeric(1))
+}
+
+#' Exact joint probability for two distance balls on S^2 under vMF by conditioning
+#' @param omega1 First point on S^2
+#' @param t1 First distance threshold
+#' @param omega2 Second point on S^2
+#' @param t2 Second distance threshold
+#' @param mu Mean direction in R^3
+#' @param kappa Concentration parameter
+#' @param distance_type Either "chordal" or "geodesic"
+#' @param rel.tol_outer Relative tolerance for the outer integral
+#' @param abs.tol_outer Absolute tolerance for the outer integral
+#' @param rel.tol_inner Relative tolerance for the inner S^1 integral
+#' @param abs.tol_inner Absolute tolerance for the inner S^1 integral
+#' @param subdivisions_outer Maximum subdivisions for the outer integral
+#' @param subdivisions_inner Maximum subdivisions for the inner integral
+#' @param tol Numerical tolerance
+#' @return Joint probability P(d(X, omega1) <= t1, d(X, omega2) <= t2)
+joint_probability_vmf_s2_simple_integral <- function(omega1,
+                                                     t1,
+                                                     omega2,
+                                                     t2,
+                                                     mu,
+                                                     kappa,
+                                                     distance_type = "chordal",
+                                                     rel.tol_outer = 1e-7,
+                                                     abs.tol_outer = 1e-9,
+                                                     rel.tol_inner = 1e-8,
+                                                     abs.tol_inner = 1e-10,
+                                                     subdivisions_outer = 200L,
+                                                     subdivisions_inner = 200L,
+                                                     tol = 1e-10) {
+  omega1 <- as.numeric(omega1)
+  omega2 <- as.numeric(omega2)
+  mu <- as.numeric(mu)
+  if (length(omega1) != 3 || length(omega2) != 3 || length(mu) != 3) {
+    stop("`omega1`, `omega2`, and `mu` must all have length 3 for S^2 exact probabilities.")
+  }
+  omega1 <- omega1 / sqrt(sum(omega1^2))
+  omega2 <- omega2 / sqrt(sum(omega2^2))
+  mu <- mu / sqrt(sum(mu^2))
+  distance_type <- match.arg(distance_type, choices = c("chordal", "geodesic"))
+
+  a1 <- sphere_distance_to_dot_threshold(t1, distance_type)
+  a2 <- sphere_distance_to_dot_threshold(t2, distance_type)
+  if (a1 >= 1 || a2 >= 1) return(0)
+  if (a1 <= -1 && a2 <= -1) return(1)
+
+  rho <- sum(omega1 * omega2)
+  rho <- pmin(pmax(rho, -1), 1)
+  m1 <- sum(mu * omega1)
+  m1 <- pmin(pmax(m1, -1), 1)
+
+  density_u <- function(u) {
+    vmf_s2_projected_density(u, omega = omega1, mu = mu, kappa = kappa)
+  }
+
+  if (rho >= 1 - tol) {
+    lower <- max(a1, a2, -1)
+    if (lower >= 1) return(0)
+    return(integrate(
+      f = density_u,
+      lower = lower,
+      upper = 1,
+      rel.tol = rel.tol_outer,
+      abs.tol = abs.tol_outer,
+      subdivisions = subdivisions_outer
+    )$value)
+  }
+
+  if (rho <= -1 + tol) {
+    lower <- max(a1, -1)
+    upper <- min(1, -a2)
+    if (upper <= lower + tol) return(0)
+    return(integrate(
+      f = density_u,
+      lower = lower,
+      upper = upper,
+      rel.tol = rel.tol_outer,
+      abs.tol = abs.tol_outer,
+      subdivisions = subdivisions_outer
+    )$value)
+  }
+
+  denom_rho <- sqrt(max(0, 1 - rho^2))
+  denom_mu <- sqrt(max(0, 1 - m1^2))
+  cos_alpha <- if (denom_mu <= tol) {
+    1
+  } else {
+    (sum(mu * omega2) - m1 * rho) / (denom_mu * denom_rho)
+  }
+  alpha <- acos(pmin(pmax(cos_alpha, -1), 1))
+
+  lower <- max(a1, -1)
+  if (lower >= 1) return(0)
+
+  integrand <- function(u_vec) {
+    vapply(u_vec, function(u) {
+      radial <- sqrt(max(0, 1 - u^2))
+      if (radial <= tol) {
+        inner_prob <- as.numeric(rho * u >= a2 - tol)
+      } else {
+        b <- (a2 - rho * u) / (denom_rho * radial)
+        lambda <- kappa * radial * denom_mu
+        inner_prob <- vmf_s1_cap_probability_integral(
+          lambda = lambda,
+          alpha = alpha,
+          b = b,
+          rel.tol = rel.tol_inner,
+          abs.tol = abs.tol_inner,
+          subdivisions = subdivisions_inner,
+          tol = tol
+        )
+      }
+      density_u(u) * inner_prob
+    }, numeric(1))
+  }
+
+  integrate(
+    f = integrand,
+    lower = lower,
+    upper = 1,
+    rel.tol = rel.tol_outer,
+    abs.tol = abs.tol_outer,
+    subdivisions = subdivisions_outer
+  )$value
+}
+
+#' Exact covariance matrix on S^2 for the simple vMF process by nested integration
+#' @param omega_grid Matrix of points on S^2
+#' @param t_grid Vector of distance thresholds
+#' @param mu Mean direction in R^3
+#' @param kappa Concentration parameter
+#' @param distance_type Either "chordal" or "geodesic"
+#' @param rel.tol_outer Relative tolerance for outer integrals
+#' @param abs.tol_outer Absolute tolerance for outer integrals
+#' @param rel.tol_inner Relative tolerance for inner S^1 integrals
+#' @param abs.tol_inner Absolute tolerance for inner S^1 integrals
+#' @param subdivisions_outer Maximum subdivisions for outer integrals
+#' @param subdivisions_inner Maximum subdivisions for inner integrals
+#' @param tol Numerical tolerance
+#' @return Covariance matrix under the simple null
+cov_vmf_s2_simple_integral <- function(omega_grid,
+                                       t_grid,
+                                       mu,
+                                       kappa,
+                                       distance_type = "chordal",
+                                       rel.tol_outer = 1e-7,
+                                       abs.tol_outer = 1e-9,
+                                       rel.tol_inner = 1e-8,
+                                       abs.tol_inner = 1e-10,
+                                       subdivisions_outer = 200L,
+                                       subdivisions_inner = 200L,
+                                       tol = 1e-10) {
+  omega_grid <- as.matrix(omega_grid)
+  t_grid <- as.numeric(t_grid)
+  mu <- as.numeric(mu)
+  if (ncol(omega_grid) != 3 || length(mu) != 3) {
+    stop("`omega_grid` must have 3 columns and `mu` must have length 3 for S^2 exact covariance.")
+  }
+
+  n_omega <- nrow(omega_grid)
+  n_t <- length(t_grid)
+  n_total <- n_omega * n_t
+
+  F_matrix <- t(vapply(seq_len(n_omega), function(i) {
+    distance_profile_vmf_s2_integral(
+      omega = omega_grid[i, ],
+      mu = mu,
+      kappa = kappa,
+      t_values = t_grid,
+      distance_type = distance_type,
+      rel.tol = rel.tol_outer,
+      abs.tol = abs.tol_outer,
+      subdivisions = subdivisions_outer
+    )
+  }, numeric(n_t)))
+  F_vec <- as.vector(F_matrix)
+
+  omega_idx_vec <- ((0:(n_total - 1)) %% n_omega) + 1
+  t_idx_vec <- ((0:(n_total - 1)) %/% n_omega) + 1
+  cov_matrix <- matrix(0, nrow = n_total, ncol = n_total)
+
+  for (i in seq_len(n_total)) {
+    omega1 <- omega_grid[omega_idx_vec[i], ]
+    t1 <- t_grid[t_idx_vec[i]]
+    for (j in i:n_total) {
+      joint_prob <- joint_probability_vmf_s2_simple_integral(
+        omega1 = omega1,
+        t1 = t1,
+        omega2 = omega_grid[omega_idx_vec[j], ],
+        t2 = t_grid[t_idx_vec[j]],
+        mu = mu,
+        kappa = kappa,
+        distance_type = distance_type,
+        rel.tol_outer = rel.tol_outer,
+        abs.tol_outer = abs.tol_outer,
+        rel.tol_inner = rel.tol_inner,
+        abs.tol_inner = abs.tol_inner,
+        subdivisions_outer = subdivisions_outer,
+        subdivisions_inner = subdivisions_inner,
+        tol = tol
+      )
+      cov_value <- joint_prob - F_vec[i] * F_vec[j]
+      cov_matrix[i, j] <- cov_value
+      cov_matrix[j, i] <- cov_value
+    }
+  }
+
+  cov_matrix
+}
+
 ## ---------------------------------------------------------------------------
 #' Compute MLE estimator xi = kappa * mu for vMF using movMF
 #' @param data matrix of sample rows (n x q) with each row a point on sphere
@@ -164,6 +993,11 @@ compute_mle_xi <- function(data) {
   xi_hat <- as.vector(fit$theta[1, ])
   return(xi_hat)
 }
+
+
+# -------------------------------------------------------------------------
+# BAHADUR helpers (MLE, psi, dot_psi and trajectory analysis)
+# -------------------------------------------------------------------------
 
 ## ---------------------------------------------------------------------------
 #' Theoretical distance profile for von Mises-Fisher distribution
@@ -185,6 +1019,9 @@ theoretical_distance_profile_vmf <- function(omega, mu, kappa, t_values, distanc
       theoretical_distance_profile_vmf(omega[i, ], mu, kappa, t_values[i], distance_type)
     }))
   }
+  if (length(mu) == 2 && distance_type == "chordal") {
+    return(theoretical_distance_profile_vmf_s1_chordal(omega, mu, kappa, t_values))
+  }
   rho <- sum(mu * omega)  # μ'ω (cosine of angle between μ and ω)
   q <- length(mu)  # Ambient dimension (for S^{q-1} embedded in R^q)
   sapply(t_values, function(t) {
@@ -203,6 +1040,323 @@ theoretical_distance_profile_vmf <- function(omega, mu, kappa, t_values, distanc
                                    rel.tol = 1e-8, abs.tol = 1e-10)$value
     return(1 - cdf_at_threshold)
   })
+}
+
+#' Fast exact distance profile on S^2 under vMF by direct projected-density integration
+#'
+#' This is mathematically equivalent to `theoretical_distance_profile_vmf()` in the
+#' S^2 case, but it hoists all threshold-independent terms out of the integrand and
+#' replaces repeated evaluations of the S^1 normalizing constant by `besselI`.
+#' The goal is purely computational: preserve the same exact one-dimensional
+#' integration while reducing the per-call overhead inside the multiplier bootstrap.
+#'
+#' @param omega Reference point on S^2
+#' @param mu Mean direction in R^3
+#' @param kappa Concentration parameter
+#' @param t_values Vector of distance thresholds
+#' @param distance_type Either "chordal" or "geodesic"
+#' @param rel.tol Relative tolerance for integrate()
+#' @param abs.tol Absolute tolerance for integrate()
+#' @return Vector of probabilities P(d(X, omega) <= t)
+theoretical_distance_profile_vmf_s2_fast <- function(omega,
+                                                     mu,
+                                                     kappa,
+                                                     t_values,
+                                                     distance_type = "chordal",
+                                                     rel.tol = 1e-8,
+                                                     abs.tol = 1e-10) {
+  omega <- as.numeric(omega)
+  mu <- as.numeric(mu)
+  if (length(omega) != 3L || length(mu) != 3L) {
+    stop("`omega` and `mu` must both have length 3 for S^2 vMF distance profiles.")
+  }
+
+  omega <- omega / sqrt(sum(omega^2))
+  mu <- mu / sqrt(sum(mu^2))
+  distance_type <- match.arg(distance_type, choices = c("chordal", "geodesic"))
+  t_values <- as.numeric(t_values)
+
+  rho <- sum(mu * omega)
+  rho <- pmin(pmax(rho, -1), 1)
+  tangential_norm <- sqrt(pmax(0, 1 - rho^2))
+  log_c3 <- rotasym::c_vMF(p = 3, kappa = kappa, log = TRUE)
+
+  vapply(t_values, function(t) {
+    threshold <- if (identical(distance_type, "chordal")) {
+      1 - (t^2) / 2
+    } else {
+      cos(t)
+    }
+
+    if (!is.finite(threshold) || threshold <= -1) {
+      return(1)
+    }
+    if (threshold >= 1) {
+      return(0)
+    }
+
+    density_u <- function(u) {
+      lambda <- kappa * tangential_norm * sqrt(pmax(0, 1 - u^2))
+      log_i0 <- ifelse(
+        lambda <= 0,
+        0,
+        log(besselI(lambda, nu = 0, expon.scaled = TRUE)) + lambda
+      )
+      exp(log_c3 + kappa * rho * u + log(2 * pi) + log_i0)
+    }
+
+    cdf_at_threshold <- integrate(
+      f = density_u,
+      lower = -1 + 1e-8,
+      upper = threshold,
+      rel.tol = rel.tol,
+      abs.tol = abs.tol
+    )$value
+
+    1 - cdf_at_threshold
+  }, numeric(1))
+}
+
+build_vmf_s2_u_grid <- function(n_u = 4097L) {
+  n_u <- as.integer(n_u)
+  if (!is.finite(n_u) || n_u < 17L || n_u %% 2L != 1L) {
+    stop("`n_u` must be an odd integer >= 17.")
+  }
+
+  u_grid <- seq(-1, 1, length.out = n_u)
+  list(
+    u = u_grid,
+    du = u_grid[[2]] - u_grid[[1]],
+    sqrt_one_minus_u2 = sqrt(pmax(0, 1 - u_grid^2))
+  )
+}
+
+vmf_s2_projected_density_matrix <- function(rho,
+                                            kappa,
+                                            u_grid_object) {
+  rho <- as.numeric(rho)
+  rho <- pmin(pmax(rho, -1), 1)
+  n_u <- length(u_grid_object$u)
+  n_rho <- length(rho)
+
+  if (n_rho == 0L) {
+    return(matrix(0, nrow = n_u, ncol = 0L))
+  }
+
+  if (kappa <= 1e-12) {
+    return(matrix(0.5, nrow = n_u, ncol = n_rho))
+  }
+
+  sqrt_one_minus_rho2 <- sqrt(pmax(0, 1 - rho^2))
+  lambda <- kappa * outer(u_grid_object$sqrt_one_minus_u2, sqrt_one_minus_rho2)
+  log_i0 <- matrix(0, nrow = n_u, ncol = n_rho)
+  positive_lambda <- lambda > 1e-14
+  log_i0[positive_lambda] <- log(besselI(
+    lambda[positive_lambda],
+    nu = 0,
+    expon.scaled = TRUE
+  )) + lambda[positive_lambda]
+
+  log_sinh_kappa <- kappa + log1p(-exp(-2 * kappa)) - log(2)
+  log_const <- log(kappa) - log(2) - log_sinh_kappa
+  log_density <- log_const +
+    kappa * outer(u_grid_object$u, rho) +
+    log_i0
+
+  exp(log_density)
+}
+
+build_vmf_s2_projected_cdf_matrix <- function(rho,
+                                              kappa,
+                                              n_u = 4097L) {
+  u_grid_object <- build_vmf_s2_u_grid(n_u)
+  density_matrix <- vmf_s2_projected_density_matrix(
+    rho = rho,
+    kappa = kappa,
+    u_grid_object = u_grid_object
+  )
+  n_u <- nrow(density_matrix)
+  n_rho <- ncol(density_matrix)
+
+  if (n_rho == 0L) {
+    return(list(
+      u = u_grid_object$u,
+      cdf = matrix(0, nrow = n_u, ncol = 0L)
+    ))
+  }
+
+  increments <- 0.5 * (
+    density_matrix[-1, , drop = FALSE] +
+      density_matrix[-n_u, , drop = FALSE]
+  ) * u_grid_object$du
+  cdf_matrix <- rbind(rep(0, n_rho), apply(increments, 2, cumsum))
+  cdf_matrix <- sweep(cdf_matrix, 2, cdf_matrix[n_u, ], "/", check.margin = FALSE)
+  cdf_matrix[n_u, ] <- 1
+
+  list(
+    u = u_grid_object$u,
+    cdf = cdf_matrix
+  )
+}
+
+interpolate_vmf_s2_upper_tail <- function(cdf_values,
+                                          u_grid,
+                                          a_values) {
+  a_values <- pmin(pmax(as.numeric(a_values), -1), 1)
+  n_u <- length(u_grid)
+  if (n_u < 2L) {
+    stop("`u_grid` must have length at least 2.")
+  }
+
+  du <- u_grid[[2]] - u_grid[[1]]
+  scaled_position <- (a_values - u_grid[[1]]) / du
+  left_index <- floor(scaled_position) + 1L
+  left_index <- pmin(pmax(left_index, 1L), n_u - 1L)
+  lambda <- scaled_position - (left_index - 1L)
+  lambda <- pmin(pmax(lambda, 0), 1)
+
+  cdf_left <- cdf_values[left_index]
+  cdf_right <- cdf_values[left_index + 1L]
+  cdf_at_a <- (1 - lambda) * cdf_left + lambda * cdf_right
+
+  cdf_at_a[a_values <= -1] <- 0
+  cdf_at_a[a_values >= 1] <- 1
+  1 - cdf_at_a
+}
+
+distance_profile_vmf_s2_grid <- function(omega_grid,
+                                         mu,
+                                         kappa,
+                                         t_grid,
+                                         distance_type = "geodesic",
+                                         n_u = 4097L) {
+  omega_grid <- as.matrix(omega_grid)
+  mu <- as.numeric(mu)
+
+  if (ncol(omega_grid) != 3L || length(mu) != 3L) {
+    stop("`omega_grid` must have 3 columns and `mu` must have length 3.")
+  }
+
+  omega_norms <- sqrt(rowSums(omega_grid^2))
+  if (any(omega_norms <= 0)) {
+    stop("`omega_grid` must contain nonzero rows.")
+  }
+  omega_grid <- omega_grid / omega_norms
+  mu <- mu / sqrt(sum(mu^2))
+  distance_type <- match.arg(distance_type, choices = c("chordal", "geodesic"))
+  t_grid <- as.numeric(t_grid)
+
+  rho <- as.numeric(omega_grid %*% mu)
+  cdf_object <- build_vmf_s2_projected_cdf_matrix(
+    rho = rho,
+    kappa = kappa,
+    n_u = n_u
+  )
+  a_values <- if (identical(distance_type, "geodesic")) {
+    cos(t_grid)
+  } else {
+    1 - (t_grid^2) / 2
+  }
+  a_values <- pmin(pmax(a_values, -1), 1)
+
+  output <- t(vapply(seq_along(rho), function(i) {
+    interpolate_vmf_s2_upper_tail(
+      cdf_values = cdf_object$cdf[, i],
+      u_grid = cdf_object$u,
+      a_values = a_values
+    )
+  }, numeric(length(t_grid))))
+
+  output[, t_grid <= 0] <- 0
+  if (identical(distance_type, "geodesic")) {
+    output[, t_grid >= pi] <- 1
+  } else {
+    output[, t_grid >= 2] <- 1
+  }
+
+  output
+}
+
+distance_profile_vmf_s2_cvm_grid <- function(X,
+                                             mu,
+                                             kappa,
+                                             n_u = 4097L) {
+  X <- as.matrix(X)
+  mu <- as.numeric(mu)
+
+  if (ncol(X) != 3L || length(mu) != 3L) {
+    stop("`X` must have 3 columns and `mu` must have length 3.")
+  }
+
+  X_norms <- sqrt(rowSums(X^2))
+  if (any(X_norms <= 0)) {
+    stop("`X` must contain nonzero rows.")
+  }
+  X <- X / X_norms
+  mu <- mu / sqrt(sum(mu^2))
+
+  rho <- as.numeric(X %*% mu)
+  a_matrix <- X %*% t(X)
+  a_matrix <- pmin(pmax(a_matrix, -1), 1)
+
+  cdf_object <- build_vmf_s2_projected_cdf_matrix(
+    rho = rho,
+    kappa = kappa,
+    n_u = n_u
+  )
+
+  t(vapply(seq_along(rho), function(i) {
+    interpolate_vmf_s2_upper_tail(
+      cdf_values = cdf_object$cdf[, i],
+      u_grid = cdf_object$u,
+      a_values = a_matrix[i, ]
+    )
+  }, numeric(nrow(X))))
+}
+
+validate_vmf_s2_grid_profile <- function(n_checks = 200,
+                                         kappa_values = c(0.5, 2, 5),
+                                         n_u = 4097L,
+                                         distance_type = "geodesic",
+                                         seed = 1) {
+  set.seed(seed)
+  errors <- numeric(0)
+
+  for (kappa in kappa_values) {
+    mu <- stats::rnorm(3)
+    mu <- mu / sqrt(sum(mu^2))
+    omega_grid <- matrix(stats::rnorm(n_checks * 3), ncol = 3)
+    omega_grid <- omega_grid / sqrt(rowSums(omega_grid^2))
+    t_max <- if (identical(distance_type, "geodesic")) pi else 2
+    t_grid <- stats::runif(n_checks, 0, t_max)
+
+    fast_matrix <- distance_profile_vmf_s2_grid(
+      omega_grid = omega_grid,
+      mu = mu,
+      kappa = kappa,
+      t_grid = t_grid,
+      distance_type = distance_type,
+      n_u = n_u
+    )
+    fast_values <- diag(fast_matrix)
+    exact_values <- vapply(seq_len(n_checks), function(i) {
+      distance_profile_vmf_s2_integral(
+        omega = omega_grid[i, ],
+        mu = mu,
+        kappa = kappa,
+        t_values = t_grid[i],
+        distance_type = distance_type
+      )
+    }, numeric(1))
+
+    errors <- c(errors, abs(fast_values - exact_values))
+  }
+
+  c(
+    max_error = max(errors),
+    mean_error = mean(errors),
+    q95_error = unname(stats::quantile(errors, probs = 0.95, names = FALSE, type = 8))
+  )
 }
 
 ## ---------------------------------------------------------------------------
@@ -370,17 +1524,19 @@ dot_psi_xi <- function(xi, q) {
 ## NOTE: `compute_mle_xi` was moved to `R/utils.R` to centralize utilities.
 ## Do not re-define it here — scripts should source `R/utils.R` to import it.
 
+# -------------------------------------------------------------------------
+# BAHADUR: Single trajectory analysis and helpers
+# -------------------------------------------------------------------------
 #' Single trajectory analysis
 analyze_single_trajectory <- function(mu_true, kappa_true, sample_sizes, trajectory_id) {
   q <- length(mu_true) - 1
   xi_true <- kappa_true * mu_true
-  max_n <- max(sample_sizes)
-  full_sample <- r_vMF(max_n, mu_true, kappa_true)
   
   results <- data.frame()
   
   for (n in sample_sizes) {
-    current_sample <- full_sample[1:n, , drop = FALSE]
+    # Draw an independent sample for each n (no cumulative sample growth)
+    current_sample <- r_vMF(n, mu_true, kappa_true)
     xi_hat <- compute_mle_xi(current_sample)
     quantity_1 <- sqrt(n) * (xi_hat - xi_true)
     
@@ -415,9 +1571,5 @@ analyze_single_trajectory <- function(mu_true, kappa_true, sample_sizes, traject
   
   return(results)
 }
-
-
-
-
 
 cat("Utility functions loaded successfully!\n")

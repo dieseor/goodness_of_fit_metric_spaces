@@ -6,7 +6,14 @@
 # ============================================================================
 
 # Load generic utilities
-source(file.path("utils.R"))
+utils_path <- if (file.exists("utils.R")) {
+  "utils.R"
+} else if (file.exists(file.path("..", "utils.R"))) {
+  file.path("..", "utils.R")
+} else {
+  stop("Could not find utils.R in current directory or parent directory.")
+}
+source(utils_path)
 
 
 # Load required libraries
@@ -175,8 +182,38 @@ row_cov_vmf <- function(idx, omega_grid, t_grid, mu, kappa, distance_type = "cho
   return(cov_row)
 }
 
- 
-cov_vmf <- function(omega_grid, t_grid, mu, kappa, distance_type = "chordal", n_mc_samples = 1000, n_cores = 10, seed = NULL, upper_triangle = FALSE, mc_samples = NULL, h0 = c("simple","composite"), unknown_param = NULL) {
+report_covariance_diagnostics <- function(cov_matrix, tol = 1e-10) {
+  cov_diag <- validate_covariance_matrix(
+    cov_matrix,
+    symmetry_tol = tol,
+    psd_tol = tol,
+    stop_on_failure = FALSE
+  )
+
+  cat("Covariance matrix diagnostics:\n")
+  cat("  Symmetry gap:", format(cov_diag$symmetry_gap, scientific = TRUE), "\n")
+  cat(
+    "  Eigenvalue range: [",
+    format(cov_diag$min_eigenvalue, scientific = TRUE),
+    ", ",
+    format(cov_diag$max_eigenvalue, scientific = TRUE),
+    "]\n",
+    sep = ""
+  )
+  cat("  Negative eigenvalues:", cov_diag$negative_eigenvalues, "\n")
+  if (isTRUE(cov_diag$valid)) {
+    cat("  ✓ Matrix passes numerical symmetry/PSD checks\n")
+  } else {
+    cat("  WARNING: Matrix fails numerical symmetry/PSD checks\n")
+  }
+  cat("\n")
+
+  cov_diag
+}
+
+cov_vmf <- function(omega_grid, t_grid, mu, kappa, distance_type = "chordal", n_mc_samples = 1000, n_cores = 10, seed = NULL, upper_triangle = FALSE, mc_samples = NULL, h0 = c("simple","composite"), unknown_param = NULL, cov_method = c("mc", "exact_s1_simple", "integral_s2_simple"), cdf_grid_size = 16385) {
+  omega_grid <- as.matrix(omega_grid)
+  t_grid <- as.numeric(t_grid)
   n_omega <- nrow(omega_grid)
   n_t <- length(t_grid)
   n_total <- n_omega * n_t
@@ -184,8 +221,66 @@ cov_vmf <- function(omega_grid, t_grid, mu, kappa, distance_type = "chordal", n_
   
   # Normalize h0 and unknown_param defaults
   h0 <- match.arg(h0)
+  cov_method <- match.arg(cov_method)
   cat("Creating vMF covariance matrix of size", n_total, "x", n_total, "\n")
   cat("Using", n_cores, "cores\n")
+
+  if (cov_method == "exact_s1_simple") {
+    if (length(mu) != 2) {
+      stop("`cov_method = 'exact_s1_simple'` is only available when `length(mu) == 2`.")
+    }
+    if (ncol(omega_grid) != 2) {
+      stop("`cov_method = 'exact_s1_simple'` requires `omega_grid` to have exactly 2 columns.")
+    }
+    if (distance_type != "chordal") {
+      stop("`cov_method = 'exact_s1_simple'` is only available for `distance_type = 'chordal'`.")
+    }
+    if (h0 != "simple") {
+      stop("`cov_method = 'exact_s1_simple'` is only available for `h0 = 'simple'`.")
+    }
+
+    cat("Using deterministic S1 covariance branch for the simple null.\n")
+    start_time <- Sys.time()
+    cov_matrix <- cov_vmf_s1_simple_exact(
+      omega_grid = omega_grid,
+      t_grid = t_grid,
+      mu = mu,
+      kappa = kappa,
+      cdf_grid_size = cdf_grid_size
+    )
+    end_time <- Sys.time()
+    time_elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+    cat("Covariance matrix created in", round(time_elapsed, 1), "seconds!\n\n")
+    report_covariance_diagnostics(cov_matrix)
+    return(cov_matrix)
+  }
+
+  if (cov_method == "integral_s2_simple") {
+    if (length(mu) != 3) {
+      stop("`cov_method = 'integral_s2_simple'` is only available when `length(mu) == 3`.")
+    }
+    if (ncol(omega_grid) != 3) {
+      stop("`cov_method = 'integral_s2_simple'` requires `omega_grid` to have exactly 3 columns.")
+    }
+    if (h0 != "simple") {
+      stop("`cov_method = 'integral_s2_simple'` is only available for `h0 = 'simple'`.")
+    }
+
+    cat("Using exact-integral S2 covariance branch for the simple null.\n")
+    start_time <- Sys.time()
+    cov_matrix <- cov_vmf_s2_simple_integral(
+      omega_grid = omega_grid,
+      t_grid = t_grid,
+      mu = mu,
+      kappa = kappa,
+      distance_type = distance_type
+    )
+    end_time <- Sys.time()
+    time_elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
+    cat("Covariance matrix created in", round(time_elapsed, 1), "seconds!\n\n")
+    report_covariance_diagnostics(cov_matrix)
+    return(cov_matrix)
+  }
   
   # Pre-compute A_q(κ)
   A_q_kappa <- besselI(kappa, nu = (q + 1) / 2, expon.scaled = TRUE) / 
@@ -214,15 +309,17 @@ cov_vmf <- function(omega_grid, t_grid, mu, kappa, distance_type = "chordal", n_
   # Setup parallel cluster
   # Force single-threaded BLAS/OpenMP to reduce non-deterministic numeric operations across processes
   Sys.setenv(OPENBLAS_NUM_THREADS = "1", MKL_NUM_THREADS = "1")
+  utils_path_worker <- normalizePath(utils_path, winslash = "/", mustWork = TRUE)
   cl <- makeCluster(n_cores)
   on.exit(stopCluster(cl), add = TRUE)  # Ensure cluster is stopped even if interrupted
   # Set seed for workers if provided, else default to 42
   clusterSetRNGStream(cl, iseed = ifelse(is.null(seed), 42, seed))
+  clusterExport(cl, c("utils_path_worker"), envir = environment())
   
   # Export functions and variables to workers
   clusterEvalQ(cl, {
     library(rotasym)
-    source(file.path("utils.R"))
+    source(utils_path_worker)
     # Do not source vmf_cov_functions.R on workers to avoid function definition collisions
     # Exporting the master functions via clusterExport below ensures workers execute
   })
@@ -237,9 +334,6 @@ cov_vmf <- function(omega_grid, t_grid, mu, kappa, distance_type = "chordal", n_
     }, silent = TRUE)
   })
 
-  # Ensure omega_grid is a matrix and t_grid is a vector before exporting
-  omega_grid <- as.matrix(omega_grid)
-  t_grid <- as.numeric(t_grid)
   # Index mapping for flattened grid columns
   omega_idx_vec <- ((0:(n_total - 1)) %% n_omega) + 1
   t_idx_vec <- ((0:(n_total - 1)) %/% n_omega) + 1
@@ -331,27 +425,7 @@ cov_vmf <- function(omega_grid, t_grid, mu, kappa, distance_type = "chordal", n_
   time_elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
   
   cat("Covariance matrix created in", round(time_elapsed, 1), "seconds!\n\n")
-  
-  # Check positive definiteness (for diagnostic purposes only)
-  eigs <- eigen(cov_matrix, symmetric = TRUE, only.values = TRUE)$values
-  min_eig <- min(eigs)
-  max_eig <- max(eigs)
-  n_negative <- sum(eigs < -1e-10)
-  
-  cat("Covariance matrix diagnostics:\n")
-  cat("  Eigenvalue range: [", format(min_eig, scientific = TRUE), ", ", 
-      format(max_eig, scientific = TRUE), "]\n", sep = "")
-  cat("  Negative eigenvalues:", n_negative, "\n")
-  
-  if (n_negative > 0) {
-    # Matrix has negative eigenvalues; do not auto-correct the covariance matrix here
-    cat("  WARNING: Matrix has", n_negative, "negative eigenvalues!\n")
-    cat("  Note: No automatic covariance correction is applied; returning matrix as-is.\n")
-  } else {
-    cat("  ✓ Matrix is positive semi-definite\n")
-  }
-  cat("\n")
-  # Parity checks removed.
+  report_covariance_diagnostics(cov_matrix)
   
   return(cov_matrix)
 }
@@ -377,14 +451,19 @@ simulate_limit_gaussian_vmf <- function(omega_grid, t_grid, mu, kappa,
                                        n_cores = 10,
                                        seed = NULL,
                                        h0 = c("simple","composite"),
-                                       unknown_param = NULL) {
+                                       unknown_param = NULL,
+                                       cov_method = c("mc", "exact_s1_simple", "integral_s2_simple"),
+                                       cdf_grid_size = 16385) {
   h0 <- match.arg(h0)
+  cov_method <- match.arg(cov_method)
   cat("=== Simulating Gaussian Process Limit for vMF Distribution ===\n")
   
   # Create covariance matrix; for composite null, create_covariance_matrix_vmf
   # will accept the h0/unknown_param arguments.
   cov_matrix <- cov_vmf(omega_grid, t_grid, mu, kappa,
-                                            distance_type, n_mc_samples, n_cores, seed = seed, h0 = h0, unknown_param = unknown_param)
+                        distance_type, n_mc_samples, n_cores, seed = seed,
+                        h0 = h0, unknown_param = unknown_param,
+                        cov_method = cov_method, cdf_grid_size = cdf_grid_size)
   
   # Use generic function to simulate
   supremum_values <- simulate_limit_gaussian(cov_matrix, M)
@@ -430,20 +509,22 @@ simulate_empirical_process_vmf <- function(omega_grid, t_grid, n, mu, kappa,
   }
   
   # Setup parallel cluster
+  utils_path_worker <- normalizePath(utils_path, winslash = "/", mustWork = TRUE)
   cl <- makeCluster(n_cores)
   on.exit(stopCluster(cl), add = TRUE)  # Ensure cluster is stopped even if interrupted
   # Allow caller to pass seed for reproducibility; fallback to 123
   clusterSetRNGStream(cl, iseed = ifelse(is.null(seed), 123, seed))
+  clusterExport(cl, c("utils_path_worker"), envir = environment())
   
   # Setup workers with correct directory and sources
-  clusterEvalQ(cl, source("utils.R"))
+  clusterEvalQ(cl, source(utils_path_worker))
   
   # Export function to workers
   clusterEvalQ(cl, {
     library(rotasym)
     # Ensure utils and required packages are available on workers
     library(movMF)
-    source(file.path('utils.R'))
+    source(utils_path_worker)
   })
   
     clusterExport(cl, c("check_dot_products", "omega_grid", "t_grid", "n", "mu", "kappa"
@@ -555,19 +636,24 @@ visualize_convergence_to_limit_vmf <- function(n_values = c(50, 100, 500),
                                               mu = c(0, 0, 1),
                                               kappa = 2.0,
                                               distance_type = "chordal",
-                                              omega_points = 5,
-                                              t_points = 5,
+                                              omega_points = 10,
+                                              t_points = 10,
                                               omega_grid = NULL,
                                               t_grid = NULL,
                                               M = 10000,
                                               n_mc_samples = 100000,
                                               n_cores = 10,
                                               seed = NULL,
-                                              density_adjust = 1.0,
+                                              n50_adjust_multiplier = 3,
                                               h0 = c("simple","composite"),
                                               unknown_param = NULL,
-                                              xlim = NULL) {
+                                              cov_method = c("mc", "exact_s1_simple", "integral_s2_simple"),
+                                              cdf_grid_size = 16385,
+                                              xlim = NULL,
+                                              qqplot = FALSE,
+                                              qqplot_save = NULL) {
   h0 <- match.arg(h0)
+  cov_method <- match.arg(cov_method)
   
   # Use provided omega_grid/t_grid if present, otherwise create automatically
   if (is.null(omega_grid)) {
@@ -602,7 +688,8 @@ visualize_convergence_to_limit_vmf <- function(n_values = c(50, 100, 500),
     # Use the same MC samples for the vectorized assembly so both methods are comparable
     cov_matrix_vectorized <- cov_vmf(
       omega_grid, t_grid, mu, kappa, distance_type, n_mc_samples, n_cores,
-      mc_samples = mc_samples, seed = seed, h0 = h0, unknown_param = unknown_param
+      mc_samples = mc_samples, seed = seed, h0 = h0, unknown_param = unknown_param,
+      cov_method = cov_method, cdf_grid_size = cdf_grid_size
     )
     t_vectorized_end <- Sys.time()
     vectorized_time <- as.numeric(difftime(t_vectorized_end, t_vectorized_start, units = "secs"))
@@ -647,37 +734,73 @@ visualize_convergence_to_limit_vmf <- function(n_values = c(50, 100, 500),
   # Create color palette (limit is black now)
   limit_color <- "#000000"  # vectorized
   n_colors <- length(n_values)
-  empirical_colors <- rev(rainbow(n_colors))
+  empirical_colors <- scales::hue_pal()(n_colors)
   empirical_labels <- paste0("n=", n_values)
   all_labels <- c(empirical_labels, "G")
   all_colors_vec <- c(empirical_colors, limit_color)
 
   all_colors <- setNames(all_colors_vec, all_labels)
-  linetype_vals <- rep("solid", length(all_labels))
-  names(linetype_vals) <- all_labels
+  linetype_vals <- setNames(c(rep("solid", length(empirical_labels)), "dashed"), all_labels)
   # No histogram fills (we no longer draw histograms)
 
   all_colors <- setNames(all_colors_vec, all_labels)
-  linetype_vals <- rep("solid", length(all_labels))
-  names(linetype_vals) <- all_labels
+  linetype_vals <- setNames(c(rep("solid", length(empirical_labels)), "dashed"), all_labels)
+
+  density_data_full$label <- factor(density_data_full$label, levels = all_labels)
 
   fill_labels <- c("G", paste0("Empirical (n=", n_max, ")"))
   fill_colors_vec <- c(limit_color, "#FF3333")
 
   # Create plot (moved here so density_data_full exists)
   library(ggplot2)
-  p_convergence <- ggplot() +
-    geom_density(
-      data = density_data_full,
-      aes(x = values, color = label, linetype = label),
-      linewidth = 1.0,
-      adjust = density_adjust,
-      trim = TRUE,
-      show.legend = TRUE,
-      alpha = 0.4
-    ) +
-    scale_color_manual(values = all_colors) +
-    scale_linetype_manual(values = linetype_vals) +
+  has_n50 <- any(n_values == 50)
+  base_adjust <- 1.0
+  adjust_n50 <- n50_adjust_multiplier * base_adjust
+  if (has_n50) {
+    cat(sprintf("[density] n=50 detected -> using adjust=%.2f for n=50 only (base adjust=%.2f, multiplier=%.1f)\n", adjust_n50, base_adjust, n50_adjust_multiplier))
+  }
+  p_convergence <- ggplot()
+  if (has_n50) {
+    p_convergence <- p_convergence +
+      geom_density(
+        data = subset(density_data_full, label != "n=50"),
+        aes(x = values, color = label, linetype = label),
+        bw = "bcv",
+        fill = NA,
+        linewidth = 1.0,
+        adjust = base_adjust,
+        trim = TRUE,
+        show.legend = TRUE,
+        key_glyph = draw_key_path
+      ) +
+      geom_density(
+        data = subset(density_data_full, label == "n=50"),
+        aes(x = values, color = label, linetype = label),
+        bw = "bcv",
+        fill = NA,
+        linewidth = 1.0,
+        adjust = adjust_n50,
+        trim = TRUE,
+        show.legend = TRUE,
+        key_glyph = draw_key_path
+      )
+  } else {
+    p_convergence <- p_convergence +
+      geom_density(
+        data = density_data_full,
+        aes(x = values, color = label, linetype = label),
+        bw = "bcv",
+        fill = NA,
+        linewidth = 1.0,
+        adjust = base_adjust,
+        trim = TRUE,
+        show.legend = TRUE,
+        key_glyph = draw_key_path
+      )
+  }
+  p_convergence <- p_convergence +
+    scale_color_manual(values = all_colors, breaks = all_labels, drop = FALSE) +
+    scale_linetype_manual(values = linetype_vals, breaks = all_labels, drop = FALSE) +
     labs(
       x = "Supremum of the process",
       y = "Density",
@@ -703,8 +826,8 @@ visualize_convergence_to_limit_vmf <- function(n_values = c(50, 100, 500),
       legend.title = element_text(size = 19)
     ) +
     guides(
-      color = guide_legend(override.aes = list(linetype = "solid", shape = NA, size = 2)),
-      linetype = guide_legend(override.aes = list(linetype = "solid", shape = NA, size = 2))
+      color = guide_legend(override.aes = list(linetype = "solid", fill = NA, alpha = 1, linewidth = 1.5)),
+      linetype = "none"
     )
 
 
@@ -734,6 +857,29 @@ visualize_convergence_to_limit_vmf <- function(n_values = c(50, 100, 500),
     
   }
   cat("\n")
+  # Optional QQ plot: use same simulated data
+  qq_plot <- NULL
+  if (isTRUE(qqplot)) {
+    if (!requireNamespace("ggplot2", quietly = TRUE)) {
+      warning("ggplot2 required for QQ plot. Skipping QQ plot.")
+    } else if (!is.null(limit_values_vec)) {
+      probs <- ppoints(M)
+      limit_qs <- as.numeric(quantile(limit_values_vec, probs = probs, type = 8, na.rm = TRUE))
+      df_all <- data.frame()
+      for (n in n_values) {
+        empirical_qs <- as.numeric(quantile(empirical_data[[as.character(n)]], probs = probs, type = 8, na.rm = TRUE))
+        df <- data.frame(sample_size = as.factor(n), p = probs, theoretical = limit_qs, empirical = empirical_qs)
+        df_all <- rbind(df_all, df)
+      }
+      qq_plot <- ggplot2::ggplot(df_all, ggplot2::aes(x = theoretical, y = empirical, color = sample_size)) +
+        ggplot2::geom_point(alpha = 0.7, size = 1.5) +
+        ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+        ggplot2::scale_color_manual(values = setNames(empirical_colors, as.character(n_values))) +
+        ggplot2::labs(x = "Limit quantiles", y = "Empirical quantiles", color = "n") +
+        ggplot2::theme_minimal()
+      if (!is.null(qqplot_save)) ggplot2::ggsave(qqplot_save, plot = qq_plot)
+    }
+  }
   
   return(list(
     limit_values_vec = limit_values_vec,
@@ -744,6 +890,7 @@ visualize_convergence_to_limit_vmf <- function(n_values = c(50, 100, 500),
     omega_grid = omega_grid,
     t_grid = t_grid,
     plot = p_convergence,
+    qq_plot = qq_plot,
     ks_results = ks_results
   ))
 }
