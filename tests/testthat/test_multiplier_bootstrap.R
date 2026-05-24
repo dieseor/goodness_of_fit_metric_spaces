@@ -18,6 +18,49 @@ test_that("multiplier helpers normalize weights correctly", {
   expect_true(all(draws >= 0))
 })
 
+test_that("KS cached grid profiles match the naive computation", {
+  distance_matrix <- matrix(c(
+    0.10, 0.40, 0.70,
+    0.20, 0.50, 0.90
+  ), nrow = 3, ncol = 2)
+  t_grid <- c(0.25, 0.60)
+  weights <- c(0.6, 0.9, 1.5)
+
+  order_matrix <- t(vapply(seq_len(ncol(distance_matrix)), function(j) {
+    as.integer(order(distance_matrix[, j]))
+  }, integer(nrow(distance_matrix))))
+
+  sorted_distance_matrix <- matrix(0, nrow = ncol(distance_matrix), ncol = nrow(distance_matrix))
+  for (j in seq_len(ncol(distance_matrix))) {
+    sorted_distance_matrix[j, ] <- distance_matrix[order_matrix[j, ], j]
+  }
+
+  threshold_index_matrix <- t(vapply(seq_len(ncol(distance_matrix)), function(j) {
+    as.integer(findInterval(t_grid, sorted_distance_matrix[j, ]))
+  }, integer(length(t_grid))))
+
+  fast_empirical <- compute_grid_empirical_profile(
+    distance_matrix,
+    t_grid,
+    sorted_distance_matrix = sorted_distance_matrix,
+    threshold_index_matrix = threshold_index_matrix
+  )
+  slow_empirical <- compute_grid_empirical_profile(distance_matrix, t_grid)
+
+  fast_weighted <- compute_grid_weighted_profile(
+    distance_matrix,
+    t_grid,
+    weights,
+    sorted_distance_matrix = sorted_distance_matrix,
+    order_matrix = order_matrix,
+    threshold_index_matrix = threshold_index_matrix
+  )
+  slow_weighted <- compute_grid_weighted_profile(distance_matrix, t_grid, weights)
+
+  expect_equal(fast_empirical, slow_empirical, tolerance = 1e-12)
+  expect_equal(fast_weighted, slow_weighted, tolerance = 1e-12)
+})
+
 test_that("normal weighted estimators match analytic formulas", {
   x <- c(0, 2)
   weights <- c(1, 3)

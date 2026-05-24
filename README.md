@@ -22,6 +22,8 @@ The project automatically installs these packages if needed:
 - dplyr (data manipulation)
 - readr (data reading)
 - here (path management)
+- ncdf4 (NetCDF reading for `wind/preprocess_risoe_modern_hvmf.R`)
+- GIGrvg (GIG sampler used by `rhvmf_h2_gig()`)
 
 ## Reproducible development environment (renv)
 

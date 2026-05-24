@@ -1,0 +1,14 @@
+Dataset: jensen_fig4
+Start timestamp: 2026-05-24 02:01:46 UTC
+Input dataset: wind/jensen_fig4_reconstructed_dataset1_v1_user_marked.csv
+Output RDS: wind/results/cvm_hvmf_jensen_fig4_result.rds
+Configuration: statistic=CvM, null=composite, unknown_param=both, B=1000, n_cores=3, alpha=0.05, seed=20260524
+Observations: 139
+Max |<x,x>_M + 1|: 1.2656542481e-14
+Dataset notes: included 5 manually added points; excluded_manual removed 0 rows
+Initial MLE: kappa_hat=1.3930575615, mu_hat=(1.0556753627, -0.3218201596, -0.1043180537), sinh_chi_hat=0.3383052932, theta_deg_hat=197.9601097280
+Observed CvM statistic: 0.3037781463
+Bootstrap p-value: 0.0009990010
+Finish timestamp: 2026-05-24 02:05:50 UTC
+Elapsed seconds: 244.200
+Warnings: none

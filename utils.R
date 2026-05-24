@@ -182,6 +182,491 @@ dotF_sigma_normal <- function(omega, mu, sigma, t) {
 # SPECIFIC FUNCTIONS FOR vMF DISTRIBUTION
 # ============================================================================
 
+# ----------------------------------------------------------------------------
+# Hyperboloid helpers and HvMF maximum-likelihood estimation on H^2
+# ----------------------------------------------------------------------------
+
+#' Compute the Minkowski pseudo-inner product in R^3
+#' @param x Numeric vector of length 3
+#' @param y Numeric vector of length 3
+#' @return Scalar \eqn{-x_1 y_1 + x_2 y_2 + x_3 y_3}
+minkowski_inner_product <- function(x, y) {
+  x <- as.numeric(x)
+  y <- as.numeric(y)
+
+  if (length(x) != 3L || length(y) != 3L) {
+    stop("`x` and `y` must both have length 3.")
+  }
+  if (any(!is.finite(x)) || any(!is.finite(y))) {
+    stop("`x` and `y` must be finite.")
+  }
+
+  -x[[1]] * y[[1]] + sum(x[-1L] * y[-1L])
+}
+
+#' Validate data on the upper sheet of the two-dimensional hyperboloid
+#' @param data Numeric matrix with rows in H^2
+#' @param tol Tolerance for checking \eqn{\langle x, x \rangle_M = -1}
+#' @return Numeric matrix with 3 columns
+normalize_hvmf_h2_data <- function(data, tol = 1e-10) {
+  if (is.vector(data)) {
+    data <- matrix(as.numeric(data), nrow = 1L)
+  } else {
+    data <- as.matrix(data)
+  }
+
+  if (nrow(data) == 0L || ncol(data) != 3L) {
+    stop("`data` must be a non-empty n x 3 matrix with rows in H^2.")
+  }
+  if (any(!is.finite(data))) {
+    stop("HvMF data must be finite.")
+  }
+  if (any(data[, 1L] <= 0)) {
+    stop("HvMF data rows must satisfy x[1] > 0.")
+  }
+
+  minkowski_norms <- -data[, 1L]^2 + rowSums(data[, -1L, drop = FALSE]^2)
+  if (any(abs(minkowski_norms + 1) > tol)) {
+    stop("HvMF data rows must satisfy <x, x>_M = -1 up to tolerance.")
+  }
+
+  data
+}
+
+#' Generate HvMF samples on H^2 using the Nielsen-Okamura GIG mixture
+#'
+#' This sampler targets the hyperboloid model under the Minkowski convention
+#' \eqn{\langle x, y \rangle_M = -x_1 y_1 + x_2 y_2 + x_3 y_3}.
+#'
+#' @param n Number of samples to draw
+#' @param mu Mean direction in H^2
+#' @param kappa Strictly positive concentration parameter
+#' @param ... Unused; reserved for future extensions
+#' @param check Logical flag to validate inputs and outputs
+#' @return An n x 3 matrix with rows in H^2
+rhvmf_h2_gig <- function(n, mu, kappa, ..., check = TRUE) {
+  n <- as.integer(n)
+  if (length(n) != 1L || !is.finite(n) || n < 1L) {
+    stop("`n` must be a strictly positive integer.")
+  }
+
+  if (isTRUE(check)) {
+    mu <- as.numeric(normalize_hvmf_h2_data(mu, tol = 1e-10)[1L, , drop = TRUE])
+  } else {
+    mu <- as.numeric(mu)
+  }
+
+  kappa <- as.numeric(kappa)
+  if (length(mu) != 3L || any(!is.finite(mu))) {
+    stop("`mu` must be a finite numeric vector of length 3.")
+  }
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa <= 0) {
+    stop("`kappa` must be a strictly positive finite scalar.")
+  }
+
+  if (!requireNamespace("GIGrvg", quietly = TRUE)) {
+    stop("Package 'GIGrvg' is required for rhvmf_h2_gig(). Install it with install.packages(\"GIGrvg\").")
+  }
+
+  s <- GIGrvg::rgig(n, lambda = 0.5, chi = 1, psi = kappa^2)
+  if (any(!is.finite(s)) || any(s <= 0)) {
+    stop("The GIG sampler returned nonpositive or non-finite values.")
+  }
+
+  x1 <- stats::rnorm(n, mean = s * kappa * mu[[2L]], sd = sqrt(s))
+  x2 <- stats::rnorm(n, mean = s * kappa * mu[[3L]], sd = sqrt(s))
+  x0 <- sqrt(1 + x1^2 + x2^2)
+  x <- cbind(x0, x1, x2)
+
+  if (isTRUE(check)) {
+    minkowski_norms <- -x[, 1L]^2 + rowSums(x[, -1L, drop = FALSE]^2)
+    if (any(!is.finite(x)) || any(abs(minkowski_norms + 1) > 1e-8)) {
+      stop("Sampler output does not satisfy <x, x>_M = -1 up to tolerance.")
+    }
+    if (any(x[, 1L] <= 0)) {
+      stop("Sampler output must satisfy x[1] > 0.")
+    }
+  }
+
+  x
+}
+
+#' Closed-form MLE for HvMF on H^2, with optional nonnegative weights
+#'
+#' This implements the Jensen d = 3 closed form on the two-dimensional
+#' hyperboloid embedded in R^3 under the Minkowski convention
+#' \eqn{\langle x, y \rangle_M = -x_1 y_1 + x_2 y_2 + x_3 y_3}. The returned
+#' `xi` is the location point on H^2 (not the canonical parameter `kappa * xi`).
+#'
+#' @param data Numeric n x 3 matrix with rows in H^2
+#' @param weights Optional nonnegative weight vector of length nrow(data)
+#' @param tol Numerical tolerance for degeneracy and hyperboloid checks
+#' @return List containing the MLE and auxiliary hyperbolic coordinates
+hvmf_mle_h2 <- function(data, weights = NULL, tol = 1e-10) {
+  data <- normalize_hvmf_h2_data(data, tol = tol)
+  n <- nrow(data)
+
+  if (is.null(weights)) {
+    weights <- rep.int(1, n)
+  }
+
+  weights <- as.numeric(weights)
+  if (length(weights) != n) {
+    stop("`weights` must have length nrow(data).")
+  }
+  if (any(!is.finite(weights)) || any(weights < 0)) {
+    stop("`weights` must be finite and nonnegative.")
+  }
+
+  W <- sum(weights)
+  if (!is.finite(W) || W <= 0) {
+    stop("sum(weights) must be strictly positive.")
+  }
+
+  S <- colSums(data * weights)
+  S_inner <- minkowski_inner_product(S, S)
+  R_sq <- -S_inner
+  if (!is.finite(R_sq) || R_sq <= 0) {
+    stop("The weighted resultant has non-positive or non-finite hyperbolic norm.")
+  }
+
+  R <- sqrt(R_sq)
+  if (!is.finite(R)) {
+    stop("The weighted resultant has non-finite hyperbolic length.")
+  }
+  if (R <= W + tol) {
+    stop("Degenerate or near-degenerate HvMF MLE: R/W must be greater than 1.")
+  }
+
+  xi_hat <- S / R
+  xi_inner <- minkowski_inner_product(xi_hat, xi_hat)
+  if (!is.finite(xi_inner) || abs(xi_inner + 1) > 100 * tol) {
+    stop("Internal HvMF MLE check failed: the estimated `xi` is not on H^2.")
+  }
+  if (xi_hat[[1]] <= 0) {
+    stop("Internal HvMF MLE check failed: the estimated `xi` does not satisfy x[1] > 0.")
+  }
+
+  kappa_hat <- W / (R - W)
+  if (!is.finite(kappa_hat) || kappa_hat <= 0) {
+    stop("Internal HvMF MLE check failed: the estimated `kappa` is not positive and finite.")
+  }
+
+  sinh_chi_hat <- sqrt(sum(xi_hat[-1L]^2))
+  chi_hat <- asinh(sinh_chi_hat)
+  theta_hat <- atan2(xi_hat[[3L]], xi_hat[[2L]])
+  theta_hat_deg <- (theta_hat * 180 / pi) %% 360
+
+  list(
+    xi = xi_hat,
+    mu = xi_hat,
+    kappa = kappa_hat,
+    chi = chi_hat,
+    sinh_chi = sinh_chi_hat,
+    theta = theta_hat,
+    theta_deg = theta_hat_deg,
+    R = R,
+    W = W,
+    xi_inner = xi_inner,
+    resultant = S
+  )
+}
+
+#' Geodesic distance on H^2 under the Minkowski convention (-,+,+)
+#' @param x Numeric vector of length 3 in H^2
+#' @param y Numeric vector of length 3 in H^2
+#' @param tol Numerical tolerance used in the acosh clipping
+#' @return Nonnegative geodesic distance \eqn{\operatorname{acosh}(-\langle x, y \rangle_M)}
+hyperbolic_geodesic_distance_h2 <- function(x, y, tol = 1e-12) {
+  x <- as.numeric(x)
+  y <- as.numeric(y)
+
+  if (length(x) != 3L || length(y) != 3L) {
+    stop("`x` and `y` must both have length 3.")
+  }
+
+  inner_xy <- minkowski_inner_product(x, y)
+  acosh(pmax(-inner_xy, 1))
+}
+
+#' Pairwise geodesic distances between H^2 grid points and data
+#' @param omega_grid Numeric matrix whose rows are reference points in H^2
+#' @param data Numeric matrix whose rows are observations in H^2
+#' @param tol Numerical tolerance used in the acosh clipping
+#' @return Matrix with `nrow(omega_grid)` rows and `nrow(data)` columns
+hvmf_distance_matrix <- function(omega_grid, data, tol = 1e-12) {
+  omega_matrix <- normalize_hvmf_h2_data(omega_grid, tol = tol)
+  data_matrix <- normalize_hvmf_h2_data(data, tol = tol)
+
+  minkowski_weighted_data <- data_matrix
+  minkowski_weighted_data[, 1L] <- -minkowski_weighted_data[, 1L]
+
+  inner_products <- omega_matrix %*% t(minkowski_weighted_data)
+  acosh(pmax(-inner_products, 1))
+}
+
+#' Theoretical distance profile for HvMF on H^2
+#' @param omega Reference point in H^2
+#' @param mu Mean direction in H^2
+#' @param kappa Positive concentration parameter
+#' @param t_values Nonnegative evaluation points
+#' @return Numeric vector of probabilities \eqn{P\{d_H(X,\omega)\le t\}}
+theoretical_distance_profile_hvmf <- function(omega, mu, kappa, t_values) {
+  omega <- as.numeric(omega)
+  mu <- as.numeric(mu)
+  t_values <- as.numeric(t_values)
+
+  if (length(omega) != 3L || length(mu) != 3L) {
+    stop("`omega` and `mu` must both have length 3.")
+  }
+
+  mu_omega <- minkowski_inner_product(mu, omega)
+  q <- length(mu) - 1L
+
+  sapply(t_values, function(t) {
+    density_R <- function(r) {
+      nu <- (q - 1) / 2
+      log_bessel_k <- log(besselK(kappa, nu = nu, expon.scaled = TRUE)) - kappa
+
+      log_sinh_power_term <- (q - 1) * log(sinh(r))
+      log_exp_term <- kappa * mu_omega * cosh(r)
+      log_numerator <- nu * log(kappa) - nu * log(2 * pi) - log(2) - log_bessel_k +
+        log_sinh_power_term + log_exp_term
+
+      mu_omega_sq_minus_1 <- mu_omega^2 - 1
+      if (mu_omega_sq_minus_1 < 0) {
+        if (abs(mu_omega_sq_minus_1) < 1e-12) {
+          mu_omega_sq_term <- 0
+        } else {
+          stop(paste(
+            "Mathematical error: mu_omega^2 - 1 =",
+            mu_omega_sq_minus_1,
+            "unexpected negative value inside square root."
+          ))
+        }
+      } else {
+        mu_omega_sq_term <- mu_omega_sq_minus_1
+      }
+
+      kappa_vmf <- kappa * sinh(r) * sqrt(mu_omega_sq_term)
+      log_denominator <- rotasym::c_vMF(p = q, kappa = kappa_vmf, log = TRUE)
+
+      exp(log_numerator - log_denominator)
+    }
+
+    cdf_result <- integrate(
+      density_R,
+      lower = 0,
+      upper = t,
+      rel.tol = 1e-6,
+      abs.tol = 1e-8,
+      stop.on.error = FALSE
+    )
+
+    cdf_result$value
+  })
+}
+
+#' Projected density on H^2 for Y = -<omega, X>_M under HvMF(mu, kappa)
+#' @param y Scalar or vector with values in [1, \infty)
+#' @param alpha Scalar \eqn{\alpha = -\langle \mu, \omega \rangle_M \ge 1}
+#' @param kappa Positive concentration parameter
+#' @return Density values \eqn{f_{\alpha,\kappa}(y)}
+hvmf_projection_density_h2 <- function(y, alpha, kappa) {
+  y <- as.numeric(y)
+  alpha <- as.numeric(alpha)
+  kappa <- as.numeric(kappa)
+
+  if (length(alpha) != 1L || !is.finite(alpha) || alpha < 1) {
+    stop("`alpha` must be a finite scalar with alpha >= 1.")
+  }
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa <= 0) {
+    stop("`kappa` must be a strictly positive finite scalar.")
+  }
+
+  output <- numeric(length(y))
+  valid <- is.finite(y) & (y >= 1)
+  if (!any(valid)) {
+    return(output)
+  }
+
+  beta_sq <- max(alpha^2 - 1, 0)
+  beta <- sqrt(beta_sq)
+  y_valid <- y[valid]
+  radial_term <- sqrt(pmax(y_valid^2 - 1, 0))
+
+  if (beta == 0) {
+    log_density <- log(kappa) + kappa - kappa * y_valid
+  } else {
+    z <- kappa * beta * radial_term
+    log_i0 <- log(besselI(z, nu = 0, expon.scaled = TRUE)) + z
+    log_density <- log(kappa) + kappa - kappa * alpha * y_valid + log_i0
+  }
+
+  output[valid] <- exp(log_density)
+  output
+}
+
+#' Tabulate the projected CDF on H^2 for Y = -<omega, X>_M under HvMF(mu, kappa)
+#' @param alpha Scalar \eqn{\alpha = -\langle \mu, \omega \rangle_M \ge 1}
+#' @param kappa Positive concentration parameter
+#' @param y_max Maximum y-value to cover in the table
+#' @param grid_size Number of tabulation points when `grid` is not supplied
+#' @param grid Optional user-supplied grid in [1, y_max]
+#' @return Data frame with columns `y` and `cdf`
+hvmf_tabulate_projection_cdf_h2 <- function(alpha,
+                                            kappa,
+                                            y_max,
+                                            grid_size = 4097L,
+                                            grid = NULL) {
+  alpha <- as.numeric(alpha)
+  kappa <- as.numeric(kappa)
+  y_max <- as.numeric(y_max)
+
+  if (length(alpha) != 1L || !is.finite(alpha) || alpha < 1) {
+    stop("`alpha` must be a finite scalar with alpha >= 1.")
+  }
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa <= 0) {
+    stop("`kappa` must be a strictly positive finite scalar.")
+  }
+  if (length(y_max) != 1L || !is.finite(y_max) || y_max < 1) {
+    stop("`y_max` must be a finite scalar with y_max >= 1.")
+  }
+
+  if (is.null(grid)) {
+    grid_size <- as.integer(grid_size)
+    if (!is.finite(grid_size) || grid_size < 2L) {
+      stop("`grid_size` must be an integer >= 2.")
+    }
+    y_grid <- seq(1, y_max, length.out = grid_size)
+  } else {
+    y_grid <- sort(as.numeric(grid))
+    if (length(y_grid) < 2L) {
+      stop("`grid` must contain at least two points.")
+    }
+    if (any(!is.finite(y_grid))) {
+      stop("`grid` must be finite.")
+    }
+    if (min(y_grid) < 1 || max(y_grid) > y_max) {
+      stop("`grid` must be contained in [1, y_max].")
+    }
+    if (y_grid[[1L]] > 1) {
+      y_grid <- c(1, y_grid)
+    }
+    if (y_grid[[length(y_grid)]] < y_max) {
+      y_grid <- c(y_grid, y_max)
+    }
+    y_grid <- unique(y_grid)
+  }
+
+  density_values <- hvmf_projection_density_h2(
+    y = y_grid,
+    alpha = alpha,
+    kappa = kappa
+  )
+
+  cdf_values <- numeric(length(y_grid))
+  if (length(y_grid) >= 2L) {
+    increments <- diff(y_grid) * (density_values[-1L] + density_values[-length(y_grid)]) / 2
+    cdf_values[-1L] <- cumsum(increments)
+  }
+
+  cdf_values <- pmin(pmax(cdf_values, 0), 1)
+  cdf_values[[1L]] <- 0
+
+  data.frame(
+    y = y_grid,
+    cdf = cdf_values
+  )
+}
+
+#' Evaluate a tabulated projected CDF on H^2 by linear interpolation
+#' @param y Scalar or vector with values in [1, \infty)
+#' @param cdf_table Output of `hvmf_tabulate_projection_cdf_h2()`
+#' @return Interpolated CDF values clipped to [0, 1]
+hvmf_eval_projection_cdf_tabulated <- function(y, cdf_table) {
+  y <- as.numeric(y)
+
+  if (!is.data.frame(cdf_table) || !all(c("y", "cdf") %in% names(cdf_table))) {
+    stop("`cdf_table` must be a data frame with columns `y` and `cdf`.")
+  }
+
+  y_grid <- as.numeric(cdf_table$y)
+  cdf_grid <- as.numeric(cdf_table$cdf)
+  if (length(y_grid) == 0L) {
+    stop("`cdf_table` cannot be empty.")
+  }
+  if (length(y_grid) == 1L) {
+    output <- rep(cdf_grid[[1L]], length(y))
+    output[y <= y_grid[[1L]]] <- 0
+    return(pmin(pmax(output, 0), 1))
+  }
+
+  output <- approx(
+    x = y_grid,
+    y = cdf_grid,
+    xout = y,
+    method = "linear",
+    ties = "ordered",
+    rule = 2
+  )$y
+
+  output[y <= 1] <- 0
+  pmin(pmax(output, 0), 1)
+}
+
+#' Tabulated CvM theoretical profile matrix for HvMF on H^2
+#' @param data Numeric n x 3 matrix with rows in H^2
+#' @param theta List with entries `mu` and `kappa`
+#' @param grid_size Number of tabulation points per row
+#' @param distance_matrix Optional matrix of pairwise geodesic distances
+#' @param tol Numerical tolerance for hyperboloid checks
+#' @return Numeric n x n matrix with entries F_{X_i}^{theta}(d_H(X_i, X_j))
+hvmf_cvm_profile_matrix_tabulated <- function(data,
+                                              theta,
+                                              grid_size = 4097L,
+                                              distance_matrix = NULL,
+                                              tol = 1e-10) {
+  x <- normalize_hvmf_h2_data(data, tol = tol)
+  if (!is.list(theta)) {
+    stop("`theta` must be a list containing `mu` and `kappa`.")
+  }
+  mu_matrix <- normalize_hvmf_h2_data(theta$mu, tol = tol)
+  mu <- as.numeric(mu_matrix[1L, , drop = TRUE])
+  kappa <- as.numeric(theta$kappa)
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa <= 0) {
+    stop("HvMF theta requires a strictly positive finite scalar `kappa`.")
+  }
+  n <- nrow(x)
+
+  if (is.null(distance_matrix)) {
+    y_matrix <- pmax(cosh(t(hvmf_distance_matrix(x, x))), 1)
+  } else {
+    distance_matrix <- as.matrix(distance_matrix)
+    if (!all(dim(distance_matrix) == c(n, n))) {
+      stop("`distance_matrix` must be an n x n matrix compatible with `data`.")
+    }
+    y_matrix <- pmax(cosh(distance_matrix), 1)
+  }
+
+  alpha_values <- as.numeric(x %*% c(mu[[1L]], -mu[[2L]], -mu[[3L]]))
+  alpha_values <- pmax(alpha_values, 1)
+
+  output <- matrix(0, nrow = n, ncol = n)
+  for (i in seq_len(n)) {
+    row_y <- pmax(y_matrix[i, ], 1)
+    cdf_table <- hvmf_tabulate_projection_cdf_h2(
+      alpha = alpha_values[[i]],
+      kappa = kappa,
+      y_max = max(row_y),
+      grid_size = grid_size
+    )
+    output[i, ] <- hvmf_eval_projection_cdf_tabulated(row_y, cdf_table)
+  }
+
+  output
+}
+
 
 # ----------------------------------------------------------------------------
 #' Generate canonical lattice on the unit sphere (Fibonacci sphere / golden spiral)

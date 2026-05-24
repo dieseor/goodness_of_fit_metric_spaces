@@ -1,0 +1,14 @@
+Dataset: risoe_modern_set_A_77m
+Start timestamp: 2026-05-24 02:05:50 UTC
+Input dataset: wind/processed/risoe_modern_set_A_77m_hvmf.csv
+Output RDS: wind/results/cvm_hvmf_risoe_modern_set_A_77m_result.rds
+Configuration: statistic=CvM, null=composite, unknown_param=both, B=1000, n_cores=3, alpha=0.05, seed=20260525
+Observations: 317
+Max |<x,x>_M + 1|: 7.1054273576e-14
+Dataset notes: used existing x0, x1, x2 columns
+Initial MLE: kappa_hat=1.4498378626, mu_hat=(1.0339102772, -0.2483042383, -0.0855305009), sinh_chi_hat=0.2626222789, theta_deg_hat=199.0067031566
+Observed CvM statistic: 0.4411376831
+Bootstrap p-value: 0.0009990010
+Finish timestamp: 2026-05-24 02:26:48 UTC
+Elapsed seconds: 1258.391
+Warnings: none

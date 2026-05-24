@@ -591,3 +591,139 @@ make_vmf_spec <- function(distance_type = c("chordal", "geodesic"),
     )
   )
 }
+
+normalize_hvmf_data <- function(data, control = list()) {
+  tol <- as.numeric(control$hvmf_tol %||% 1e-10)
+  normalize_hvmf_h2_data(data, tol = tol)
+}
+
+normalize_hvmf_theta <- function(theta, control = list()) {
+  tol <- as.numeric(control$hvmf_tol %||% 1e-10)
+
+  if (!is.list(theta)) {
+    stop("HvMF theta must be a list containing `mu` and `kappa`.")
+  }
+
+  mu <- theta$mu
+  kappa <- as.numeric(theta$kappa)
+
+  mu_matrix <- normalize_hvmf_h2_data(mu, tol = tol)
+  mu <- as.numeric(mu_matrix[1L, , drop = TRUE])
+
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa <= 0) {
+    stop("HvMF theta requires a strictly positive finite scalar `kappa`.")
+  }
+
+  sinh_chi <- sqrt(sum(mu[-1L]^2))
+  chi <- asinh(sinh_chi)
+  theta_angle <- atan2(mu[[3L]], mu[[2L]])
+  theta_deg <- (theta_angle * 180 / pi) %% 360
+
+  list(
+    mu = mu,
+    kappa = kappa,
+    chi = chi,
+    sinh_chi = sinh_chi,
+    theta = theta_angle,
+    theta_deg = theta_deg,
+    q = 2L
+  )
+}
+
+fit_hvmf_theta <- function(data,
+                           weights = NULL,
+                           null,
+                           unknown_param = "both",
+                           control = list()) {
+  x <- normalize_hvmf_data(data, control)
+
+  if (!is.list(null) || is.null(null$type)) {
+    stop("`null` must be a list containing at least the field `type`.")
+  }
+
+  if (identical(null$type, "simple")) {
+    return(normalize_hvmf_theta(null$theta, control = control))
+  }
+
+  if (!identical(null$type, "composite")) {
+    stop("`null$type` must be either `simple` or `composite`.")
+  }
+
+  if (!is.null(unknown_param) && !identical(unknown_param, "both")) {
+    stop("The HvMF adapter currently supports only `unknown_param = 'both'`.")
+  }
+
+  tol <- as.numeric(control$hvmf_tol %||% 1e-10)
+  fit <- hvmf_mle_h2(x, weights = weights, tol = tol)
+
+  normalize_hvmf_theta(
+    list(mu = fit$mu, kappa = fit$kappa),
+    control = control
+  )
+}
+
+make_hvmf_spec <- function(unknown_param = "both") {
+  new_model_spec(
+    name = "hvmf_geodesic",
+    fit_theta = function(data, weights = NULL, null, control = list()) {
+      fit_hvmf_theta(
+        data = data,
+        weights = weights,
+        null = null,
+        unknown_param = unknown_param,
+        control = control
+      )
+    },
+    distance_matrix = function(data, omega, control = list()) {
+      x <- normalize_hvmf_data(data, control)
+      omega_matrix <- normalize_hvmf_data(omega, control)
+
+      if (ncol(x) != ncol(omega_matrix)) {
+        stop("`data` and `omega` have incompatible ambient dimensions.")
+      }
+
+      t(hvmf_distance_matrix(omega_matrix, x))
+    },
+    profile_eval = function(omega, t, theta, control = list()) {
+      theta <- normalize_hvmf_theta(theta, control = control)
+      theoretical_distance_profile_hvmf(
+        omega = omega,
+        mu = theta$mu,
+        kappa = theta$kappa,
+        t_values = as.numeric(t)
+      )
+    },
+    normalize_data = normalize_hvmf_data,
+    n_obs = function(data, control = list()) {
+      nrow(normalize_hvmf_data(data, control))
+    },
+    observation_at = function(data, idx, control = list()) {
+      normalize_hvmf_data(data, control)[idx, , drop = TRUE]
+    },
+    extras = list(
+      sample_profile_matrix_eval = function(data, distance_matrix, theta, control = list()) {
+        theta <- normalize_hvmf_theta(theta, control = control)
+        profile_method <- tolower(as.character(control$hvmf_profile_method %||% "tabulated"))
+        n_y <- as.integer(control$hvmf_profile_n_y %||% control$hvmf_profile_grid_size %||% 4097L)
+
+        if (!profile_method %in% c("exact", "tabulated")) {
+          stop("`control$hvmf_profile_method` must be either 'exact' or 'tabulated'.")
+        }
+
+        if (identical(profile_method, "tabulated")) {
+          return(hvmf_cvm_profile_matrix_tabulated(
+            data = data,
+            theta = theta,
+            grid_size = n_y,
+            distance_matrix = distance_matrix,
+            tol = as.numeric(control$hvmf_tol %||% 1e-10)
+          ))
+        }
+
+        NULL
+      },
+      distance_type = "geodesic",
+      unknown_param = unknown_param
+    )
+  )
+}
