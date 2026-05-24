@@ -56,12 +56,14 @@ nrow(comets_kuiper)
 {
 
 # Setup
-ws <- rep(c("CvM", "AD"), 3)
 ty2 <- c("unif_cvm", "unif_mc", rep("Pn", 2), rep("C_k", 2))
 ty3 <- c("unif_mc", "unif_mc", rep("Pn", 2), rep("C_k", 2))
+# Use CvM only for this run (keep same length as type vectors)
+ws <- rep("CvM", length(ty2))
 doRNG::registerDoRNG()
 # doFuture::registerDoFuture()
-future::plan(future::multisession(), workers = 8)
+# Use 10 workers as requested
+future::plan(future::multisession(), workers = 10)
 K <- 1e3
 B <- 1e3
 
@@ -129,10 +131,43 @@ gof_oor |>
 gof_kui |>
   knitr::kable(format = "latex", digits = 3, booktabs = TRUE)
 
-# Save results
+# Save results (stable, versioned)
+timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+out_dir <- file.path("output", paste0("comets_gof_B", B, "_CvM_", timestamp))
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
+all_results <- list(
+  gof_oor = list(gof_oor_0, gof_oor_1, gof_oor_2, gof_oor_3, gof_oor_4),
+  gof_kui = list(gof_kui_0, gof_kui_1, gof_kui_2, gof_kui_3, gof_kui_4)
+)
+
+# Save RDS and legacy Rdata
+saveRDS(all_results, file = file.path(out_dir, "comets_gof_results.rds"))
 save(list = c("gof_oor_0", "gof_oor_1", "gof_oor_2", "gof_oor_3", "gof_oor_4",
               "gof_kui_0", "gof_kui_1", "gof_kui_2", "gof_kui_3", "gof_kui_4"),
-     file = "comets_gof_BK_1e3.Rdata")
+     file = file.path(out_dir, "comets_gof_results.Rdata"))
+
+# Write p-values as CSV tables
+oor_pvals <- as.data.frame(gof_oor)
+kuiper_pvals <- as.data.frame(gof_kui)
+rownames(oor_pvals) <- paste0("oor_", seq_len(nrow(oor_pvals)) )
+rownames(kuiper_pvals) <- paste0("kui_", seq_len(nrow(kuiper_pvals)) )
+write.csv(oor_pvals, file = file.path(out_dir, "gof_oor_pvalues.csv"), row.names = TRUE)
+write.csv(kuiper_pvals, file = file.path(out_dir, "gof_kuiper_pvalues.csv"), row.names = TRUE)
+
+# Save metadata
+metadata <- list(
+  B = B,
+  K = K,
+  workers = 10,
+  seed = 42,
+  datetime = Sys.time(),
+  script = "Comets/unregalitonavideno/cardioid-comets.R"
+)
+saveRDS(metadata, file = file.path(out_dir, "metadata.rds"))
+writeLines(capture.output(str(metadata)), con = file.path(out_dir, "metadata.txt"))
+
+cat("Saved results to:", out_dir, "\n")
 
 }
 

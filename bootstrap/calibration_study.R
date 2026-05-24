@@ -25,7 +25,12 @@ multiplier_bootstrap_path_calibration <- resolve_calibration_path(
   "bootstrap",
   "multiplier_bootstrap.R"
 )
-if (!exists("multiplier_bootstrap_normal", mode = "function")) {
+required_bootstrap_functions <- c(
+  "multiplier_bootstrap_normal",
+  "multiplier_bootstrap_vmf",
+  "multiplier_bootstrap_hvmf"
+)
+if (any(!vapply(required_bootstrap_functions, exists, logical(1), mode = "function"))) {
   source(multiplier_bootstrap_path_calibration)
 }
 
@@ -103,6 +108,63 @@ make_vmf_composite_calibration_scenario <- function(kappa) {
   )
 }
 
+default_hvmf_calibration_data_dir <- function() {
+  resolve_calibration_path("data", "hvmf_typeiv_calibration")
+}
+
+hvmf_typeiv_fixed_mu <- function() {
+  t0 <- stats::qnorm(0.25, mean = 0, sd = 1 / 4)
+  c(
+    cosh(abs(t0)),
+    sinh(abs(t0)) * sign(t0) / sqrt(2),
+    sinh(abs(t0)) * sign(t0) / sqrt(2)
+  )
+}
+
+make_hvmf_composite_calibration_scenario <- function(kappa,
+                                                     data_dir = default_hvmf_calibration_data_dir()) {
+  mu <- hvmf_typeiv_fixed_mu()
+  list(
+    id = sprintf("hvmf_composite_h2_geodesic_kappa_%d", as.integer(kappa)),
+    model = "hvmf",
+    label = sprintf("HvMF composite H^2 geodesic: kappa=%d", as.integer(kappa)),
+    null = list(type = "composite"),
+    sample_params = list(mu = mu, kappa = as.numeric(kappa)),
+    distance_type = "geodesic",
+    unknown_param = "both",
+    data_dir = data_dir
+  )
+}
+
+make_hvmf_simple_calibration_scenario <- function(kappa,
+                                                  data_dir = default_hvmf_calibration_data_dir()) {
+  mu <- hvmf_typeiv_fixed_mu()
+  list(
+    id = sprintf("hvmf_simple_h2_geodesic_kappa_%d", as.integer(kappa)),
+    model = "hvmf",
+    label = sprintf("HvMF simple H^2 geodesic: kappa=%d", as.integer(kappa)),
+    null = list(type = "simple", theta = list(mu = mu, kappa = as.numeric(kappa))),
+    sample_params = list(mu = mu, kappa = as.numeric(kappa)),
+    distance_type = "geodesic",
+    unknown_param = "both",
+    data_dir = data_dir
+  )
+}
+
+default_hvmf_simple_calibration_scenarios <- function(data_dir = default_hvmf_calibration_data_dir()) {
+  list(
+    make_hvmf_simple_calibration_scenario(50, data_dir = data_dir),
+    make_hvmf_simple_calibration_scenario(200, data_dir = data_dir)
+  )
+}
+
+default_hvmf_composite_calibration_scenarios <- function(data_dir = default_hvmf_calibration_data_dir()) {
+  list(
+    make_hvmf_composite_calibration_scenario(50, data_dir = data_dir),
+    make_hvmf_composite_calibration_scenario(200, data_dir = data_dir)
+  )
+}
+
 default_bootstrap_calibration_scenarios <- function() {
   list(
     make_normal_simple_calibration_scenario(),
@@ -119,7 +181,70 @@ default_bootstrap_composite_calibration_scenarios <- function() {
   )
 }
 
-simulate_h0_sample <- function(scenario, n) {
+list_hvmf_calibration_files <- function(scenario, n) {
+  if (is.null(scenario$data_dir)) {
+    stop("HvMF calibration scenario requires `data_dir`.")
+  }
+
+  folder <- file.path(
+    scenario$data_dir,
+    sprintf("kappa%d", as.integer(scenario$sample_params$kappa)),
+    sprintf("n%d", as.integer(n))
+  )
+  if (!dir.exists(folder)) {
+    stop(sprintf("HvMF calibration data folder not found: %s", folder))
+  }
+
+  files <- list.files(folder, pattern = "\\.csv$", full.names = TRUE)
+  if (length(files) == 0L) {
+    stop(sprintf("No HvMF calibration CSV files found in: %s", folder))
+  }
+
+  sample_ids <- suppressWarnings(as.integer(sub(".*samp_([0-9]+).*", "\\1", basename(files))))
+  if (any(is.na(sample_ids))) {
+    stop(sprintf("Could not parse HvMF sample ids from filenames in: %s", folder))
+  }
+
+  files[order(sample_ids)]
+}
+
+load_hvmf_calibration_sample <- function(scenario, n, replicate_id) {
+  files <- list_hvmf_calibration_files(scenario, n)
+  replicate_id <- as.integer(replicate_id)
+
+  if (!is.finite(replicate_id) || replicate_id < 1L || replicate_id > length(files)) {
+    stop(sprintf(
+      "HvMF replicate_id=%d is out of bounds for n=%d; available range is 1..%d.",
+      replicate_id,
+      as.integer(n),
+      length(files)
+    ))
+  }
+
+  raw_data <- utils::read.csv(files[[replicate_id]])
+  required_columns <- c("V1", "V2", "V3")
+  if (!all(required_columns %in% names(raw_data))) {
+    stop(sprintf(
+      "HvMF calibration file %s does not contain columns %s.",
+      files[[replicate_id]],
+      paste(required_columns, collapse = ", ")
+    ))
+  }
+
+  data_matrix <- as.matrix(raw_data[, required_columns, drop = FALSE])
+  if (nrow(data_matrix) != as.integer(n)) {
+    stop(sprintf(
+      "HvMF calibration file %s has %d rows but n=%d was requested.",
+      files[[replicate_id]],
+      nrow(data_matrix),
+      as.integer(n)
+    ))
+  }
+
+  normalize_hvmf_h2_data(data_matrix)
+}
+
+simulate_h0_sample <- function(scenario, n, replicate_id = NULL) {
   if (identical(scenario$model, "normal")) {
     return(stats::rnorm(
       n = n,
@@ -136,6 +261,18 @@ simulate_h0_sample <- function(scenario, n) {
       n = n,
       mu = scenario$sample_params$mu,
       kappa = scenario$sample_params$kappa
+    ))
+  }
+
+  if (identical(scenario$model, "hvmf")) {
+    if (is.null(replicate_id)) {
+      stop("HvMF calibration sampling from disk requires `replicate_id`.")
+    }
+
+    return(load_hvmf_calibration_sample(
+      scenario = scenario,
+      n = n,
+      replicate_id = replicate_id
     ))
   }
 
@@ -182,6 +319,24 @@ run_bootstrap_for_scenario <- function(data,
       ),
       distance_type = scenario$distance_type,
       unknown_param = scenario$unknown_param %||% "xi"
+    ))
+  }
+
+  if (identical(scenario$model, "hvmf")) {
+    return(multiplier_bootstrap_hvmf(
+      data = data,
+      null = scenario$null,
+      statistics = statistics,
+      ks_grid = scenario$ks_grid %||% NULL,
+      B = B,
+      alpha = alpha_nominal,
+      seed = seed,
+      n_cores = 1,
+      keep = list(
+        observed_process = FALSE,
+        bootstrap_statistics = TRUE
+      ),
+      unknown_param = scenario$unknown_param %||% "both"
     ))
   }
 
@@ -291,7 +446,11 @@ run_calibration_task <- function(task_row,
                                  alphas,
                                  statistics) {
   set.seed(task_row$sample_seed)
-  data <- simulate_h0_sample(scenario, task_row$n)
+  data <- simulate_h0_sample(
+    scenario = scenario,
+    n = task_row$n,
+    replicate_id = task_row$replicate_id
+  )
   bootstrap_result <- run_bootstrap_for_scenario(
     data = data,
     scenario = scenario,
@@ -431,7 +590,9 @@ run_calibration_scenario <- function(scenario,
                                      statistics = c("ks", "cvm"),
                                      n_cores_outer = 1,
                                      seed = NULL,
-                                     cluster = NULL) {
+                                     cluster = NULL,
+                                     progress_callback = NULL,
+                                     verbose = TRUE) {
   n_values <- as.integer(n_values)
   M_outer <- as.integer(M_outer)
   B <- as.integer(B)
@@ -442,15 +603,30 @@ run_calibration_scenario <- function(scenario,
   for (i in seq_along(n_values)) {
     n_value <- as.integer(n_values[[i]])
     n_seed <- if (is.null(seed)) NULL else seed + 100000L * i
-    message(sprintf(
-      "  Scenario '%s': starting n = %d (%d/%d), M_outer = %d, B = %d",
-      scenario$id,
-      n_value,
-      i,
-      length(n_values),
-      M_outer,
-      B
-    ))
+
+    if (identical(scenario$model, "hvmf")) {
+      n_available <- length(list_hvmf_calibration_files(scenario, n_value))
+      if (M_outer > n_available) {
+        stop(sprintf(
+          "HvMF calibration requested M_outer=%d for n=%d, but only %d disk replicates are available.",
+          M_outer,
+          n_value,
+          n_available
+        ))
+      }
+    }
+
+    if (isTRUE(verbose)) {
+      message(sprintf(
+        "  Scenario '%s': starting n = %d (%d/%d), M_outer = %d, B = %d",
+        scenario$id,
+        n_value,
+        i,
+        length(n_values),
+        M_outer,
+        B
+      ))
+    }
 
     task_grid <- build_calibration_tasks_single_n(
       n_value = n_value,
@@ -470,12 +646,23 @@ run_calibration_scenario <- function(scenario,
       cluster = cluster
     )
     elapsed_n <- as.numeric(difftime(Sys.time(), start_time_n, units = "secs"))
-    message(sprintf(
-      "  Scenario '%s': completed n = %d in %.1f seconds",
-      scenario$id,
-      n_value,
-      elapsed_n
-    ))
+    if (isTRUE(verbose)) {
+      message(sprintf(
+        "  Scenario '%s': completed n = %d in %.1f seconds",
+        scenario$id,
+        n_value,
+        elapsed_n
+      ))
+    }
+    if (is.function(progress_callback)) {
+      progress_callback(
+        scenario = scenario,
+        n_value = n_value,
+        index_n = i,
+        n_values = n_values,
+        elapsed_seconds = elapsed_n
+      )
+    }
   }
 
   do.call(rbind, scenario_results)
@@ -684,16 +871,53 @@ save_calibration_plots <- function(raw_results,
   saved_files
 }
 
+persist_calibration_outputs <- function(raw_results,
+                                        summary_results,
+                                        output_dir,
+                                        completed_scenarios = NULL,
+                                        progress_state = NULL) {
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+  raw_csv <- file.path(output_dir, "bootstrap_calibration_raw.csv")
+  summary_csv <- file.path(output_dir, "bootstrap_calibration_summary.csv")
+  utils::write.csv(raw_results, raw_csv, row.names = FALSE)
+  utils::write.csv(summary_results, summary_csv, row.names = FALSE)
+
+  progress_path <- file.path(output_dir, "progress_status.txt")
+  progress_lines <- c(
+    sprintf("timestamp: %s", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")),
+    sprintf("completed_scenarios: %d", length(completed_scenarios %||% character(0)))
+  )
+  if (!is.null(completed_scenarios) && length(completed_scenarios) > 0) {
+    progress_lines <- c(
+      progress_lines,
+      sprintf("scenario_ids: %s", paste(completed_scenarios, collapse = ", "))
+    )
+  }
+  if (!is.null(progress_state) && length(progress_state) > 0) {
+    progress_lines <- c(progress_lines, progress_state)
+  }
+  writeLines(progress_lines, con = progress_path)
+
+  list(
+    raw_csv = raw_csv,
+    summary_csv = summary_csv,
+    progress_path = progress_path
+  )
+}
+
 run_bootstrap_calibration_study <- function(scenarios = default_bootstrap_calibration_scenarios(),
                                             n_values = c(50, 100, 200),
-                                            M_outer = 200,
-                                            B = 199,
+                                            M_outer = 1000,
+                                            B = 1000,
                                             alpha_nominal = 0.05,
                                             alphas = c(0.01, 0.05, 0.10),
                                             statistics = c("ks", "cvm"),
                                             n_cores_outer = 1,
                                             seed = 123,
-                                            output_dir = NULL) {
+                                            output_dir = NULL,
+                                            show_progress = FALSE,
+                                            verbose = TRUE) {
   if (is.null(output_dir)) {
     output_dir <- default_calibration_output_dir("full")
   }
@@ -705,15 +929,44 @@ run_bootstrap_calibration_study <- function(scenarios = default_bootstrap_calibr
     on.exit(parallel::stopCluster(shared_cluster), add = TRUE)
   }
 
-  scenario_results <- lapply(seq_along(scenarios), function(i) {
+  total_progress_steps <- length(scenarios) * length(as.integer(n_values))
+  progress_counter <- 0L
+  progress_bar <- NULL
+  if (isTRUE(show_progress)) {
+    progress_bar <- utils::txtProgressBar(min = 0, max = total_progress_steps, style = 3)
+    on.exit(close(progress_bar), add = TRUE)
+  }
+
+  progress_state <- character(0)
+  progress_callback <- if (isTRUE(show_progress)) {
+    function(scenario, n_value, index_n, n_values, elapsed_seconds) {
+      progress_counter <<- progress_counter + 1L
+      utils::setTxtProgressBar(progress_bar, progress_counter)
+      progress_state <<- c(
+        sprintf("last_scenario: %s", scenario$id),
+        sprintf("last_n: %d", as.integer(n_value)),
+        sprintf("completed_blocks: %d/%d", progress_counter, total_progress_steps),
+        sprintf("last_block_elapsed_seconds: %.3f", elapsed_seconds)
+      )
+    }
+  } else {
+    NULL
+  }
+
+  scenario_results <- vector("list", length(scenarios))
+  plot_files <- list()
+
+  for (i in seq_along(scenarios)) {
     scenario_seed <- if (is.null(seed)) NULL else seed + 1000L * i
-    message(sprintf(
-      "Running calibration scenario %d/%d: %s",
-      i,
-      length(scenarios),
-      scenarios[[i]]$label
-    ))
-    run_calibration_scenario(
+    if (isTRUE(verbose)) {
+      message(sprintf(
+        "Running calibration scenario %d/%d: %s",
+        i,
+        length(scenarios),
+        scenarios[[i]]$label
+      ))
+    }
+    scenario_results[[i]] <- run_calibration_scenario(
       scenario = scenarios[[i]],
       n_values = n_values,
       M_outer = M_outer,
@@ -723,18 +976,55 @@ run_bootstrap_calibration_study <- function(scenarios = default_bootstrap_calibr
       statistics = statistics,
       n_cores_outer = n_cores_outer,
       seed = scenario_seed,
-      cluster = shared_cluster
+      cluster = shared_cluster,
+      progress_callback = progress_callback,
+      verbose = verbose
     )
-  })
+    raw_results_partial <- do.call(rbind, scenario_results[seq_len(i)])
+    summary_results_partial <- summarize_calibration_results(raw_results_partial, alphas = alphas)
+    persist_info <- persist_calibration_outputs(
+      raw_results = raw_results_partial,
+      summary_results = summary_results_partial,
+      output_dir = output_dir,
+      completed_scenarios = vapply(scenarios[seq_len(i)], `[[`, character(1), "id"),
+      progress_state = progress_state
+    )
+    plot_files <- save_calibration_plots(
+      raw_results = raw_results_partial,
+      summary_results = summary_results_partial,
+      output_dir = output_dir
+    )
+    saveRDS(
+      list(
+        raw_results = raw_results_partial,
+        summary_results = summary_results_partial,
+        completed_scenarios = vapply(scenarios[seq_len(i)], `[[`, character(1), "id"),
+        config = list(
+          scenarios = scenarios,
+          n_values = n_values,
+          M_outer = M_outer,
+          B = B,
+          alpha_nominal = alpha_nominal,
+          alphas = alphas,
+          statistics = statistics,
+          n_cores_outer = n_cores_outer,
+          seed = seed
+        )
+      ),
+      file = file.path(output_dir, "checkpoint_run_object.rds")
+    )
+  }
 
   raw_results <- do.call(rbind, scenario_results)
   summary_results <- summarize_calibration_results(raw_results, alphas = alphas)
 
-  raw_csv <- file.path(output_dir, "bootstrap_calibration_raw.csv")
-  summary_csv <- file.path(output_dir, "bootstrap_calibration_summary.csv")
-  utils::write.csv(raw_results, raw_csv, row.names = FALSE)
-  utils::write.csv(summary_results, summary_csv, row.names = FALSE)
-
+  persist_info <- persist_calibration_outputs(
+    raw_results = raw_results,
+    summary_results = summary_results,
+    output_dir = output_dir,
+    completed_scenarios = vapply(scenarios, `[[`, character(1), "id"),
+    progress_state = c(progress_state, "status: finished")
+  )
   plot_files <- save_calibration_plots(
     raw_results = raw_results,
     summary_results = summary_results,
@@ -745,8 +1035,8 @@ run_bootstrap_calibration_study <- function(scenarios = default_bootstrap_calibr
     raw_results = raw_results,
     summary_results = summary_results,
     output_dir = output_dir,
-    raw_csv = raw_csv,
-    summary_csv = summary_csv,
+    raw_csv = persist_info$raw_csv,
+    summary_csv = persist_info$summary_csv,
     plot_files = plot_files,
     config = list(
       scenarios = scenarios,
@@ -785,8 +1075,8 @@ run_full_bootstrap_calibration_study <- function(output_dir = NULL,
   run_bootstrap_calibration_study(
     scenarios = default_bootstrap_calibration_scenarios(),
     n_values = c(50, 100, 200),
-    M_outer = 200,
-    B = 199,
+    M_outer = 1000,
+    B = 1000,
     alpha_nominal = 0.05,
     alphas = c(0.01, 0.05, 0.10),
     statistics = c("ks", "cvm"),
@@ -816,8 +1106,8 @@ run_smoke_bootstrap_composite_calibration_study <- function(output_dir = NULL,
 run_full_bootstrap_composite_calibration_study <- function(output_dir = NULL,
                                                            n_cores_outer = 1,
                                                            seed = 123,
-                                                           M_outer = 500,
-                                                           B = 999) {
+                                                           M_outer = 1000,
+                                                           B = 1000) {
   run_bootstrap_calibration_study(
     scenarios = default_bootstrap_composite_calibration_scenarios(),
     n_values = c(50, 100, 200),
@@ -829,5 +1119,93 @@ run_full_bootstrap_composite_calibration_study <- function(output_dir = NULL,
     n_cores_outer = n_cores_outer,
     seed = seed,
     output_dir = output_dir %||% default_calibration_output_dir("full_composite")
+  )
+}
+
+run_smoke_hvmf_composite_cvm_calibration_study <- function(output_dir = NULL,
+                                                           n_cores_outer = 1,
+                                                           seed = 123,
+                                                           show_progress = FALSE,
+                                                           verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_hvmf_composite_calibration_scenarios(),
+    n_values = 50,
+    M_outer = 5,
+    B = 19,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = "cvm",
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "hvmf_composite_cvm_smoke"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_full_hvmf_composite_cvm_calibration_study <- function(output_dir = NULL,
+                                                          n_cores_outer = 1,
+                                                          seed = 123,
+                                                          M_outer = 1000,
+                                                          B = 1000,
+                                                          show_progress = FALSE,
+                                                          verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_hvmf_composite_calibration_scenarios(),
+    n_values = c(50, 100, 200),
+    M_outer = M_outer,
+    B = B,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = "cvm",
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "hvmf_composite_cvm_full"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_smoke_hvmf_simple_cvm_calibration_study <- function(output_dir = NULL,
+                                                        n_cores_outer = 1,
+                                                        seed = 123,
+                                                        show_progress = FALSE,
+                                                        verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_hvmf_simple_calibration_scenarios(),
+    n_values = 50,
+    M_outer = 5,
+    B = 19,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = "cvm",
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "hvmf_simple_cvm_smoke"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_full_hvmf_simple_cvm_calibration_study <- function(output_dir = NULL,
+                                                       n_cores_outer = 1,
+                                                       seed = 123,
+                                                       M_outer = 1000,
+                                                       B = 1000,
+                                                       show_progress = FALSE,
+                                                       verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_hvmf_simple_calibration_scenarios(),
+    n_values = c(50, 100, 200),
+    M_outer = M_outer,
+    B = B,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = "cvm",
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "hvmf_simple_cvm_full"),
+    show_progress = show_progress,
+    verbose = verbose
   )
 }

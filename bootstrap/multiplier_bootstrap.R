@@ -38,7 +38,8 @@ normalize_requested_statistics <- function(statistics) {
 normalize_keep_options <- function(keep) {
   defaults <- list(
     observed_process = TRUE,
-    bootstrap_statistics = TRUE
+    bootstrap_statistics = TRUE,
+    bootstrap_thetas = FALSE
   )
 
   if (is.null(keep)) {
@@ -48,6 +49,7 @@ normalize_keep_options <- function(keep) {
   keep <- utils::modifyList(defaults, keep)
   keep$observed_process <- isTRUE(keep$observed_process)
   keep$bootstrap_statistics <- isTRUE(keep$bootstrap_statistics)
+  keep$bootstrap_thetas <- isTRUE(keep$bootstrap_thetas)
   keep
 }
 
@@ -166,8 +168,18 @@ grid_point_at <- function(omega_grid, idx) {
   omega_grid[[idx]]
 }
 
-compute_grid_empirical_profile <- function(distance_matrix, t_grid) {
+compute_grid_empirical_profile <- function(distance_matrix,
+                                           t_grid,
+                                           sorted_distance_matrix = NULL,
+                                           threshold_index_matrix = NULL) {
+  n <- nrow(distance_matrix)
   n_omega <- ncol(distance_matrix)
+
+  if (!is.null(threshold_index_matrix)) {
+    profile_values <- threshold_index_matrix / n
+    return(ensure_profile_matrix(profile_values, n_rows = n_omega, n_cols = length(t_grid)))
+  }
+
   profile_values <- vapply(t_grid, function(t_value) {
     colMeans(distance_matrix <= t_value)
   }, numeric(n_omega))
@@ -175,14 +187,62 @@ compute_grid_empirical_profile <- function(distance_matrix, t_grid) {
   ensure_profile_matrix(profile_values, n_rows = n_omega, n_cols = length(t_grid))
 }
 
-compute_grid_weighted_profile <- function(distance_matrix, t_grid, normalized_weights) {
+compute_grid_weighted_profile <- function(distance_matrix,
+                                          t_grid,
+                                          normalized_weights,
+                                          sorted_distance_matrix = NULL,
+                                          order_matrix = NULL,
+                                          threshold_index_matrix = NULL) {
   n <- nrow(distance_matrix)
   n_omega <- ncol(distance_matrix)
-  profile_values <- vapply(t_grid, function(t_value) {
-    colSums((distance_matrix <= t_value) * normalized_weights) / n
-  }, numeric(n_omega))
+
+  if (is.null(sorted_distance_matrix) || is.null(order_matrix) || is.null(threshold_index_matrix)) {
+    profile_values <- vapply(t_grid, function(t_value) {
+      colSums((distance_matrix <= t_value) * normalized_weights) / n
+    }, numeric(n_omega))
+
+    return(ensure_profile_matrix(profile_values, n_rows = n_omega, n_cols = length(t_grid)))
+  }
+
+  profile_values <- matrix(0, nrow = n_omega, ncol = length(t_grid))
+
+  for (j in seq_len(n_omega)) {
+    ordered_weights <- normalized_weights[order_matrix[j, ]]
+    cumulative_weights <- cumsum(ordered_weights)
+    threshold_indices <- threshold_index_matrix[j, ]
+    row_values <- numeric(length(threshold_indices))
+    positive <- threshold_indices > 0L
+    if (any(positive)) {
+      row_values[positive] <- cumulative_weights[threshold_indices[positive]] / n
+    }
+    profile_values[j, ] <- row_values
+  }
 
   ensure_profile_matrix(profile_values, n_rows = n_omega, n_cols = length(t_grid))
+}
+
+precompute_ks_grid_cache <- function(distance_matrix, t_grid) {
+  n <- nrow(distance_matrix)
+  n_omega <- ncol(distance_matrix)
+
+  order_matrix <- t(vapply(seq_len(n_omega), function(j) {
+    as.integer(order(distance_matrix[, j]))
+  }, integer(n)))
+
+  sorted_distance_matrix <- matrix(0, nrow = n_omega, ncol = n)
+  for (j in seq_len(n_omega)) {
+    sorted_distance_matrix[j, ] <- distance_matrix[order_matrix[j, ], j]
+  }
+
+  threshold_index_matrix <- t(vapply(seq_len(n_omega), function(j) {
+    as.integer(findInterval(t_grid, sorted_distance_matrix[j, ]))
+  }, integer(length(t_grid))))
+
+  list(
+    order_matrix = order_matrix,
+    sorted_distance_matrix = sorted_distance_matrix,
+    threshold_index_matrix = threshold_index_matrix
+  )
 }
 
 compute_theoretical_profile_matrix <- function(spec, omega_grid, t_grid, theta, control = list()) {
@@ -225,7 +285,13 @@ prepare_ks_observed_data <- function(data, spec, theta_hat, ks_grid, control = l
   }
 
   distance_matrix <- spec$distance_matrix(data, omega_grid, control)
-  empirical_profile <- compute_grid_empirical_profile(distance_matrix, t_grid)
+  ks_cache <- precompute_ks_grid_cache(distance_matrix, t_grid)
+  empirical_profile <- compute_grid_empirical_profile(
+    distance_matrix,
+    t_grid,
+    sorted_distance_matrix = ks_cache$sorted_distance_matrix,
+    threshold_index_matrix = ks_cache$threshold_index_matrix
+  )
   theoretical_profile <- compute_theoretical_profile_matrix(
     spec = spec,
     omega_grid = omega_grid,
@@ -241,6 +307,9 @@ prepare_ks_observed_data <- function(data, spec, theta_hat, ks_grid, control = l
     omega_grid = omega_grid,
     t_grid = t_grid,
     distance_matrix = distance_matrix,
+    order_matrix = ks_cache$order_matrix,
+    sorted_distance_matrix = ks_cache$sorted_distance_matrix,
+    threshold_index_matrix = ks_cache$threshold_index_matrix,
     empirical_profile = empirical_profile,
     theoretical_profile = theoretical_profile,
     process_matrix = process_matrix,
@@ -365,10 +434,16 @@ run_bootstrap_chunk <- function(weight_chunk,
                                 ks_prep = NULL,
                                 cvm_prep = NULL,
                                 want_ks = FALSE,
-                                want_cvm = FALSE) {
+                                want_cvm = FALSE,
+                                keep_bootstrap_thetas = FALSE) {
   n_reps <- nrow(weight_chunk)
   ks_values <- if (want_ks) numeric(n_reps) else NULL
   cvm_values <- if (want_cvm) numeric(n_reps) else NULL
+  theta_values <- if (keep_bootstrap_thetas && identical(null$type, "composite")) {
+    vector("list", n_reps)
+  } else {
+    NULL
+  }
   n <- spec_n_obs(spec, data, control)
 
   for (b in seq_len(n_reps)) {
@@ -382,13 +457,19 @@ run_bootstrap_chunk <- function(weight_chunk,
         null = null,
         control = control
       )
+      if (!is.null(theta_values)) {
+        theta_values[[b]] <- theta_star
+      }
     }
 
     if (want_ks) {
       f_star_grid <- compute_grid_weighted_profile(
         distance_matrix = ks_prep$distance_matrix,
         t_grid = ks_prep$t_grid,
-        normalized_weights = normalized_weights
+        normalized_weights = normalized_weights,
+        sorted_distance_matrix = ks_prep$sorted_distance_matrix,
+        order_matrix = ks_prep$order_matrix,
+        threshold_index_matrix = ks_prep$threshold_index_matrix
       )
 
       if (identical(null$type, "simple")) {
@@ -437,7 +518,7 @@ run_bootstrap_chunk <- function(weight_chunk,
     }
   }
 
-  list(ks = ks_values, cvm = cvm_values)
+  list(ks = ks_values, cvm = cvm_values, theta = theta_values)
 }
 
 compute_inference_summary <- function(observed_statistics, bootstrap_statistics, alpha) {
@@ -503,7 +584,8 @@ multiplier_bootstrap_gof <- function(data,
                                      seed = NULL,
                                      keep = list(
                                        observed_process = TRUE,
-                                       bootstrap_statistics = TRUE
+                                       bootstrap_statistics = TRUE,
+                                       bootstrap_thetas = FALSE
                                      ),
                                      control = list()) {
   validate_model_spec(spec)
@@ -592,23 +674,26 @@ multiplier_bootstrap_gof <- function(data,
       ks_prep = ks_prep,
       cvm_prep = cvm_prep,
       want_ks = want_ks,
-      want_cvm = want_cvm
+      want_cvm = want_cvm,
+      keep_bootstrap_thetas = keep$bootstrap_thetas
     )
   } else {
     utils_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("utils.R"), winslash = "/", mustWork = TRUE)
     model_specs_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "model_specs.R"), winslash = "/", mustWork = TRUE)
+    cardioid_model_spec_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "cardioid_model_spec.R"), winslash = "/", mustWork = TRUE)
 
     cl <- parallel::makeCluster(n_cores_effective)
     on.exit(parallel::stopCluster(cl), add = TRUE)
 
     parallel::clusterExport(
       cl,
-      c("utils_path_worker", "model_specs_path_worker"),
+      c("utils_path_worker", "model_specs_path_worker", "cardioid_model_spec_path_worker"),
       envir = environment()
     )
     parallel::clusterEvalQ(cl, {
       source(utils_path_worker)
       source(model_specs_path_worker)
+      source(cardioid_model_spec_path_worker)
       NULL
     })
 
@@ -630,7 +715,8 @@ multiplier_bootstrap_gof <- function(data,
       "grid_n_points",
       "grid_point_at",
       "ensure_profile_matrix",
-      "null"
+      "null",
+      "keep"
     )
 
     parallel::clusterExport(cl, worker_symbols, envir = environment())
@@ -646,7 +732,8 @@ multiplier_bootstrap_gof <- function(data,
         ks_prep = ks_prep,
         cvm_prep = cvm_prep,
         want_ks = want_ks,
-        want_cvm = want_cvm
+        want_cvm = want_cvm,
+        keep_bootstrap_thetas = keep$bootstrap_thetas
       )
     })
   }
@@ -657,6 +744,11 @@ multiplier_bootstrap_gof <- function(data,
   }
   if (want_cvm) {
     bootstrap_statistics_internal$cvm <- unlist(lapply(chunk_results, `[[`, "cvm"), use.names = FALSE)
+  }
+  bootstrap_theta_internal <- if (keep$bootstrap_thetas && identical(null$type, "composite")) {
+    unlist(lapply(chunk_results, `[[`, "theta"), recursive = FALSE, use.names = FALSE)
+  } else {
+    NULL
   }
 
   observed_statistics <- list()
@@ -685,6 +777,7 @@ multiplier_bootstrap_gof <- function(data,
     ),
     bootstrap = list(
       statistics = if (keep$bootstrap_statistics) bootstrap_statistics_internal else NULL,
+      theta_star = bootstrap_theta_internal,
       multiplier = list(
         name = multiplier_spec$name,
         mean = multiplier_spec$mean,
@@ -702,6 +795,9 @@ multiplier_bootstrap_gof <- function(data,
       n_cores = n_cores_effective,
       null_type = null$type,
       spec_name = spec$name,
+      engine = "multiplier_bootstrap_gof",
+      method = "distance_profiles",
+      weighted_mle = isTRUE(spec$weighted_mle),
       elapsed_seconds = elapsed_seconds
     )
   )
@@ -721,7 +817,8 @@ multiplier_bootstrap_normal <- function(data,
                                         seed = NULL,
                                         keep = list(
                                           observed_process = TRUE,
-                                          bootstrap_statistics = TRUE
+                                          bootstrap_statistics = TRUE,
+                                          bootstrap_thetas = FALSE
                                         ),
                                         control = list(),
                                         unknown_param = NULL) {
@@ -753,7 +850,8 @@ multiplier_bootstrap_vmf <- function(data,
                                      seed = NULL,
                                      keep = list(
                                        observed_process = TRUE,
-                                       bootstrap_statistics = TRUE
+                                       bootstrap_statistics = TRUE,
+                                       bootstrap_thetas = FALSE
                                      ),
                                      control = list(),
                                      distance_type = c("chordal", "geodesic"),
@@ -763,6 +861,40 @@ multiplier_bootstrap_vmf <- function(data,
     distance_type = distance_type,
     unknown_param = unknown_param
   )
+
+  multiplier_bootstrap_gof(
+    data = data,
+    spec = spec,
+    null = null,
+    statistics = statistics,
+    ks_grid = ks_grid,
+    B = B,
+    alpha = alpha,
+    multipliers = multipliers,
+    n_cores = n_cores,
+    seed = seed,
+    keep = keep,
+    control = control
+  )
+}
+
+multiplier_bootstrap_hvmf <- function(data,
+                                      null,
+                                      statistics = c("ks", "cvm"),
+                                      ks_grid = NULL,
+                                      B = 999,
+                                      alpha = 0.05,
+                                      multipliers = NULL,
+                                      n_cores = 1,
+                                      seed = NULL,
+                                      keep = list(
+                                        observed_process = TRUE,
+                                        bootstrap_statistics = TRUE,
+                                        bootstrap_thetas = FALSE
+                                      ),
+                                      control = list(),
+                                      unknown_param = "both") {
+  spec <- make_hvmf_spec(unknown_param = unknown_param)
 
   multiplier_bootstrap_gof(
     data = data,
