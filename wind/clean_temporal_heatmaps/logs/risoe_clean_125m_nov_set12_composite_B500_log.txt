@@ -1,0 +1,16 @@
+Dataset: risoe_clean_125m_nov_set12
+Start timestamp: 2026-05-25 19:07:41
+Height: 125 m
+Months id: nov
+Years used: 1997,1998,1999,2000,2001,2003,2004
+n_final: 56
+Speed mean used for scaling: 8.4017857143
+MLE kappa_hat = 1.5872858007
+MLE mu_hat = (1.0532177818, -0.3262938625, -0.0529151319)
+MLE theta_deg_hat = 189.2114737253
+Configuration: composite CvM, B=500, n_cores=12, hvmf_profile_method=tabulated
+Observed CvM = 0.0746897875
+p-value = 0.5349301397
+Elapsed seconds = 14.123
+Warnings: none
+End timestamp: 2026-05-25 19:07:55

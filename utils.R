@@ -1845,6 +1845,1539 @@ validate_vmf_s2_grid_profile <- function(n_checks = 200,
 }
 
 ## ---------------------------------------------------------------------------
+## Jones-Pewsey distribution on S^q
+
+jp_cache_env <- new.env(parent = emptyenv())
+
+#' Surface area of the q-dimensional unit sphere S^q
+#' @param q Sphere dimension
+#' @return Surface area of S^q
+sphere_surface_area <- function(q) {
+  q <- as.integer(q)
+  if (length(q) != 1L || !is.finite(q) || q < 0L) {
+    stop("`q` must be a nonnegative integer.")
+  }
+
+  2 * pi^((q + 1) / 2) / gamma((q + 1) / 2)
+}
+
+jp_normalize_unit_vector <- function(x, arg_name = "`x`", min_length = 3L) {
+  x <- as.numeric(x)
+  if (length(x) < min_length) {
+    stop(sprintf("%s must have length at least %d.", arg_name, min_length))
+  }
+  if (any(!is.finite(x))) {
+    stop(sprintf("%s must be finite.", arg_name))
+  }
+
+  x_norm <- sqrt(sum(x^2))
+  if (!is.finite(x_norm) || x_norm <= 0) {
+    stop(sprintf("%s must have strictly positive norm.", arg_name))
+  }
+
+  x / x_norm
+}
+
+jp_normalize_unit_matrix <- function(x, arg_name = "`x`", min_ncol = 3L) {
+  if (is.vector(x)) {
+    x <- matrix(as.numeric(x), nrow = 1L)
+  } else {
+    x <- as.matrix(x)
+  }
+
+  if (nrow(x) == 0L || ncol(x) < min_ncol) {
+    stop(sprintf("%s must be a non-empty matrix with at least %d columns.", arg_name, min_ncol))
+  }
+  if (any(!is.finite(x))) {
+    stop(sprintf("%s must be finite.", arg_name))
+  }
+
+  norms <- sqrt(rowSums(x^2))
+  if (any(!is.finite(norms)) || any(norms <= 0)) {
+    stop(sprintf("%s must contain rows with strictly positive norm.", arg_name))
+  }
+
+  x / norms
+}
+
+jp_validate_parameters <- function(mu, kappa, psi) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  q <- length(mu) - 1L
+  if (q < 2L) {
+    stop("Jones-Pewsey functions currently support only q >= 2. The case q = 1 is not implemented yet.")
+  }
+
+  kappa <- as.numeric(kappa)
+  psi <- as.numeric(psi)
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa < 0) {
+    stop("`kappa` must be a nonnegative finite scalar.")
+  }
+  if (length(psi) != 1L || !is.finite(psi)) {
+    stop("`psi` must be a finite scalar.")
+  }
+
+  alpha <- if (psi == 0) 0 else tanh(kappa * psi)
+  beta <- if (psi == 0) NA_real_ else 1 / psi
+
+  list(
+    mu = mu,
+    q = q,
+    ambient_dim = length(mu),
+    kappa = kappa,
+    psi = psi,
+    alpha = alpha,
+    beta = beta
+  )
+}
+
+jp_vmf_near_zero_abs_kappa_psi_default <- 1e-3
+
+jp_is_near_zero_vmf_s2 <- function(ambient_dim,
+                                   kappa,
+                                   psi,
+                                   abs_kappa_psi_tol = jp_vmf_near_zero_abs_kappa_psi_default) {
+  ambient_dim <- as.integer(ambient_dim)
+  kappa <- as.numeric(kappa)
+  psi <- as.numeric(psi)
+  abs_kappa_psi_tol <- as.numeric(abs_kappa_psi_tol)
+
+  if (length(ambient_dim) != 1L || !is.finite(ambient_dim)) {
+    return(FALSE)
+  }
+  if (length(kappa) != 1L || length(psi) != 1L || !is.finite(kappa) || !is.finite(psi)) {
+    return(FALSE)
+  }
+  if (length(abs_kappa_psi_tol) != 1L || !is.finite(abs_kappa_psi_tol) || abs_kappa_psi_tol <= 0) {
+    stop("`abs_kappa_psi_tol` must be a strictly positive finite scalar.")
+  }
+
+  ambient_dim == 3L && abs(kappa * psi) <= abs_kappa_psi_tol
+}
+
+jp_log_one_minus_u2_term <- function(u, exponent) {
+  u <- as.numeric(u)
+  if (abs(exponent) <= 1e-15) {
+    return(rep(0, length(u)))
+  }
+
+  exponent * log(pmax(0, 1 - u^2))
+}
+
+jp_uniform_sphere <- function(n, ambient_dim) {
+  z <- matrix(stats::rnorm(n * ambient_dim), nrow = n, ncol = ambient_dim)
+  z / sqrt(rowSums(z^2))
+}
+
+jp_orthonormal_complement <- function(mu) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  q_complete <- qr.Q(qr(cbind(mu, diag(length(mu)))), complete = TRUE)
+  q_complete[, -1L, drop = FALSE]
+}
+
+jp_build_u_grid <- function(n_u = 4097L) {
+  n_u <- as.integer(n_u)
+  if (length(n_u) != 1L || !is.finite(n_u) || n_u < 17L || n_u %% 2L != 1L) {
+    stop("`n_u` must be an odd integer >= 17.")
+  }
+
+  phi <- seq(pi, 0, length.out = n_u)
+  u <- cos(phi)
+  list(
+    phi = phi,
+    u = u,
+    du = diff(u),
+    sqrt_one_minus_u2 = sqrt(pmax(0, 1 - u^2))
+  )
+}
+
+jp_cdf_from_density_grid <- function(u, density) {
+  density <- as.numeric(density)
+  if (length(u) != length(density) || length(u) < 2L) {
+    stop("`u` and `density` must have the same length >= 2.")
+  }
+
+  increments <- 0.5 * (density[-1L] + density[-length(density)]) * diff(u)
+  cdf <- c(0, cumsum(increments))
+  total_mass <- cdf[[length(cdf)]]
+  if (!is.finite(total_mass) || total_mass <= 0) {
+    stop("Failed to build a valid CDF table for the Jones-Pewsey distribution.")
+  }
+
+  cdf <- cdf / total_mass
+  cdf[[1L]] <- 0
+  cdf[[length(cdf)]] <- 1
+  cdf <- cummax(pmin(pmax(cdf, 0), 1))
+  cdf[[length(cdf)]] <- 1
+  cdf
+}
+
+jp_prepare_inverse_cdf_table <- function(u, cdf) {
+  cdf <- cummax(pmin(pmax(as.numeric(cdf), 0), 1))
+  cdf[[1L]] <- 0
+  cdf[[length(cdf)]] <- 1
+
+  keep <- c(TRUE, diff(cdf) > 0)
+  keep[[length(keep)]] <- TRUE
+
+  list(
+    u = as.numeric(u)[keep],
+    cdf = cdf[keep]
+  )
+}
+
+jp_interpolate_cdf <- function(x, x_grid, cdf_grid) {
+  x <- pmin(pmax(as.numeric(x), min(x_grid)), max(x_grid))
+  stats::approx(
+    x = x_grid,
+    y = cdf_grid,
+    xout = x,
+    method = "linear",
+    ties = "ordered",
+    rule = 2
+  )$y
+}
+
+jp_interpolate_upper_tail <- function(threshold, x_grid, cdf_grid) {
+  1 - jp_interpolate_cdf(threshold, x_grid = x_grid, cdf_grid = cdf_grid)
+}
+
+jp_uniform_s2_distance_profile <- function(t_values,
+                                           distance_type = c("geodesic", "chordal")) {
+  distance_type <- match.arg(distance_type)
+  t_values <- as.numeric(t_values)
+  output <- numeric(length(t_values))
+
+  if (identical(distance_type, "geodesic")) {
+    output[t_values <= 0] <- 0
+    output[t_values >= pi] <- 1
+    active <- which(t_values > 0 & t_values < pi)
+    output[active] <- (1 - cos(t_values[active])) / 2
+    return(output)
+  }
+
+  output[t_values <= 0] <- 0
+  output[t_values >= 2] <- 1
+  active <- which(t_values > 0 & t_values < 2)
+  output[active] <- (t_values[active]^2) / 4
+  output
+}
+
+jp_vmf_axis_density <- function(t, q, kappa, log = FALSE) {
+  t <- as.numeric(t)
+  out <- rep(if (log) -Inf else 0, length(t))
+  valid <- is.finite(t) & t >= -1 & t <= 1
+  if (!any(valid)) {
+    return(out)
+  }
+
+  if (kappa <= 1e-12) {
+    log_density <- log(sphere_surface_area(q - 1L)) - log(sphere_surface_area(q)) +
+      jp_log_one_minus_u2_term(t[valid], q / 2 - 1)
+  } else {
+    log_density <- log(sphere_surface_area(q - 1L)) +
+      rotasym::c_vMF(p = q + 1L, kappa = kappa, log = TRUE) +
+      kappa * t[valid] +
+      jp_log_one_minus_u2_term(t[valid], q / 2 - 1)
+  }
+
+  out[valid] <- if (log) log_density else exp(log_density)
+  out
+}
+
+jp_vmf_projected_density <- function(s, rho, ambient_dim, kappa, log = FALSE) {
+  s <- as.numeric(s)
+  out <- rep(if (log) -Inf else 0, length(s))
+  valid <- is.finite(s) & s >= -1 & s <= 1
+  if (!any(valid)) {
+    return(out)
+  }
+
+  rho <- pmin(pmax(as.numeric(rho), -1), 1)
+  exponent <- (ambient_dim - 3L) / 2
+  radial_term <- pmax(0, 1 - s[valid]^2)
+  kappa_term <- kappa * sqrt(radial_term * pmax(0, 1 - rho^2))
+
+  log_density <- rotasym::c_vMF(p = ambient_dim, kappa = kappa, log = TRUE) +
+    kappa * rho * s[valid] +
+    jp_log_one_minus_u2_term(s[valid], exponent) -
+    rotasym::c_vMF(p = ambient_dim - 1L, kappa = kappa_term, log = TRUE)
+
+  out[valid] <- if (log) log_density else exp(log_density)
+  out
+}
+
+jp_normalize_probability_weights <- function(weights, n_expected) {
+  weights <- as.numeric(weights)
+
+  if (length(weights) != n_expected) {
+    stop("`weights` has incompatible length.")
+  }
+  if (any(!is.finite(weights))) {
+    stop("`weights` must be finite.")
+  }
+  if (any(weights < 0)) {
+    stop("`weights` must be nonnegative.")
+  }
+
+  total_weight <- sum(weights)
+  if (!is.finite(total_weight) || total_weight <= 0) {
+    stop("`weights` must have strictly positive sum.")
+  }
+
+  weights / total_weight
+}
+
+jp_log_abs_diff_exp <- function(a, b) {
+  a <- as.numeric(a)
+  b <- as.numeric(b)
+  max_ab <- pmax(a, b)
+  min_ab <- pmin(a, b)
+  max_ab + log1p(-exp(min_ab - max_ab))
+}
+
+jp_log_norm_constant_s2 <- function(alpha, beta) {
+  alpha <- as.numeric(alpha)
+  beta <- as.numeric(beta)
+
+  len <- max(length(alpha), length(beta))
+  alpha <- rep_len(alpha, len)
+  beta <- rep_len(beta, len)
+
+  if (any(!is.finite(alpha)) || any(abs(alpha) >= 1)) {
+    stop("`alpha` must be finite and lie in (-1, 1).")
+  }
+  if (any(!is.finite(beta))) {
+    stop("`beta` must be finite.")
+  }
+
+  out <- numeric(len)
+  alpha_zero <- abs(alpha) <= 1e-15
+  out[alpha_zero] <- -log(4 * pi)
+
+  active <- which(!alpha_zero)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  beta_active <- beta[active]
+  alpha_active <- alpha[active]
+  beta_near_minus_one <- abs(beta_active + 1) <= 1e-8
+
+  if (any(beta_near_minus_one)) {
+    idx <- active[beta_near_minus_one]
+    log_ratio <- log1p(alpha[idx]) - log1p(-alpha[idx])
+    out[idx] <- -(log(2 * pi) + log(abs(log_ratio)) - log(abs(alpha[idx])))
+  }
+
+  if (any(!beta_near_minus_one)) {
+    idx <- active[!beta_near_minus_one]
+    g <- beta[idx] + 1
+    a_term <- g * log1p(alpha[idx])
+    b_term <- g * log1p(-alpha[idx])
+    out[idx] <- -(log(2 * pi) +
+      jp_log_abs_diff_exp(a_term, b_term) -
+      log(abs(alpha[idx] * g)))
+  }
+
+  out
+}
+
+
+jp_weighted_loglik_s2 <- function(mu, kappa, psi, x, prob_weights) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  if (ncol(x) != 3L) {
+    stop("`jp_weighted_loglik_s2()` currently supports only S^2 data.")
+  }
+
+  params <- jp_validate_parameters(mu = mu, kappa = kappa, psi = psi)
+  if (params$ambient_dim != 3L) {
+    stop("`jp_weighted_loglik_s2()` currently supports only S^2.")
+  }
+
+  prob_weights <- as.numeric(prob_weights)
+  if (length(prob_weights) != nrow(x)) {
+    stop("`prob_weights` must have length nrow(x).")
+  }
+
+  z <- as.numeric(x %*% params$mu)
+
+  if (jp_is_near_zero_vmf_s2(
+    ambient_dim = params$ambient_dim,
+    kappa = params$kappa,
+    psi = params$psi
+  )) {
+    return(rotasym::c_vMF(p = 3L, kappa = params$kappa, log = TRUE) +
+      params$kappa * sum(prob_weights * z))
+  }
+
+  term <- 1 + params$alpha * z
+  if (any(term <= 0) || any(!is.finite(term))) {
+    return(-Inf)
+  }
+
+  jp_log_norm_constant_s2(params$alpha, params$beta) +
+    params$beta * sum(prob_weights * log(term))
+}
+
+#' Weighted log-likelihood for Jones-Pewsey model on S^2 (pre-validated/prepared)
+jp_weighted_loglik_s2_prepared <- function(mu, kappa, psi, x, prob_weights) {
+  mu <- as.numeric(mu)
+  kappa <- as.numeric(kappa)
+  psi <- as.numeric(psi)
+
+  if (length(mu) != 3L || length(kappa) != 1L || length(psi) != 1L) {
+    return(-Inf)
+  }
+  if (any(!is.finite(mu)) || !is.finite(kappa) || !is.finite(psi) || kappa < 0) {
+    return(-Inf)
+  }
+
+  mu_norm <- sqrt(sum(mu^2))
+  if (!is.finite(mu_norm) || mu_norm <= 0) {
+    return(-Inf)
+  }
+  if (abs(mu_norm - 1) > 1e-8) {
+    mu <- mu / mu_norm
+  }
+
+  prob_weights <- as.numeric(prob_weights)
+  if (length(prob_weights) != nrow(x) || any(!is.finite(prob_weights))) {
+    return(-Inf)
+  }
+
+  z <- as.numeric(x %*% mu)
+
+  if (jp_is_near_zero_vmf_s2(ambient_dim = 3L, kappa = kappa, psi = psi)) {
+    return(rotasym::c_vMF(p = 3L, kappa = kappa, log = TRUE) +
+      kappa * sum(prob_weights * z))
+  }
+
+  alpha <- tanh(kappa * psi)
+  beta <- 1 / psi
+  term <- 1 + alpha * z
+  if (any(term <= 0) || any(!is.finite(term))) {
+    return(-Inf)
+  }
+
+  jp_log_norm_constant_s2(alpha, beta) + beta * sum(prob_weights * log(term))
+}
+
+jp_solve_vmf_kappa_from_rbar <- function(r_bar,
+                                         q,
+                                         tol = 1e-10,
+                                         max_kappa = 1e6) {
+  r_bar <- as.numeric(r_bar)
+  q <- as.numeric(q)
+
+  if (length(r_bar) != 1L || !is.finite(r_bar) || r_bar < 0 || r_bar > 1) {
+    stop("`r_bar` must be a scalar in [0, 1].")
+  }
+  if (length(q) != 1L || !is.finite(q) || q < 1) {
+    stop("`q` must be a positive scalar.")
+  }
+
+  if (r_bar <= tol) {
+    return(0)
+  }
+  if (r_bar >= 1 - tol) {
+    return(max_kappa)
+  }
+
+  objective <- function(kappa) A_q(kappa, q) - r_bar
+  upper <- 1
+  while (objective(upper) < 0 && upper < max_kappa) {
+    upper <- upper * 2
+  }
+
+  if (upper >= max_kappa && objective(upper) < 0) {
+    return(max_kappa)
+  }
+
+  stats::uniroot(objective, interval = c(0, upper), tol = tol)$root
+}
+
+jp_weighted_vmf_mle_s2 <- function(x, prob_weights) {
+  resultant <- colSums(x * prob_weights)
+  r_bar <- sqrt(sum(resultant^2))
+
+  if (!is.finite(r_bar) || r_bar <= 1e-12) {
+    mu_hat <- c(0, 0, 1)
+    kappa_hat <- 0
+  } else {
+    mu_hat <- resultant / r_bar
+    kappa_hat <- jp_solve_vmf_kappa_from_rbar(r_bar, q = 2L)
+  }
+
+  list(
+    mu = mu_hat,
+    kappa = kappa_hat,
+    psi = 0,
+    loglik = jp_weighted_loglik_s2_prepared(mu_hat, kappa_hat, 0, x, prob_weights),
+    source = "vmf"
+  )
+}
+
+jp_mu_s2_to_raw <- function(mu) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  phi <- acos(pmin(pmax(mu[[3L]], -1), 1))
+  sin_phi <- sin(phi)
+  lambda <- if (abs(sin_phi) <= 1e-10) 0 else atan2(mu[[2L]], mu[[1L]])
+  phi_scaled <- pmin(pmax(phi / pi, 1e-8), 1 - 1e-8)
+
+  c(lambda, stats::qlogis(phi_scaled))
+}
+
+jp_mu_s2_from_raw <- function(lambda_raw, phi_raw) {
+  phi <- pi * stats::plogis(phi_raw)
+  sin_phi <- sin(phi)
+  c(cos(lambda_raw) * sin_phi, sin(lambda_raw) * sin_phi, cos(phi))
+}
+
+jp_params_s2_from_raw <- function(raw, sign_branch, psi_min) {
+  raw <- as.numeric(raw)
+  if (length(raw) != 4L || any(!is.finite(raw))) {
+    return(NULL)
+  }
+  if (raw[[3L]] > 700 || raw[[4L]] > 700) {
+    return(NULL)
+  }
+
+  mu <- jp_mu_s2_from_raw(raw[[1L]], raw[[2L]])
+  a <- exp(raw[[3L]])
+  psi_abs <- psi_min + exp(raw[[4L]])
+  psi <- sign_branch * psi_abs
+  kappa <- a / psi_abs
+  alpha <- sign_branch * tanh(a)
+  beta <- 1 / psi
+
+  list(
+    mu = mu,
+    a = a,
+    psi_abs = psi_abs,
+    psi = psi,
+    kappa = kappa,
+    alpha = alpha,
+    beta = beta
+  )
+}
+
+jp_neg_weighted_loglik_s2_raw <- function(raw,
+                                          sign_branch,
+                                          x,
+                                          prob_weights,
+                                          psi_min,
+                                          max_abs_kappa_psi = Inf) {
+  if (!all(is.finite(raw)) || raw[[3L]] > 700) {
+    return(Inf)
+  }
+
+  a_value <- exp(raw[[3L]])
+  if (!is.finite(a_value) || a_value <= 0 || a_value > max_abs_kappa_psi) {
+    return(Inf)
+  }
+
+  params <- jp_params_s2_from_raw(raw, sign_branch = sign_branch, psi_min = psi_min)
+  if (is.null(params)) {
+    return(Inf)
+  }
+
+  loglik <- jp_weighted_loglik_s2_prepared(
+    mu = params$mu,
+    kappa = params$kappa,
+    psi = params$psi,
+    x = x,
+    prob_weights = prob_weights
+  )
+  if (!is.finite(loglik)) {
+    return(Inf)
+  }
+
+  -loglik
+}
+
+#' Weighted numerical MLE for the Jones--Pewsey model on S^2
+#'
+#' Unlike the composite normal, vMF, and HvMF fits used elsewhere in the bootstrap
+#' pipeline, the spherical Jones--Pewsey composite fit does not have a closed-form
+#' MLE in the current parametrization. The likelihood involves the normalizing
+#' constant of the Jones--Pewsey family and the shape parameter `psi`, so the fit
+#' is obtained by numerical maximization.
+#'
+#' The implementation below uses the vMF MLE as a cheap baseline/start.
+#'
+#' The control entries `jp_mle_sign_branches`, `jp_mle_psi_abs_starts`,
+#' `jp_mle_maxit`, and `jp_mle_reltol` are therefore the main speed/accuracy
+#' knobs for calibration studies. The optional entry `jp_mle_start_theta` may
+#' contain a list with entries `mu`, `kappa`, and `psi`; when supplied, it is
+#' added as a warm start for the numerical search. This is useful for bootstrap
+#' refits, where the observed MLE is often a much better starting point than a
+#' fresh vMF initialization.
+jp_mle_s2_weighted <- function(data, weights = NULL, control = list()) {
+  data_already_normalized <- isTRUE(control$jp_data_already_normalized)
+  x <- if (data_already_normalized) {
+    as.matrix(data)
+  } else {
+    jp_normalize_unit_matrix(data, arg_name = "`data`", min_ncol = 3L)
+  }
+  if (ncol(x) != 3L) {
+    stop("`jp_mle_s2_weighted()` currently supports only S^2 data.")
+  }
+
+  psi_min <- as.numeric(control$jp_mle_psi_min %||% 1e-3)
+  psi_abs_starts <- as.numeric(control$jp_mle_psi_abs_starts %||% c(0.25, 0.5, 1, 2))
+  maxit <- as.integer(control$jp_mle_maxit %||% 500L)
+  reltol <- as.numeric(control$jp_mle_reltol %||% 1e-10)
+  optim_method <- as.character(control$jp_mle_method %||% "BFGS")
+  max_abs_kappa_psi <- as.numeric(control$jp_mle_max_abs_kappa_psi %||% Inf)
+  branches <- as.integer(control$jp_mle_sign_branches %||% c(-1L, 1L))
+  vmf_switch_abs_kappa_psi <- as.numeric(
+    control$jp_vmf_switch_abs_kappa_psi %||% jp_vmf_near_zero_abs_kappa_psi_default
+  )
+  bootstrap_refit <- isTRUE(control$jp_mle_bootstrap_refit)
+  bootstrap_allow_global_fallback <- isTRUE(control$jp_mle_bootstrap_allow_global_fallback)
+  warm_start_only <- isTRUE(control$jp_mle_warm_start_only) ||
+    bootstrap_refit
+
+  if (length(psi_min) != 1L || !is.finite(psi_min) || psi_min <= 0) {
+    stop("`control$jp_mle_psi_min` must be a strictly positive scalar.")
+  }
+  if (length(psi_abs_starts) == 0L || any(!is.finite(psi_abs_starts)) || any(psi_abs_starts <= psi_min)) {
+    stop("`control$jp_mle_psi_abs_starts` must contain finite values strictly greater than `psi_min`.")
+  }
+  if (length(branches) == 0L || any(!branches %in% c(-1L, 1L))) {
+    stop("`control$jp_mle_sign_branches` must be a vector with entries in {-1, 1}.")
+  }
+  if (length(max_abs_kappa_psi) != 1L || is.na(max_abs_kappa_psi) || max_abs_kappa_psi <= 0) {
+    stop("`control$jp_mle_max_abs_kappa_psi` must be a strictly positive scalar (finite or Inf).")
+  }
+  if (length(vmf_switch_abs_kappa_psi) != 1L ||
+      !is.finite(vmf_switch_abs_kappa_psi) ||
+      vmf_switch_abs_kappa_psi <= 0) {
+    stop("`control$jp_vmf_switch_abs_kappa_psi` must be a strictly positive finite scalar.")
+  }
+
+  prob_weights <- if (is.null(weights)) {
+    rep.int(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(weights, nrow(x))
+  }
+
+  vmf_candidate <- NULL
+  raw_mu_start <- NULL
+  candidates <- list()
+  if (!isTRUE(warm_start_only)) {
+    vmf_candidate <- jp_weighted_vmf_mle_s2(x, prob_weights)
+    raw_mu_start <- jp_mu_s2_to_raw(vmf_candidate$mu)
+    candidates <- list(vmf_candidate)
+  }
+
+  warm_start_theta <- control$jp_mle_start_theta %||% NULL
+  warm_mu <- NULL
+  warm_kappa <- NA_real_
+  warm_psi <- NA_real_
+  warm_is_valid <- FALSE
+  warm_is_near_zero_vmf <- FALSE
+
+  if (!is.null(warm_start_theta)) {
+    warm_mu_try <- try(
+      jp_normalize_unit_vector(
+        warm_start_theta$mu,
+        arg_name = "`control$jp_mle_start_theta$mu`",
+        min_length = 3L
+      ),
+      silent = TRUE
+    )
+    warm_kappa_try <- suppressWarnings(as.numeric(warm_start_theta$kappa))
+    warm_psi_try <- suppressWarnings(as.numeric(warm_start_theta$psi))
+
+    if (!inherits(warm_mu_try, "try-error") &&
+        length(warm_kappa_try) == 1L && is.finite(warm_kappa_try) && warm_kappa_try >= 0 &&
+        length(warm_psi_try) == 1L && is.finite(warm_psi_try)) {
+      warm_mu <- warm_mu_try
+      warm_kappa <- warm_kappa_try
+      warm_psi <- warm_psi_try
+      warm_is_valid <- TRUE
+      warm_is_near_zero_vmf <- jp_is_near_zero_vmf_s2(
+        ambient_dim = 3L,
+        kappa = warm_kappa,
+        psi = warm_psi,
+        abs_kappa_psi_tol = vmf_switch_abs_kappa_psi
+      )
+    }
+  }
+
+  if (bootstrap_refit) {
+    if (!warm_is_valid) {
+      if (bootstrap_allow_global_fallback) {
+        fallback_control <- control
+        fallback_control$jp_mle_warm_start_only <- FALSE
+        fallback_control$jp_mle_bootstrap_refit <- FALSE
+        return(jp_mle_s2_weighted(data = x, weights = prob_weights, control = fallback_control))
+      }
+      stop("JP bootstrap refit requires a valid `jp_mle_start_theta` (theta_hat).")
+    }
+
+    if (warm_is_near_zero_vmf) {
+      best_vmf <- jp_weighted_vmf_mle_s2(x, prob_weights)
+      return(list(
+        mu = best_vmf$mu,
+        kappa = best_vmf$kappa,
+        psi = best_vmf$psi
+      ))
+    }
+
+    # Bootstrap refits stay on the observed JP sign branch unless explicitly overridden.
+    branches <- as.integer(ifelse(warm_psi >= 0, 1L, -1L))
+  }
+
+  raw_start_entries <- list()
+  if (warm_is_valid) {
+      warm_loglik <- jp_weighted_loglik_s2_prepared(
+        mu = warm_mu,
+        kappa = warm_kappa,
+        psi = warm_psi,
+        x = x,
+        prob_weights = prob_weights
+      )
+      warm_abs_kappa_psi <- abs(warm_kappa * warm_psi)
+      if (is.finite(warm_loglik) && is.finite(warm_abs_kappa_psi) && warm_abs_kappa_psi <= max_abs_kappa_psi) {
+        candidates[[length(candidates) + 1L]] <- list(
+          mu = warm_mu,
+          kappa = warm_kappa,
+          psi = warm_psi,
+          loglik = warm_loglik,
+          source = "warm_start"
+        )
+        warm_a <- max(abs(warm_kappa * warm_psi), 1e-4)
+        warm_psi_abs <- max(abs(warm_psi), psi_min * (1 + 1e-6))
+        raw_start_entries[[length(raw_start_entries) + 1L]] <- list(
+          sign_branch = ifelse(warm_psi >= 0, 1L, -1L),
+          raw_start = c(
+            jp_mu_s2_to_raw(warm_mu),
+            log(warm_a),
+            log(warm_psi_abs - psi_min)
+          )
+        )
+      }
+  }
+
+  if (!isTRUE(warm_start_only)) {
+    for (sign_branch in unique(branches)) {
+      for (psi_abs0 in psi_abs_starts) {
+        a0 <- max(vmf_candidate$kappa * psi_abs0, 1e-4)
+        raw_start_entries[[length(raw_start_entries) + 1L]] <- list(
+          sign_branch = sign_branch,
+          raw_start = c(
+            raw_mu_start,
+            log(a0),
+            log(psi_abs0 - psi_min)
+          )
+        )
+      }
+    }
+  }
+
+  if (isTRUE(warm_start_only) && length(raw_start_entries) == 0L) {
+    if (bootstrap_refit && !bootstrap_allow_global_fallback) {
+      stop("JP bootstrap refit failed to build local warm-start entries.")
+    }
+    fallback_control <- control
+    fallback_control$jp_mle_warm_start_only <- FALSE
+    fallback_control$jp_mle_bootstrap_refit <- FALSE
+    return(jp_mle_s2_weighted(data = x, weights = prob_weights, control = fallback_control))
+  }
+
+  for (raw_entry in raw_start_entries) {
+    sign_branch <- raw_entry$sign_branch
+    raw_start <- raw_entry$raw_start
+
+    fit <- try(
+      stats::optim(
+        par = raw_start,
+        fn = jp_neg_weighted_loglik_s2_raw,
+        sign_branch = sign_branch,
+        x = x,
+        prob_weights = prob_weights,
+        psi_min = psi_min,
+        max_abs_kappa_psi = max_abs_kappa_psi,
+        method = optim_method,
+        control = list(maxit = maxit, reltol = reltol)
+      ),
+      silent = TRUE
+    )
+
+    if (inherits(fit, "try-error") || !is.list(fit) || fit$convergence != 0L || !is.finite(fit$value)) {
+      next
+    }
+
+    params <- jp_params_s2_from_raw(fit$par, sign_branch = sign_branch, psi_min = psi_min)
+    if (is.null(params)) {
+      next
+    }
+
+    abs_kappa_psi <- abs(params$kappa * params$psi)
+    if (!is.finite(abs_kappa_psi) || abs_kappa_psi > max_abs_kappa_psi) {
+      next
+    }
+
+    loglik <- jp_weighted_loglik_s2_prepared(
+      mu = params$mu,
+      kappa = params$kappa,
+      psi = params$psi,
+      x = x,
+      prob_weights = prob_weights
+    )
+    if (!is.finite(loglik)) {
+      next
+    }
+
+    candidates[[length(candidates) + 1L]] <- list(
+      mu = params$mu,
+      kappa = params$kappa,
+      psi = params$psi,
+      loglik = loglik,
+      source = "jp"
+    )
+  }
+
+  if (isTRUE(warm_start_only)) {
+    optimized_candidate <- vapply(candidates, function(candidate) {
+      identical(candidate$source, "jp") && is.finite(candidate$loglik)
+    }, logical(1))
+
+    if (!any(optimized_candidate)) {
+      if (bootstrap_refit && !bootstrap_allow_global_fallback) {
+        finite_candidate <- vapply(candidates, function(candidate) {
+          is.finite(candidate$loglik)
+        }, logical(1))
+        if (any(finite_candidate)) {
+          candidates <- candidates[finite_candidate]
+        } else {
+          stop("JP bootstrap refit local optimization did not converge.")
+        }
+      } else {
+        fallback_control <- control
+        fallback_control$jp_mle_warm_start_only <- FALSE
+        fallback_control$jp_mle_bootstrap_refit <- FALSE
+        return(jp_mle_s2_weighted(data = x, weights = prob_weights, control = fallback_control))
+      }
+    } else {
+      candidates <- candidates[optimized_candidate]
+    }
+  }
+
+  loglik_values <- vapply(candidates, function(candidate) candidate$loglik, numeric(1))
+  if (all(!is.finite(loglik_values))) {
+    stop("JP composite MLE failed: no finite candidate was found.")
+  }
+
+  best <- candidates[[which.max(loglik_values)]]
+
+  if (jp_is_near_zero_vmf_s2(
+    ambient_dim = 3L,
+    kappa = best$kappa,
+    psi = best$psi,
+    abs_kappa_psi_tol = vmf_switch_abs_kappa_psi
+  )) {
+    if (is.null(vmf_candidate)) {
+      vmf_candidate <- jp_weighted_vmf_mle_s2(x, prob_weights)
+    }
+    best <- vmf_candidate
+  }
+
+  list(
+    mu = best$mu,
+    kappa = best$kappa,
+    psi = best$psi
+  )
+}
+
+jp_reciprocal_constant_sphere <- function(q,
+                                          alpha,
+                                          beta,
+                                          rel.tol = 1e-10,
+                                          abs.tol = 1e-12,
+                                          subdivisions = 2000L) {
+  if (q == 0L) {
+    return((1 + alpha)^beta + (1 - alpha)^beta)
+  }
+
+  integrand <- function(phi) {
+    exp(beta * log1p(alpha * cos(phi))) * sin(phi)^(q - 1L)
+  }
+
+  result <- stats::integrate(
+    f = integrand,
+    lower = 0,
+    upper = pi,
+    rel.tol = rel.tol,
+    abs.tol = abs.tol,
+    subdivisions = as.integer(subdivisions),
+    stop.on.error = FALSE
+  )
+
+  integration_ok <- is.character(result$message) &&
+    length(result$message) == 1L &&
+    identical(result$message, "OK")
+
+  if (integration_ok && is.finite(result$value) && result$value > 0) {
+    return(sphere_surface_area(q - 1L) * result$value)
+  }
+
+  # Fallback for difficult parameter configurations where adaptive quadrature
+  # reports roundoff problems or otherwise fails to certify the result.
+  n_grid <- 65537L
+  phi_grid <- seq(0, pi, length.out = n_grid)
+  density_grid <- integrand(phi_grid)
+  density_grid[!is.finite(density_grid)] <- 0
+  trap_value <- sum(0.5 * (density_grid[-1L] + density_grid[-n_grid]) * diff(phi_grid))
+
+  if (!is.finite(trap_value) || trap_value <= 0) {
+    stop("Failed to evaluate the Jones-Pewsey normalizing integral.")
+  }
+
+  sphere_surface_area(q - 1L) * trap_value
+}
+
+#' Jones-Pewsey normalizing constant on S^q
+#' @param q Sphere dimension
+#' @param alpha Scalar in (-1, 1)
+#' @param beta Scalar exponent
+#' @param log Whether to return the log-constant
+#' @return Normalizing constant for the Jones-Pewsey density on S^q
+c_jp_sphere <- function(q, alpha, beta, log = FALSE) {
+  q <- as.integer(q)
+  alpha <- as.numeric(alpha)
+  beta <- as.numeric(beta)
+
+  if (length(q) != 1L || !is.finite(q) || q < 0L) {
+    stop("`q` must be a nonnegative integer.")
+  }
+  if (length(alpha) != 1L || !is.finite(alpha) || abs(alpha) >= 1) {
+    stop("`alpha` must be a finite scalar in (-1, 1).")
+  }
+  if (length(beta) != 1L || !is.finite(beta)) {
+    stop("`beta` must be a finite scalar.")
+  }
+
+  if (abs(alpha) <= 1e-15) {
+    log_const <- -log(sphere_surface_area(q))
+    return(if (log) log_const else exp(log_const))
+  }
+
+  cache_key <- sprintf("cjp_q%d_a%.17g_b%.17g", q, alpha, beta)
+  if (!exists(cache_key, envir = jp_cache_env, inherits = FALSE)) {
+    reciprocal_constant <- jp_reciprocal_constant_sphere(q = q, alpha = alpha, beta = beta)
+    assign(cache_key, 1 / reciprocal_constant, envir = jp_cache_env)
+  }
+
+  constant <- get(cache_key, envir = jp_cache_env, inherits = FALSE)
+  if (log) log(constant) else constant
+}
+
+get_jp_delta_reciprocal_table <- function(q,
+                                          beta,
+                                          n_delta = 1025L,
+                                          delta_max = 1 - 1e-10) {
+  q <- as.integer(q)
+  n_delta <- as.integer(n_delta)
+  delta_max <- as.numeric(delta_max)
+
+  if (length(q) != 1L || !is.finite(q) || q < 1L) {
+    stop("`q` must be an integer >= 1 for the delta table.")
+  }
+  if (length(beta) != 1L || !is.finite(beta)) {
+    stop("`beta` must be finite.")
+  }
+  if (length(n_delta) != 1L || !is.finite(n_delta) || n_delta < 33L) {
+    stop("`n_delta` must be an integer >= 33.")
+  }
+  if (length(delta_max) != 1L || !is.finite(delta_max) || delta_max <= 0 || delta_max >= 1) {
+    stop("`delta_max` must be a scalar in (0, 1).")
+  }
+
+  cache_key <- sprintf("jp_delta_recip_q%d_b%.17g_n%d_dmax%.17g", q, beta, n_delta, delta_max)
+  if (!exists(cache_key, envir = jp_cache_env, inherits = FALSE)) {
+    base_grid <- seq(0, 1, length.out = n_delta)
+    delta_grid <- delta_max * (1 - (1 - base_grid)^2)
+    reciprocal_grid <- vapply(delta_grid, function(delta) {
+      1 / c_jp_sphere(q = q, alpha = delta, beta = beta)
+    }, numeric(1))
+
+    assign(
+      cache_key,
+      data.frame(delta = delta_grid, reciprocal = reciprocal_grid),
+      envir = jp_cache_env
+    )
+  }
+
+  get(cache_key, envir = jp_cache_env, inherits = FALSE)
+}
+
+jp_max_delta_from_rho <- function(alpha, rho, n_search = 1025L) {
+  alpha_signed <- as.numeric(alpha)
+  alpha <- abs(alpha_signed)
+  rho <- pmin(pmax(as.numeric(rho), -1), 1)
+  if (alpha <= 1e-15 || length(rho) == 0L) {
+    return(0)
+  }
+
+  u_grid_object <- jp_build_u_grid(n_u = as.integer(n_search))
+  max_delta <- 0
+  for (rho_value in rho) {
+    num0 <- 1 + alpha_signed * rho_value * u_grid_object$u
+    delta_values <- alpha * sqrt(pmax(0, 1 - rho_value^2)) * u_grid_object$sqrt_one_minus_u2 / num0
+    max_delta <- max(max_delta, delta_values)
+  }
+
+  pmin(1 - 1e-10, max_delta + 1e-6)
+}
+
+jp_eval_delta_reciprocal <- function(delta, reciprocal_table) {
+  delta <- abs(as.numeric(delta))
+  max_delta <- reciprocal_table$delta[[nrow(reciprocal_table)]]
+  delta <- pmin(pmax(delta, 0), max_delta)
+
+  stats::approx(
+    x = reciprocal_table$delta,
+    y = reciprocal_table$reciprocal,
+    xout = delta,
+    method = "linear",
+    ties = "ordered",
+    rule = 2
+  )$y
+}
+
+jp_projected_density_matrix <- function(rho,
+                                        q,
+                                        alpha,
+                                        beta,
+                                        u_grid_object,
+                                        reciprocal_table = NULL) {
+  rho <- pmin(pmax(as.numeric(rho), -1), 1)
+  n_u <- length(u_grid_object$u)
+  n_rho <- length(rho)
+
+  if (n_rho == 0L) {
+    return(matrix(0, nrow = n_u, ncol = 0L))
+  }
+
+  if (is.null(reciprocal_table)) {
+    reciprocal_table <- get_jp_delta_reciprocal_table(
+      q = q - 1L,
+      beta = beta,
+      delta_max = jp_max_delta_from_rho(alpha = alpha, rho = rho)
+    )
+  }
+
+  log_c_q <- c_jp_sphere(q = q, alpha = alpha, beta = beta, log = TRUE)
+  base_log_term <- jp_log_one_minus_u2_term(u_grid_object$u, q / 2 - 1)
+  sqrt_one_minus_rho2 <- sqrt(pmax(0, 1 - rho^2))
+  density_matrix <- matrix(0, nrow = n_u, ncol = n_rho)
+
+  for (j in seq_along(rho)) {
+    num0 <- 1 + alpha * rho[[j]] * u_grid_object$u
+    delta <- abs(alpha) * sqrt_one_minus_rho2[[j]] * u_grid_object$sqrt_one_minus_u2 / num0
+    reciprocal_values <- jp_eval_delta_reciprocal(delta, reciprocal_table)
+    log_density <- log_c_q +
+      base_log_term +
+      beta * log(num0) +
+      log(reciprocal_values)
+    density_matrix[, j] <- exp(log_density)
+  }
+
+  density_matrix
+}
+
+build_jp_projected_cdf_matrix <- function(rho,
+                                          q,
+                                          alpha,
+                                          beta,
+                                          n_u = 4097L,
+                                          n_delta = 1025L) {
+  u_grid_object <- jp_build_u_grid(n_u = n_u)
+  reciprocal_table <- get_jp_delta_reciprocal_table(
+    q = q - 1L,
+    beta = beta,
+    n_delta = n_delta,
+    delta_max = jp_max_delta_from_rho(alpha = alpha, rho = rho, n_search = n_u)
+  )
+  density_matrix <- jp_projected_density_matrix(
+    rho = rho,
+    q = q,
+    alpha = alpha,
+    beta = beta,
+    u_grid_object = u_grid_object,
+    reciprocal_table = reciprocal_table
+  )
+
+  n_u <- nrow(density_matrix)
+  n_rho <- ncol(density_matrix)
+  if (n_rho == 0L) {
+    return(list(
+      u = u_grid_object$u,
+      cdf = matrix(0, nrow = n_u, ncol = 0L),
+      density = density_matrix
+    ))
+  }
+
+  increments <- 0.5 * (density_matrix[-1L, , drop = FALSE] + density_matrix[-n_u, , drop = FALSE]) *
+    u_grid_object$du
+  cdf_matrix <- rbind(rep(0, n_rho), apply(increments, 2, cumsum))
+  last_values <- pmax(cdf_matrix[n_u, ], .Machine$double.xmin)
+  cdf_matrix <- sweep(cdf_matrix, 2, last_values, "/", check.margin = FALSE)
+  cdf_matrix <- apply(cdf_matrix, 2, function(column) {
+    column <- cummax(pmin(pmax(column, 0), 1))
+    column[[1L]] <- 0
+    column[[length(column)]] <- 1
+    column
+  })
+  if (!is.matrix(cdf_matrix)) {
+    cdf_matrix <- matrix(cdf_matrix, ncol = n_rho)
+  }
+
+  list(
+    u = u_grid_object$u,
+    cdf = cdf_matrix,
+    density = density_matrix
+  )
+}
+
+build_jp_axis_cdf_table <- function(mu,
+                                    kappa,
+                                    psi,
+                                    grid_size = 8193L) {
+  params <- jp_validate_parameters(mu = mu, kappa = kappa, psi = psi)
+  u_grid_object <- jp_build_u_grid(n_u = grid_size)
+  density <- d_proj_jp(
+    t = u_grid_object$u,
+    mu = params$mu,
+    kappa = params$kappa,
+    psi = params$psi,
+    log = FALSE
+  )
+  cdf <- jp_cdf_from_density_grid(u = u_grid_object$u, density = density)
+
+  data.frame(
+    u = u_grid_object$u,
+    density = density,
+    cdf = cdf
+  )
+}
+
+#' Density of T = mu^T X under the spherical Jones-Pewsey law
+#' @param t Scalar or vector in [-1, 1]
+#' @param mu Mean direction on S^q
+#' @param kappa Nonnegative concentration parameter
+#' @param psi Shape parameter
+#' @param log Whether to return the log-density
+#' @return Density values for T = mu^T X
+d_proj_jp <- function(t, mu, kappa, psi, log = FALSE) {
+  params <- jp_validate_parameters(mu = mu, kappa = kappa, psi = psi)
+  t <- as.numeric(t)
+  out <- rep(if (log) -Inf else 0, length(t))
+  valid <- is.finite(t) & t >= -1 & t <= 1
+  if (!any(valid)) {
+    return(out)
+  }
+
+  if (jp_is_near_zero_vmf_s2(
+    ambient_dim = params$ambient_dim,
+    kappa = params$kappa,
+    psi = params$psi
+  )) {
+    return(jp_vmf_axis_density(
+      t = t,
+      q = params$q,
+      kappa = params$kappa,
+      log = log
+    ))
+  }
+
+  log_density <- log(sphere_surface_area(params$q - 1L)) +
+    c_jp_sphere(q = params$q, alpha = params$alpha, beta = params$beta, log = TRUE) +
+    params$beta * log1p(params$alpha * t[valid]) +
+    jp_log_one_minus_u2_term(t[valid], params$q / 2 - 1)
+
+  out[valid] <- if (log) log_density else exp(log_density)
+  out
+}
+
+#' Projected density of S_omega = omega^T X under spherical Jones-Pewsey
+#' @param s Scalar or vector in [-1, 1]
+#' @param omega Center direction on S^q
+#' @param mu Mean direction on S^q
+#' @param kappa Nonnegative concentration parameter
+#' @param psi Shape parameter
+#' @param log Whether to return the log-density
+#' @return Density values for S_omega = omega^T X
+p_proj_jp <- function(s, omega, mu, kappa, psi, log = FALSE) {
+  params <- jp_validate_parameters(mu = mu, kappa = kappa, psi = psi)
+  omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = length(params$mu))
+  if (length(omega) != length(params$mu)) {
+    stop("`omega` and `mu` must have the same length.")
+  }
+
+  s <- as.numeric(s)
+  out <- rep(if (log) -Inf else 0, length(s))
+  valid <- is.finite(s) & s >= -1 & s <= 1
+  if (!any(valid)) {
+    return(out)
+  }
+
+  rho <- pmin(pmax(sum(omega * params$mu), -1), 1)
+  if (jp_is_near_zero_vmf_s2(
+    ambient_dim = params$ambient_dim,
+    kappa = params$kappa,
+    psi = params$psi
+  )) {
+    return(jp_vmf_projected_density(
+      s = s,
+      rho = rho,
+      ambient_dim = params$ambient_dim,
+      kappa = params$kappa,
+      log = log
+    ))
+  }
+
+  reciprocal_table <- get_jp_delta_reciprocal_table(
+    q = params$q - 1L,
+    beta = params$beta,
+    delta_max = jp_max_delta_from_rho(alpha = params$alpha, rho = rho)
+  )
+  num0 <- 1 + params$alpha * rho * s[valid]
+  delta <- abs(params$alpha) * sqrt(pmax(0, 1 - rho^2)) * sqrt(pmax(0, 1 - s[valid]^2)) / num0
+  reciprocal_values <- jp_eval_delta_reciprocal(delta, reciprocal_table)
+  log_density <- c_jp_sphere(q = params$q, alpha = params$alpha, beta = params$beta, log = TRUE) +
+    jp_log_one_minus_u2_term(s[valid], params$q / 2 - 1) +
+    params$beta * log(num0) +
+    log(reciprocal_values)
+
+  out[valid] <- if (log) log_density else exp(log_density)
+  out
+}
+
+#' Theoretical distance profile under the spherical Jones-Pewsey law
+#' @param omega Reference point on S^q
+#' @param t_values Distance thresholds
+#' @param mu Mean direction on S^q
+#' @param kappa Nonnegative concentration parameter
+#' @param psi Shape parameter
+#' @param distance_type Either "geodesic" or "chordal"
+#' @return Vector of probabilities P(d(X, omega) <= t)
+distance_profile_jp <- function(omega,
+                                t_values,
+                                mu,
+                                kappa,
+                                psi,
+                                distance_type = c("geodesic", "chordal")) {
+  distance_type <- match.arg(distance_type)
+  params <- jp_validate_parameters(mu = mu, kappa = kappa, psi = psi)
+  t_values <- as.numeric(t_values)
+
+  if (is.matrix(omega)) {
+    omega <- jp_normalize_unit_matrix(omega, arg_name = "`omega`", min_ncol = length(params$mu))
+    if (ncol(omega) != length(params$mu)) {
+      stop("`omega` and `mu` must have compatible ambient dimensions.")
+    }
+    if (length(t_values) == 1L) {
+      t_values <- rep(t_values, nrow(omega))
+    }
+    if (length(t_values) != nrow(omega)) {
+      stop("When `omega` is a matrix, `t_values` must have length 1 or nrow(omega).")
+    }
+
+    return(vapply(seq_len(nrow(omega)), function(i) {
+      distance_profile_jp(
+        omega = omega[i, ],
+        t_values = t_values[i],
+        mu = params$mu,
+        kappa = params$kappa,
+        psi = params$psi,
+        distance_type = distance_type
+      )
+    }, numeric(1)))
+  }
+
+  omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = length(params$mu))
+  if (length(omega) != length(params$mu)) {
+    stop("`omega` and `mu` must have the same length.")
+  }
+
+  if (params$ambient_dim == 3L && params$psi != 0 && abs(params$alpha) <= 1e-15) {
+    return(jp_uniform_s2_distance_profile(t_values, distance_type = distance_type))
+  }
+
+  if (jp_is_near_zero_vmf_s2(
+    ambient_dim = params$ambient_dim,
+    kappa = params$kappa,
+    psi = params$psi
+  )) {
+    if (params$ambient_dim == 3L) {
+      return(theoretical_distance_profile_vmf_s2_fast(
+        omega = omega,
+        mu = params$mu,
+        kappa = params$kappa,
+        t_values = t_values,
+        distance_type = distance_type
+      ))
+    }
+
+    return(theoretical_distance_profile_vmf(
+      omega = omega,
+      mu = params$mu,
+      kappa = params$kappa,
+      t_values = t_values,
+      distance_type = distance_type
+    ))
+  }
+
+  output <- numeric(length(t_values))
+  if (identical(distance_type, "geodesic")) {
+    output[t_values <= 0] <- 0
+    output[t_values >= pi] <- 1
+    active <- which(t_values > 0 & t_values < pi)
+  } else {
+    output[t_values <= 0] <- 0
+    output[t_values >= 2] <- 1
+    active <- which(t_values > 0 & t_values < 2)
+  }
+
+  if (length(active) == 0L) {
+    return(output)
+  }
+
+  rho <- pmin(pmax(sum(omega * params$mu), -1), 1)
+  cdf_object <- build_jp_projected_cdf_matrix(
+    rho = rho,
+    q = params$q,
+    alpha = params$alpha,
+    beta = params$beta,
+    n_u = 4097L,
+    n_delta = 1025L
+  )
+  thresholds <- sphere_distance_to_dot_threshold(t_values[active], distance_type = distance_type)
+  thresholds <- pmin(pmax(thresholds, -1), 1)
+  output[active] <- jp_interpolate_upper_tail(
+    threshold = thresholds,
+    x_grid = cdf_object$u,
+    cdf_grid = cdf_object$cdf[, 1L]
+  )
+
+  output
+}
+
+#' Sample from the spherical Jones-Pewsey law by inversion of the projected CDF
+#' @param n Sample size
+#' @param mu Mean direction on S^q
+#' @param kappa Nonnegative concentration parameter
+#' @param psi Shape parameter
+#' @param grid_size Odd grid size for the tabulated projected CDF
+#' @param check Whether to validate the output norms
+#' @return An n x (q + 1) matrix with rows on S^q
+r_sph_jp <- function(n,
+                     mu,
+                     kappa,
+                     psi,
+                     grid_size = 8193L,
+                     check = TRUE) {
+  n <- as.integer(n)
+  if (length(n) != 1L || !is.finite(n) || n < 1L) {
+    stop("`n` must be a strictly positive integer.")
+  }
+
+  params <- jp_validate_parameters(mu = mu, kappa = kappa, psi = psi)
+  if (jp_is_near_zero_vmf_s2(
+    ambient_dim = params$ambient_dim,
+    kappa = params$kappa,
+    psi = params$psi
+  )) {
+    return(rotasym::r_vMF(n = n, mu = params$mu, kappa = params$kappa))
+  }
+  if (abs(params$alpha) <= 1e-15) {
+    return(jp_uniform_sphere(n = n, ambient_dim = params$ambient_dim))
+  }
+
+  cdf_table <- build_jp_axis_cdf_table(
+    mu = params$mu,
+    kappa = params$kappa,
+    psi = params$psi,
+    grid_size = grid_size
+  )
+  inverse_table <- jp_prepare_inverse_cdf_table(u = cdf_table$u, cdf = cdf_table$cdf)
+  u_samples <- stats::runif(n)
+  t_samples <- stats::approx(
+    x = inverse_table$cdf,
+    y = inverse_table$u,
+    xout = u_samples,
+    method = "linear",
+    ties = "ordered",
+    rule = 2
+  )$y
+  t_samples <- pmin(pmax(t_samples, -1), 1)
+
+  xi <- jp_uniform_sphere(n = n, ambient_dim = params$q)
+  b_mu <- jp_orthonormal_complement(params$mu)
+  tangent_part <- t(b_mu %*% t(xi))
+  radial_scales <- sqrt(pmax(0, 1 - t_samples^2))
+  x <- tcrossprod(t_samples, params$mu) + sweep(tangent_part, 1, radial_scales, "*")
+
+  if (isTRUE(check)) {
+    norms <- sqrt(rowSums(x^2))
+    if (any(!is.finite(norms)) || max(abs(norms - 1)) > 1e-8) {
+      stop("Jones-Pewsey sampler returned non-unit vectors.")
+    }
+  }
+
+  x
+}
+
+distance_profile_jp_grid <- function(omega_grid,
+                                     mu,
+                                     kappa,
+                                     psi,
+                                     t_grid,
+                                     distance_type = "geodesic",
+                                     n_u = 4097L,
+                                     n_delta = 1025L) {
+  params <- jp_validate_parameters(mu = mu, kappa = kappa, psi = psi)
+  omega_grid <- jp_normalize_unit_matrix(
+    omega_grid,
+    arg_name = "`omega_grid`",
+    min_ncol = length(params$mu)
+  )
+  if (ncol(omega_grid) != length(params$mu)) {
+    stop("`omega_grid` and `mu` must have compatible ambient dimensions.")
+  }
+
+  distance_type <- match.arg(distance_type, choices = c("geodesic", "chordal"))
+  t_grid <- as.numeric(t_grid)
+
+  if (jp_is_near_zero_vmf_s2(
+    ambient_dim = params$ambient_dim,
+    kappa = params$kappa,
+    psi = params$psi
+  ) && params$ambient_dim == 3L) {
+    return(distance_profile_vmf_s2_grid(
+      omega_grid = omega_grid,
+      mu = params$mu,
+      kappa = params$kappa,
+      t_grid = t_grid,
+      distance_type = distance_type,
+      n_u = n_u
+    ))
+  }
+
+  rho <- as.numeric(omega_grid %*% params$mu)
+  if (jp_is_near_zero_vmf_s2(
+    ambient_dim = params$ambient_dim,
+    kappa = params$kappa,
+    psi = params$psi
+  )) {
+    return(t(vapply(seq_len(nrow(omega_grid)), function(i) {
+      theoretical_distance_profile_vmf(
+        omega = omega_grid[i, ],
+        mu = params$mu,
+        kappa = params$kappa,
+        t_values = t_grid,
+        distance_type = distance_type
+      )
+    }, numeric(length(t_grid)))))
+  }
+
+  cdf_object <- build_jp_projected_cdf_matrix(
+    rho = rho,
+    q = params$q,
+    alpha = params$alpha,
+    beta = params$beta,
+    n_u = n_u,
+    n_delta = n_delta
+  )
+  thresholds <- sphere_distance_to_dot_threshold(t_grid, distance_type = distance_type)
+  thresholds <- pmin(pmax(thresholds, -1), 1)
+
+  output <- t(vapply(seq_along(rho), function(i) {
+    jp_interpolate_upper_tail(
+      threshold = thresholds,
+      x_grid = cdf_object$u,
+      cdf_grid = cdf_object$cdf[, i]
+    )
+  }, numeric(length(t_grid))))
+
+  output[, t_grid <= 0] <- 0
+  if (identical(distance_type, "geodesic")) {
+    output[, t_grid >= pi] <- 1
+  } else {
+    output[, t_grid >= 2] <- 1
+  }
+
+  output
+}
+
+distance_profile_jp_cvm_grid <- function(X,
+                                         mu,
+                                         kappa,
+                                         psi,
+                                         n_u = 4097L,
+                                         n_delta = 1025L) {
+  params <- jp_validate_parameters(mu = mu, kappa = kappa, psi = psi)
+  X <- jp_normalize_unit_matrix(X, arg_name = "`X`", min_ncol = length(params$mu))
+  if (ncol(X) != length(params$mu)) {
+    stop("`X` and `mu` must have compatible ambient dimensions.")
+  }
+
+  if (jp_is_near_zero_vmf_s2(
+    ambient_dim = params$ambient_dim,
+    kappa = params$kappa,
+    psi = params$psi
+  ) && params$ambient_dim == 3L) {
+    return(distance_profile_vmf_s2_cvm_grid(
+      X = X,
+      mu = params$mu,
+      kappa = params$kappa,
+      n_u = n_u
+    ))
+  }
+
+  rho <- as.numeric(X %*% params$mu)
+  a_matrix <- X %*% t(X)
+  a_matrix <- pmin(pmax(a_matrix, -1), 1)
+
+  if (jp_is_near_zero_vmf_s2(
+    ambient_dim = params$ambient_dim,
+    kappa = params$kappa,
+    psi = params$psi
+  )) {
+    return(t(vapply(seq_len(nrow(X)), function(i) {
+      theoretical_distance_profile_vmf(
+        omega = X[i, ],
+        mu = params$mu,
+        kappa = params$kappa,
+        t_values = acos(a_matrix[i, ]),
+        distance_type = "geodesic"
+      )
+    }, numeric(nrow(X)))))
+  }
+
+  cdf_object <- build_jp_projected_cdf_matrix(
+    rho = rho,
+    q = params$q,
+    alpha = params$alpha,
+    beta = params$beta,
+    n_u = n_u,
+    n_delta = n_delta
+  )
+
+  t(vapply(seq_along(rho), function(i) {
+    jp_interpolate_upper_tail(
+      threshold = a_matrix[i, ],
+      x_grid = cdf_object$u,
+      cdf_grid = cdf_object$cdf[, i]
+    )
+  }, numeric(nrow(X))))
+}
+
+## ---------------------------------------------------------------------------
 ## Conditional Expectation for vMF distribution
 compute_conditional_expectation_vmf <- function(omega, t, mu, kappa,
                                                distance_type, mc_samples) {

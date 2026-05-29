@@ -1,0 +1,16 @@
+Dataset: risoe_77m_oct_nov_set12_1997_2007_excl_2002
+Start timestamp: 2026-05-25 15:11:38 UTC
+n = 160
+Months = 10,11
+Years = 1997,1998,1999,2000,2001,2003,2004,2005,2006,2007
+Height = 77 m
+Speed mean = 7.6880000000
+MLE kappa_hat = 1.3918924620
+MLE mu_hat = (1.0159336530, -0.0939279260, -0.1526392216)
+MLE theta_deg_hat = 238.3935603065
+Configuration: composite CvM, B=500, n_cores=4, hvmf_profile_method=tabulated
+Observed CvM = 0.1442017173
+p-value = 0.0838323353
+Elapsed seconds = 45.803
+Warnings: none
+End timestamp: 2026-05-25 15:12:23 UTC

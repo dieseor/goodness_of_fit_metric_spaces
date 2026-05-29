@@ -1,0 +1,24 @@
+dataset_id: ca0101_positive_phase
+start_time: 2026-05-26 20:43:31
+embedding: polar_jensen
+component_csv: hvmf_realdata_screening/processed/ca0101_positive_phase_h2.csv
+n_final: 1278
+configuration: statistic=CvM, null=simple plugin, B=1000, n_cores=3, seed=2026052504
+processed_csv: hvmf_realdata_screening/processed_polar/ca0101_positive_phase_h2_polar.csv
+result_rds: hvmf_realdata_screening/results_polar/ca0101_positive_phase_cvm_simple_plugin_polar_result.rds
+day_stride_filter: applied_every_5_days (unique_days 14 -> 3)
+n_final: 262
+speed_mean_polar: 168.2984732824
+max_abs_minkowski_norm_plus_1: 1.776356839400e-15
+mu_hat: (1.5420740378, -0.6818520762, -0.9555470078)
+kappa_hat: 29.1940088678
+sinh_chi_hat: 1.1738791837
+theta_deg_hat: 234.4893896866
+CvM_observed: 2.1198992860
+p_value: 0.0009990010
+B: 1000
+n_cores: 3
+elapsed_seconds: 5.460
+warnings: none
+status: ok
+end_time: 2026-05-26 20:43:36

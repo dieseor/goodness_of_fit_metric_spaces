@@ -1,0 +1,31 @@
+dataset_id: n03020_positive_phase
+start_time: 2026-05-26 20:39:18
+source: NOAA CO-OPS currents
+station: n03020
+source_url: https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=currents&station=n03020&begin_date=20250401&end_date=20250414&units=metric&time_zone=gmt&format=csv
+window_start: 20250401
+window_end: 20250414
+phase: positive_phase
+bin: 
+download_parameters: product=currents, station=n03020, begin_date=20250401, end_date=20250414, units=metric, time_zone=gmt, format=csv
+n_raw: 3285
+n_clean: 2457
+n_after_phase_split: 1705
+configuration: statistic=CvM, null=simple plugin, B=1000, n_cores=3, seed=2026052401
+processed_csv: hvmf_realdata_screening/processed/n03020_positive_phase_h2.csv
+result_rds: hvmf_realdata_screening/results/n03020_positive_phase_cvm_simple_plugin_result.rds
+day_stride_filter: applied_every_5_days (unique_days 14 -> 3)
+n_final: 362
+scale: 89.2000000000
+max_abs_minkowski_norm_plus_1: 8.881784197001e-16
+mle: mu=(1.2927856400, 0.4666726916, -0.6734324836), kappa=32.6698287753
+sinh_chi_hat: 0.8193257661
+theta_deg_hat: 304.7210385029
+CvM_observed: 2.1973956399
+p_value: 0.0009990010
+B: 1000
+n_cores: 3
+elapsed_seconds: 9.792
+warnings: none
+status: ok
+end_time: 2026-05-26 20:39:27

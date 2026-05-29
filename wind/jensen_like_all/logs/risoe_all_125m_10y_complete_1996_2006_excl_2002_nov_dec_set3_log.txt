@@ -1,0 +1,91 @@
+Dataset: risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+Start timestamp: 2026-05-25 00:34:45 UTC
+Source file: wind/risoe_m_all.nc
+Processed CSV: wind/jensen_like_all/risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3_hvmf.csv
+Output RDS: wind/jensen_like_all/results/risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3_cvm_simple_plugin_result.rds
+Window ID: 10y_complete_1996_2006_excl_2002
+Years used: 1996,1997,1998,1999,2000,2001,2003,2004,2005,2006
+Height: 125 m
+Pattern: set3
+Months: 11,12
+Nominal expected n: 160
+Final n after filtering: 145
+Counts by year-month:
+           section         source_file                                                   dataset_id
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+ window_year_month wind/risoe_m_all.nc risoe_all_125m_10y_complete_1996_2006_excl_2002_nov_dec_set3
+                        window_id pattern height_m year month expected_nominal dates_available selected_dates
+ 10y_complete_1996_2006_excl_2002    set3      125 1996    11                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 1996    12                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 1997    11                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 1997    12                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 1998    11                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 1998    12                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 1999    11                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 1999    12                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 2000    11                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 2000    12                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 2001    11                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 2001    12                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 2003    11                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 2003    12                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 2004    11                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 2004    12                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 2005    11                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 2005    12                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 2006    11                8               8              8
+ 10y_complete_1996_2006_excl_2002    set3      125 2006    12                8               8              8
+ valid_after_filter missing_or_removed
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  8                  0
+                  1                  7
+                  0                  8
+Speed mean used for scaling: 8.2866896552
+Scaling computed after Jensen-like filtering: TRUE
+Max abs(minkowski_norm + 1): 4.3520742565e-14
+MLE initial parameters:
+  kappa_hat = 1.7080631635
+  mu_hat = (1.0940095586, -0.3843320874, -0.2216884323)
+  sinh_chi_hat = 0.4436856031
+  theta_deg_hat = 209.9769841416
+Configuration: statistic=CvM, null=simple plug-in, B=5000, n_cores=10, alpha=0.05, seed=63004
+Observed CvM: 0.4720456498
+p-value: 0.0117976405
+Elapsed seconds: 8.658
+Warnings: none
+End timestamp: 2026-05-25 00:34:54 UTC
+Total elapsed seconds: 8.660

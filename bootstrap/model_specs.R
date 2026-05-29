@@ -16,9 +16,17 @@ resolve_bootstrap_path <- function(...) {
   stop(sprintf("Could not resolve path: %s", file.path(...)))
 }
 
+safe_source_text <- function(path, envir = parent.frame()) {
+  expr <- parse(text = readLines(path, warn = FALSE))
+  for (node in expr) {
+    eval(node, envir = envir)
+  }
+  invisible(TRUE)
+}
+
 utils_path_model_specs <- resolve_bootstrap_path("utils.R")
 if (!exists("theoretical_distance_profile_normal", mode = "function")) {
-  source(utils_path_model_specs)
+  safe_source_text(utils_path_model_specs, envir = environment())
 }
 
 `%||%` <- function(lhs, rhs) {
@@ -319,6 +327,541 @@ make_normal_spec <- function(unknown_param = NULL) {
   )
 }
 
+logistic_gaussian_ilr_basis <- function(ambient_dim) {
+  ambient_dim <- as.integer(ambient_dim)
+  if (length(ambient_dim) != 1L || !is.finite(ambient_dim) || ambient_dim < 2L) {
+    stop("`ambient_dim` must be an integer greater than or equal to 2.")
+  }
+
+  basis <- matrix(0, nrow = ambient_dim, ncol = ambient_dim - 1L)
+  for (j in seq_len(ambient_dim - 1L)) {
+    basis[seq_len(j), j] <- 1 / sqrt(j * (j + 1))
+    basis[j + 1L, j] <- -sqrt(j / (j + 1))
+  }
+
+  basis
+}
+
+row_softmax_matrix <- function(values) {
+  values <- as.matrix(values)
+  row_max <- apply(values, 1L, max)
+  shifted <- sweep(values, 1L, row_max, FUN = "-")
+  exp_shifted <- exp(shifted)
+  exp_shifted / rowSums(exp_shifted)
+}
+
+coerce_logistic_gaussian_simplex_matrix <- function(data) {
+  if (inherits(data, "logistic_gaussian_simplex_data")) {
+    return(data$simplex)
+  }
+
+  if (is.list(data) && is.null(dim(data))) {
+    if (length(data) == 0L) {
+      stop("`data` cannot be empty.")
+    }
+    data <- do.call(rbind, lapply(data, as.numeric))
+  } else if (is.vector(data)) {
+    data <- matrix(as.numeric(data), nrow = 1L)
+  } else {
+    data <- as.matrix(data)
+  }
+
+  if (!is.matrix(data) || nrow(data) == 0L || ncol(data) < 2L) {
+    stop("Logistic Gaussian data must be a non-empty matrix with at least two columns.")
+  }
+
+  data
+}
+
+normalize_logistic_gaussian_data <- function(data, control = list()) {
+  if (inherits(data, "logistic_gaussian_simplex_data")) {
+    return(data)
+  }
+
+  simplex <- coerce_logistic_gaussian_simplex_matrix(data)
+  simplex <- matrix(
+    as.numeric(simplex),
+    nrow = nrow(simplex),
+    ncol = ncol(simplex)
+  )
+
+  if (any(!is.finite(simplex))) {
+    stop("Logistic Gaussian data must be finite.")
+  }
+  if (any(simplex <= 0)) {
+    stop("Logistic Gaussian data must lie in the interior of the simplex.")
+  }
+
+  row_sums <- rowSums(simplex)
+  tol <- as.numeric(control$logistic_gaussian_simplex_tol %||% 1e-8)
+  if (length(tol) != 1L || !is.finite(tol) || tol <= 0) {
+    stop("`control$logistic_gaussian_simplex_tol` must be a strictly positive finite scalar.")
+  }
+  if (any(abs(row_sums - 1) > tol)) {
+    stop("Logistic Gaussian data rows must sum to 1 up to tolerance.")
+  }
+
+  simplex <- simplex / row_sums
+  log_simplex <- log(simplex)
+  clr_matrix <- log_simplex - rowMeans(log_simplex)
+  basis <- logistic_gaussian_ilr_basis(ncol(simplex))
+  ilr_matrix <- clr_matrix %*% basis
+
+  structure(
+    list(
+      simplex = simplex,
+      ilr = ilr_matrix,
+      basis = basis,
+      ambient_dim = ncol(simplex),
+      ilr_dim = ncol(simplex) - 1L
+    ),
+    class = c("logistic_gaussian_simplex_data", "list")
+  )
+}
+
+logistic_gaussian_simplex_matrix <- function(data, control = list()) {
+  normalize_logistic_gaussian_data(data, control)$simplex
+}
+
+logistic_gaussian_ilr_matrix <- function(data, control = list()) {
+  normalize_logistic_gaussian_data(data, control)$ilr
+}
+
+logistic_gaussian_point_to_ilr <- function(point, ambient_dim = NULL, control = list()) {
+  normalized <- normalize_logistic_gaussian_data(point, control)
+  if (!is.null(ambient_dim) && normalized$ambient_dim != as.integer(ambient_dim)) {
+    stop("Logistic Gaussian point has incompatible ambient dimension.")
+  }
+  as.numeric(normalized$ilr[1L, , drop = TRUE])
+}
+
+logistic_gaussian_ilr_to_simplex <- function(z, ambient_dim = NULL) {
+  if (is.vector(z)) {
+    z <- matrix(as.numeric(z), nrow = 1L)
+  } else {
+    z <- as.matrix(z)
+  }
+
+  if (nrow(z) == 0L || ncol(z) == 0L || any(!is.finite(z))) {
+    stop("`z` must be a non-empty finite matrix.")
+  }
+
+  ilr_dim <- ncol(z)
+  ambient_dim <- ambient_dim %||% (ilr_dim + 1L)
+  ambient_dim <- as.integer(ambient_dim)
+  if (ambient_dim != ilr_dim + 1L) {
+    stop("`ambient_dim` is incompatible with the number of ilr coordinates.")
+  }
+
+  basis <- logistic_gaussian_ilr_basis(ambient_dim)
+  clr_matrix <- z %*% t(basis)
+  row_softmax_matrix(clr_matrix)
+}
+
+rlogistic_gaussian_simplex <- function(n, mu_ilr, Sigma_ilr, control = list()) {
+  n <- as.integer(n)
+  if (length(n) != 1L || !is.finite(n) || n <= 0L) {
+    stop("`n` must be a strictly positive integer.")
+  }
+
+  theta <- normalize_logistic_gaussian_theta(
+    list(mu_ilr = mu_ilr, Sigma_ilr = Sigma_ilr),
+    control = control
+  )
+  z <- mvtnorm::rmvnorm(n = n, mean = theta$mu_ilr, sigma = theta$Sigma_ilr)
+  logistic_gaussian_ilr_to_simplex(z, ambient_dim = theta$ambient_dim)
+}
+
+normalize_logistic_gaussian_theta <- function(theta,
+                                              ambient_dim = NULL,
+                                              control = list()) {
+  if (!is.list(theta)) {
+    stop("Logistic Gaussian theta must be a list.")
+  }
+
+  mu_ilr <- as.numeric(theta$mu_ilr %||% theta$mu)
+  Sigma_ilr <- theta$Sigma_ilr %||% theta$Sigma
+
+  if (length(mu_ilr) == 0L || any(!is.finite(mu_ilr))) {
+    stop("Logistic Gaussian theta requires a finite vector `mu_ilr`.")
+  }
+
+  ambient_dim <- ambient_dim %||% theta$ambient_dim %||% (length(mu_ilr) + 1L)
+  ambient_dim <- as.integer(ambient_dim)
+  if (length(ambient_dim) != 1L || !is.finite(ambient_dim) || ambient_dim < 2L) {
+    stop("`ambient_dim` must be an integer greater than or equal to 2.")
+  }
+  if (length(mu_ilr) != ambient_dim - 1L) {
+    stop("Logistic Gaussian theta has incompatible ilr dimension.")
+  }
+
+  Sigma_ilr <- as.matrix(Sigma_ilr)
+  if (!all(dim(Sigma_ilr) == c(length(mu_ilr), length(mu_ilr)))) {
+    stop("Logistic Gaussian theta requires a square covariance matrix `Sigma_ilr`.")
+  }
+  if (any(!is.finite(Sigma_ilr))) {
+    stop("Logistic Gaussian covariance must be finite.")
+  }
+
+  Sigma_ilr <- 0.5 * (Sigma_ilr + t(Sigma_ilr))
+  tol <- as.numeric(control$logistic_gaussian_cov_tol %||% 1e-10)
+  if (length(tol) != 1L || !is.finite(tol) || tol <= 0) {
+    stop("`control$logistic_gaussian_cov_tol` must be a strictly positive finite scalar.")
+  }
+
+  eigen_sigma <- eigen(Sigma_ilr, symmetric = TRUE)
+  if (any(eigen_sigma$values < -tol)) {
+    stop("Logistic Gaussian covariance must be positive semidefinite.")
+  }
+
+  eigenvalues_full <- pmax(eigen_sigma$values, 0)
+  positive_idx <- eigenvalues_full > tol
+  basis <- theta$basis %||% logistic_gaussian_ilr_basis(ambient_dim)
+
+  list(
+    mu_ilr = mu_ilr,
+    Sigma_ilr = Sigma_ilr,
+    basis = basis,
+    ambient_dim = ambient_dim,
+    ilr_dim = ambient_dim - 1L,
+    eigenvalues_full = eigenvalues_full,
+    eigenvectors_full = eigen_sigma$vectors,
+    positive_idx = positive_idx,
+    rank = sum(positive_idx)
+  )
+}
+
+evaluate_mvnorm_distance_profile <- function(shift,
+                                             t_values,
+                                             eigenvalues_full,
+                                             eigenvectors_full,
+                                             positive_idx,
+                                             tol = 1e-12,
+                                             control = list()) {
+  shift <- as.numeric(shift)
+  t_values <- as.numeric(t_values)
+  if (any(!is.finite(shift))) {
+    stop("`shift` must be finite.")
+  }
+  if (any(!is.finite(t_values))) {
+    stop("`t_values` must be finite.")
+  }
+
+  nu <- as.vector(crossprod(eigenvectors_full, shift))
+  null_const <- sum(nu[!positive_idx]^2)
+  threshold_sq <- t_values^2 - null_const
+  output <- numeric(length(t_values))
+  positive_threshold <- threshold_sq >= -tol
+
+  if (!any(positive_idx)) {
+    output[positive_threshold] <- 1
+    return(pmax(pmin(output, 1), 0))
+  }
+
+  threshold_sq[threshold_sq < 0] <- 0
+  if (any(positive_threshold)) {
+    positive_values <- threshold_sq[positive_threshold]
+    lambda_pos <- eigenvalues_full[positive_idx]
+    nu_pos <- nu[positive_idx]
+    delta <- nu_pos^2 / lambda_pos
+    output[positive_threshold] <- vapply(
+      positive_values,
+      function(threshold) {
+        if (!is.finite(threshold)) {
+          return(NA_real_)
+        }
+        if (threshold <= 0) {
+          return(0)
+        }
+
+        res <- CompQuadForm::farebrother(
+          q = threshold,
+          lambda = lambda_pos,
+          h = rep.int(1, length(lambda_pos)),
+          delta = delta,
+          maxit = 100000,
+          eps = 1e-8
+        )
+
+        pmin(pmax(1 - res$Qq, 0), 1)
+      },
+      numeric(1)
+    )
+  }
+
+  pmax(pmin(output, 1), 0)
+}
+
+evaluate_mvnorm_distance_profile_matrix <- function(shift_matrix,
+                                                    t_matrix,
+                                                    eigenvalues_full,
+                                                    eigenvectors_full,
+                                                    positive_idx,
+                                                    tol = 1e-12,
+                                                    control = list()) {
+  shift_matrix <- as.matrix(shift_matrix)
+  t_matrix <- as.matrix(t_matrix)
+
+  if (nrow(shift_matrix) == 0L || ncol(shift_matrix) == 0L) {
+    stop("`shift_matrix` must be a non-empty matrix.")
+  }
+  if (nrow(t_matrix) != nrow(shift_matrix)) {
+    stop("`t_matrix` and `shift_matrix` must have the same number of rows.")
+  }
+  if (any(!is.finite(shift_matrix))) {
+    stop("`shift_matrix` must be finite.")
+  }
+  if (any(!is.finite(t_matrix))) {
+    stop("`t_matrix` must be finite.")
+  }
+
+  nu_matrix <- shift_matrix %*% eigenvectors_full
+  if (any(!positive_idx)) {
+    null_const <- rowSums(nu_matrix[, !positive_idx, drop = FALSE]^2)
+  } else {
+    null_const <- rep.int(0, nrow(shift_matrix))
+  }
+
+  threshold_sq <- t_matrix^2 - matrix(
+    null_const,
+    nrow = nrow(t_matrix),
+    ncol = ncol(t_matrix)
+  )
+  positive_threshold <- threshold_sq >= -tol
+  output <- matrix(0, nrow = nrow(t_matrix), ncol = ncol(t_matrix))
+
+  if (!any(positive_idx)) {
+    output[positive_threshold] <- 1
+    return(pmax(pmin(output, 1), 0))
+  }
+
+  threshold_sq[threshold_sq < 0] <- 0
+  lambda_pos <- eigenvalues_full[positive_idx]
+  nu_pos_matrix <- nu_matrix[, positive_idx, drop = FALSE]
+  delta_matrix <- sweep(nu_pos_matrix^2, 2L, lambda_pos, FUN = "/")
+  df_vec <- rep.int(1, length(lambda_pos))
+
+  for (i in seq_len(nrow(t_matrix))) {
+    positive_i <- positive_threshold[i, ]
+    if (!any(positive_i)) {
+      next
+    }
+
+    positive_values <- threshold_sq[i, positive_i]
+    output[i, positive_i] <- vapply(
+      positive_values,
+      function(threshold) {
+        if (!is.finite(threshold)) {
+          return(NA_real_)
+        }
+        if (threshold <= 0) {
+          return(0)
+        }
+
+        res <- CompQuadForm::farebrother(
+          q = threshold,
+          lambda = lambda_pos,
+          h = df_vec,
+          delta = delta_matrix[i, ],
+          maxit = 100000,
+          eps = 1e-8
+        )
+
+        pmin(pmax(1 - res$Qq, 0), 1)
+      },
+      numeric(1)
+    )
+  }
+
+  pmax(pmin(output, 1), 0)
+}
+
+logistic_gaussian_weighted_covariance <- function(z, prob_weights, center) {
+  centered <- sweep(z, 2L, center, FUN = "-")
+  crossprod(centered * sqrt(prob_weights))
+}
+
+fit_logistic_gaussian_theta <- function(data,
+                                        weights = NULL,
+                                        null,
+                                        unknown_param = "both",
+                                        control = list()) {
+  normalized <- normalize_logistic_gaussian_data(data, control)
+  z <- normalized$ilr
+
+  if (!is.list(null) || is.null(null$type)) {
+    stop("`null` must be a list containing at least the field `type`.")
+  }
+
+  if (identical(null$type, "simple")) {
+    return(normalize_logistic_gaussian_theta(
+      null$theta,
+      ambient_dim = normalized$ambient_dim,
+      control = control
+    ))
+  }
+
+  if (!identical(null$type, "composite")) {
+    stop("`null$type` must be either `simple` or `composite`.")
+  }
+
+  unknown_param <- tolower(as.character(unknown_param %||% "both"))
+  if (!unknown_param %in% c("mu", "sigma", "both")) {
+    stop("Unsupported `unknown_param` for the Logistic Gaussian model.")
+  }
+
+  prob_weights <- if (is.null(weights)) {
+    rep.int(1 / nrow(z), nrow(z))
+  } else {
+    normalize_probability_weights(weights, nrow(z))
+  }
+
+  fixed <- null$fixed %||% list()
+  fixed_mu_raw <- fixed$mu_ilr %||% fixed$mu
+  fixed_sigma_raw <- fixed$Sigma_ilr %||% fixed$Sigma
+  weighted_mean <- colSums(z * prob_weights)
+
+  if (identical(unknown_param, "mu")) {
+    if (is.null(fixed_sigma_raw)) {
+      stop("Composite Logistic Gaussian null with unknown `mu` requires `null$fixed$Sigma_ilr`.")
+    }
+    theta_out <- list(
+      mu_ilr = weighted_mean,
+      Sigma_ilr = normalize_logistic_gaussian_theta(
+        list(mu_ilr = rep.int(0, normalized$ilr_dim), Sigma_ilr = fixed_sigma_raw),
+        ambient_dim = normalized$ambient_dim,
+        control = control
+      )$Sigma_ilr
+    )
+    return(normalize_logistic_gaussian_theta(theta_out, ambient_dim = normalized$ambient_dim, control = control))
+  }
+
+  if (identical(unknown_param, "sigma")) {
+    if (is.null(fixed_mu_raw)) {
+      stop("Composite Logistic Gaussian null with unknown `Sigma` requires `null$fixed$mu_ilr`.")
+    }
+    fixed_mu <- normalize_logistic_gaussian_theta(
+      list(mu_ilr = fixed_mu_raw, Sigma_ilr = diag(normalized$ilr_dim)),
+      ambient_dim = normalized$ambient_dim,
+      control = control
+    )$mu_ilr
+    theta_out <- list(
+      mu_ilr = fixed_mu,
+      Sigma_ilr = logistic_gaussian_weighted_covariance(z, prob_weights, fixed_mu)
+    )
+    return(normalize_logistic_gaussian_theta(theta_out, ambient_dim = normalized$ambient_dim, control = control))
+  }
+
+  theta_out <- list(
+    mu_ilr = weighted_mean,
+    Sigma_ilr = logistic_gaussian_weighted_covariance(z, prob_weights, weighted_mean)
+  )
+  normalize_logistic_gaussian_theta(theta_out, ambient_dim = normalized$ambient_dim, control = control)
+}
+
+make_logistic_gaussian_spec <- function(unknown_param = "both") {
+  new_model_spec(
+    name = "logistic_gaussian_aitchison",
+    fit_theta = function(data, weights = NULL, null, control = list()) {
+      fit_logistic_gaussian_theta(
+        data = data,
+        weights = weights,
+        null = null,
+        unknown_param = unknown_param,
+        control = control
+      )
+    },
+    distance_matrix = function(data, omega, control = list()) {
+      x <- normalize_logistic_gaussian_data(data, control)
+      omega_normalized <- normalize_logistic_gaussian_data(omega, control)
+
+      if (x$ambient_dim != omega_normalized$ambient_dim) {
+        stop("`data` and `omega` have incompatible ambient dimensions.")
+      }
+
+      x_sq <- rowSums(x$ilr^2)
+      omega_sq <- rowSums(omega_normalized$ilr^2)
+      sq_distances <- outer(x_sq, omega_sq, FUN = "+") - 2 * (x$ilr %*% t(omega_normalized$ilr))
+      sqrt(pmax(sq_distances, 0))
+    },
+    profile_eval = function(omega, t, theta, control = list()) {
+      theta <- normalize_logistic_gaussian_theta(theta, control = control)
+      omega_ilr <- logistic_gaussian_point_to_ilr(
+        omega,
+        ambient_dim = theta$ambient_dim,
+        control = control
+      )
+      evaluate_mvnorm_distance_profile(
+        shift = theta$mu_ilr - omega_ilr,
+        t_values = as.numeric(t),
+        eigenvalues_full = theta$eigenvalues_full,
+        eigenvectors_full = theta$eigenvectors_full,
+        positive_idx = theta$positive_idx,
+        control = control
+      )
+    },
+    normalize_data = normalize_logistic_gaussian_data,
+    n_obs = function(data, control = list()) {
+      nrow(normalize_logistic_gaussian_data(data, control)$simplex)
+    },
+    observation_at = function(data, idx, control = list()) {
+      normalize_logistic_gaussian_data(data, control)$simplex[idx, , drop = TRUE]
+    },
+    extras = list(
+      profile_matrix_eval = function(omega_grid, t_grid, theta, control = list()) {
+        theta <- normalize_logistic_gaussian_theta(theta, control = control)
+        omega_normalized <- normalize_logistic_gaussian_data(omega_grid, control)
+        if (omega_normalized$ambient_dim != theta$ambient_dim) {
+          stop("`omega_grid` has incompatible ambient dimension.")
+        }
+
+        shift_matrix <- matrix(
+          rep(theta$mu_ilr, each = nrow(omega_normalized$ilr)),
+          nrow = nrow(omega_normalized$ilr),
+          ncol = length(theta$mu_ilr)
+        ) - omega_normalized$ilr
+        t_matrix <- matrix(
+          rep(as.numeric(t_grid), each = nrow(shift_matrix)),
+          nrow = nrow(shift_matrix),
+          ncol = length(t_grid)
+        )
+        evaluate_mvnorm_distance_profile_matrix(
+          shift_matrix = shift_matrix,
+          t_matrix = t_matrix,
+          eigenvalues_full = theta$eigenvalues_full,
+          eigenvectors_full = theta$eigenvectors_full,
+          positive_idx = theta$positive_idx,
+          control = control
+        )
+      },
+      sample_profile_matrix_eval = function(data, distance_matrix, theta, control = list()) {
+        theta <- normalize_logistic_gaussian_theta(theta, control = control)
+        data_normalized <- normalize_logistic_gaussian_data(data, control)
+        if (data_normalized$ambient_dim != theta$ambient_dim) {
+          stop("`data` has incompatible ambient dimension.")
+        }
+
+        shift_matrix <- matrix(
+          rep(theta$mu_ilr, each = nrow(data_normalized$ilr)),
+          nrow = nrow(data_normalized$ilr),
+          ncol = length(theta$mu_ilr)
+        ) - data_normalized$ilr
+        evaluate_mvnorm_distance_profile_matrix(
+          shift_matrix = shift_matrix,
+          t_matrix = distance_matrix,
+          eigenvalues_full = theta$eigenvalues_full,
+          eigenvectors_full = theta$eigenvectors_full,
+          positive_idx = theta$positive_idx,
+          control = control
+        )
+      },
+      unknown_param = unknown_param,
+      distance_type = "aitchison",
+      weighted_mle = TRUE
+    )
+  )
+}
+
 normalize_vmf_data <- function(data, control = list()) {
   if (is.vector(data)) {
     data <- matrix(as.numeric(data), nrow = 1)
@@ -588,6 +1131,208 @@ make_vmf_spec <- function(distance_type = c("chordal", "geodesic"),
       },
       distance_type = distance_type,
       unknown_param = unknown_param
+    )
+  )
+}
+
+normalize_jp_data <- function(data, control = list()) {
+  if (is.vector(data)) {
+    data <- matrix(as.numeric(data), nrow = 1L)
+  } else {
+    data <- as.matrix(data)
+  }
+
+  if (nrow(data) == 0L || ncol(data) < 3L) {
+    stop("JP data must be a non-empty matrix with at least three columns.")
+  }
+  if (any(!is.finite(data))) {
+    stop("JP data must be finite.")
+  }
+
+  norms <- sqrt(rowSums(data^2))
+  if (any(norms <= 0)) {
+    stop("JP data rows must have strictly positive norm.")
+  }
+
+  data / norms
+}
+
+normalize_jp_theta <- function(theta, ambient_dim = NULL) {
+  if (!is.list(theta)) {
+    stop("JP theta must be a list containing `mu`, `kappa`, and `psi`.")
+  }
+
+  mu <- as.numeric(theta$mu)
+  kappa <- as.numeric(theta$kappa)
+  psi <- as.numeric(theta$psi)
+
+  if (length(mu) < 3L || any(!is.finite(mu))) {
+    stop("JP theta requires a finite vector `mu` of length at least 3.")
+  }
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa < 0) {
+    stop("JP theta requires a nonnegative finite scalar `kappa`.")
+  }
+  if (length(psi) != 1L || !is.finite(psi)) {
+    stop("JP theta requires a finite scalar `psi`.")
+  }
+
+  mu_norm <- sqrt(sum(mu^2))
+  if (mu_norm <= 0) {
+    stop("JP theta requires `mu` with strictly positive norm.")
+  }
+  mu <- mu / mu_norm
+
+  if (!is.null(ambient_dim) && length(mu) != ambient_dim) {
+    stop("JP theta has incompatible ambient dimension.")
+  }
+
+  q <- length(mu) - 1L
+  if (q < 2L) {
+    stop("JP theta currently supports only q >= 2.")
+  }
+
+  list(
+    mu = mu,
+    kappa = kappa,
+    psi = psi,
+    alpha = if (psi == 0) 0 else tanh(kappa * psi),
+    beta = if (psi == 0) NA_real_ else 1 / psi,
+    q = q
+  )
+}
+
+fit_jp_theta <- function(data,
+                         weights = NULL,
+                         null,
+                         control = list()) {
+  x <- normalize_jp_data(data, control)
+
+  if (!is.list(null) || is.null(null$type)) {
+    stop("`null` must be a list containing at least the field `type`.")
+  }
+
+  if (identical(null$type, "simple")) {
+    return(normalize_jp_theta(null$theta, ambient_dim = ncol(x)))
+  }
+
+  if (!identical(null$type, "composite")) {
+    stop("`null$type` must be either `simple` or `composite`.")
+  }
+
+  if (ncol(x) != 3L) {
+    stop("The JP composite adapter currently supports only S^2, i.e. data with three columns.")
+  }
+
+  jp_control <- control
+  jp_control$jp_data_already_normalized <- TRUE
+
+  normalize_jp_theta(
+    jp_mle_s2_weighted(
+      data = x,
+      weights = weights,
+      control = jp_control
+    ),
+    ambient_dim = ncol(x)
+  )
+}
+
+make_jp_spec <- function(distance_type = c("chordal", "geodesic")) {
+  distance_type <- match.arg(distance_type)
+
+  new_model_spec(
+    name = sprintf("jp_%s", distance_type),
+    fit_theta = function(data, weights = NULL, null, control = list()) {
+      fit_jp_theta(
+        data = data,
+        weights = weights,
+        null = null,
+        control = control
+      )
+    },
+    distance_matrix = function(data, omega, control = list()) {
+      x <- normalize_jp_data(data, control)
+      omega_matrix <- normalize_jp_data(omega, control)
+
+      if (ncol(x) != ncol(omega_matrix)) {
+        stop("`data` and `omega` have incompatible ambient dimensions.")
+      }
+
+      dot_products <- x %*% t(omega_matrix)
+      dot_products <- pmax(pmin(dot_products, 1), -1)
+
+      if (identical(distance_type, "chordal")) {
+        sqrt(2 * (1 - dot_products))
+      } else {
+        acos(dot_products)
+      }
+    },
+    profile_eval = function(omega, t, theta, control = list()) {
+      theta <- normalize_jp_theta(theta)
+      distance_profile_jp(
+        omega = omega,
+        t_values = as.numeric(t),
+        mu = theta$mu,
+        kappa = theta$kappa,
+        psi = theta$psi,
+        distance_type = distance_type
+      )
+    },
+    normalize_data = normalize_jp_data,
+    n_obs = function(data, control = list()) {
+      nrow(normalize_jp_data(data, control))
+    },
+    observation_at = function(data, idx, control = list()) {
+      normalize_jp_data(data, control)[idx, , drop = TRUE]
+    },
+    extras = list(
+      profile_matrix_eval = function(omega_grid, t_grid, theta, control = list()) {
+        theta <- normalize_jp_theta(theta)
+        profile_method <- tolower(as.character(control$jp_profile_method %||% "tabulated"))
+        n_u <- as.integer(control$jp_profile_n_u %||% 1025L)
+        n_delta <- as.integer(control$jp_profile_n_delta %||% 257L)
+
+        if (!identical(profile_method, "tabulated")) {
+          return(NULL)
+        }
+        if (theta$psi == 0 && length(theta$mu) != 3L) {
+          return(NULL)
+        }
+
+        distance_profile_jp_grid(
+          omega_grid = omega_grid,
+          mu = theta$mu,
+          kappa = theta$kappa,
+          psi = theta$psi,
+          t_grid = t_grid,
+          distance_type = distance_type,
+          n_u = n_u,
+          n_delta = n_delta
+        )
+      },
+      sample_profile_matrix_eval = function(data, distance_matrix, theta, control = list()) {
+        theta <- normalize_jp_theta(theta)
+        profile_method <- tolower(as.character(control$jp_profile_method %||% "tabulated"))
+        n_u <- as.integer(control$jp_profile_n_u %||% 1025L)
+        n_delta <- as.integer(control$jp_profile_n_delta %||% 257L)
+
+        if (!identical(profile_method, "tabulated")) {
+          return(NULL)
+        }
+        if (theta$psi == 0 && length(theta$mu) != 3L) {
+          return(NULL)
+        }
+
+        distance_profile_jp_cvm_grid(
+          X = data,
+          mu = theta$mu,
+          kappa = theta$kappa,
+          psi = theta$psi,
+          n_u = n_u,
+          n_delta = n_delta
+        )
+      },
+      distance_type = distance_type,
+      unknown_param = "theta"
     )
   )
 }

@@ -1,0 +1,31 @@
+dataset_id: ca0101_negative_phase
+start_time: 2026-05-26 20:39:36
+source: NOAA CO-OPS currents
+station: ca0101
+source_url: https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=currents&station=ca0101&begin_date=20250401&end_date=20250414&units=metric&time_zone=gmt&format=csv
+window_start: 20250401
+window_end: 20250414
+phase: negative_phase
+bin: 
+download_parameters: product=currents, station=ca0101, begin_date=20250401, end_date=20250414, units=metric, time_zone=gmt, format=csv
+n_raw: 3360
+n_clean: 2520
+n_after_phase_split: 1242
+configuration: statistic=CvM, null=simple plugin, B=1000, n_cores=3, seed=2026052404
+processed_csv: hvmf_realdata_screening/processed/ca0101_negative_phase_h2.csv
+result_rds: hvmf_realdata_screening/results/ca0101_negative_phase_cvm_simple_plugin_result.rds
+day_stride_filter: applied_every_5_days (unique_days 14 -> 3)
+n_final: 258
+scale: 140.4000000000
+max_abs_minkowski_norm_plus_1: 8.881784197001e-16
+mle: mu=(1.3928649682, 0.6172923972, 0.7476783505), kappa=69.7583666829
+sinh_chi_hat: 0.9695735246
+theta_deg_hat: 50.4565025715
+CvM_observed: 1.6363031928
+p_value: 0.0009990010
+B: 1000
+n_cores: 3
+elapsed_seconds: 5.333
+warnings: none
+status: ok
+end_time: 2026-05-26 20:39:42

@@ -117,10 +117,24 @@ theoretical_distance_profile_logistic_gaussian <- function(omega, mu, Sigma, t_v
   sapply(t_values, function(t) {
     # We need P(d_A <= t) = P(d_A^2 <= t^2)
     threshold <- t^2
-    
-    # Use sphunif for weighted sum of noncentral chi-squared variables
+    # Use CompQuadForm for weighted sum of noncentral chi-squared variables
     # sum(lambda_pos[j] * chi^2_1(delta[j]))
-    sphunif::p_wschisq(threshold, weights = lambda_pos, df = rep(1, r), ncp = delta)
+    if (!is.finite(threshold)) {
+      NA_real_
+    } else if (threshold <= 0) {
+      0
+    } else {
+      res <- CompQuadForm::farebrother(
+        q = threshold,
+        lambda = lambda_pos,
+        h = rep(1, r),
+        delta = delta,
+        maxit = 100000,
+        eps = 1e-8
+      )
+
+      pmin(pmax(1 - res$Qq, 0), 1)
+    }
   })
 }
 

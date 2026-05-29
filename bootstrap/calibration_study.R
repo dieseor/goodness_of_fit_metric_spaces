@@ -28,7 +28,9 @@ multiplier_bootstrap_path_calibration <- resolve_calibration_path(
 required_bootstrap_functions <- c(
   "multiplier_bootstrap_normal",
   "multiplier_bootstrap_vmf",
-  "multiplier_bootstrap_hvmf"
+  "multiplier_bootstrap_jp",
+  "multiplier_bootstrap_hvmf",
+  "multiplier_bootstrap_logistic_gaussian"
 )
 if (any(!vapply(required_bootstrap_functions, exists, logical(1), mode = "function"))) {
   source(multiplier_bootstrap_path_calibration)
@@ -42,6 +44,17 @@ default_calibration_output_dir <- function(mode = c(
                                           )) {
   mode <- match.arg(mode)
   file.path("output", "bootstrap_calibration", mode)
+}
+
+format_calibration_number_tag <- function(x) {
+  x <- as.numeric(x)
+  if (length(x) != 1L || !is.finite(x)) {
+    stop("`x` must be a finite scalar.")
+  }
+
+  tag <- format(x, scientific = FALSE, trim = TRUE)
+  tag <- gsub("-", "neg", tag, fixed = TRUE)
+  gsub("\\.", "p", tag)
 }
 
 make_normal_simple_calibration_scenario <- function() {
@@ -71,6 +84,147 @@ make_normal_composite_calibration_scenario <- function() {
     ks_grid = list(
       omega_grid = seq(-omega_max, omega_max, length.out = 10),
       t_grid = seq(0, omega_max, length.out = 10)
+    )
+  )
+}
+
+default_logistic_gaussian_omega_grid <- function(ambient_dim,
+                                                 dominant_mass = 0.6) {
+  ambient_dim <- as.integer(ambient_dim)
+  if (length(ambient_dim) != 1L || !is.finite(ambient_dim) || ambient_dim < 2L) {
+    stop("`ambient_dim` must be an integer greater than or equal to 2.")
+  }
+  dominant_mass <- as.numeric(dominant_mass)
+  if (length(dominant_mass) != 1L || !is.finite(dominant_mass)) {
+    stop("`dominant_mass` must be a finite scalar.")
+  }
+  if (dominant_mass <= 1 / ambient_dim || dominant_mass >= 1) {
+    stop("`dominant_mass` must belong to (1 / ambient_dim, 1).")
+  }
+
+  barycenter <- rep.int(1 / ambient_dim, ambient_dim)
+  off_mass <- (1 - dominant_mass) / (ambient_dim - 1L)
+  corners <- t(vapply(seq_len(ambient_dim), function(i) {
+    point <- rep.int(off_mass, ambient_dim)
+    point[[i]] <- dominant_mass
+    point
+  }, numeric(ambient_dim)))
+
+  rbind(barycenter, corners)
+}
+
+make_logistic_gaussian_ks_grid <- function(mu_ilr,
+                                           Sigma_ilr,
+                                           ambient_dim = length(mu_ilr) + 1L,
+                                           dominant_mass = 0.6,
+                                           n_t = 10L) {
+  theta <- normalize_logistic_gaussian_theta(
+    list(mu_ilr = mu_ilr, Sigma_ilr = Sigma_ilr),
+    ambient_dim = ambient_dim
+  )
+  omega_grid <- default_logistic_gaussian_omega_grid(
+    ambient_dim = theta$ambient_dim,
+    dominant_mass = dominant_mass
+  )
+  omega_ilr <- logistic_gaussian_ilr_matrix(omega_grid)
+  shift_matrix <- matrix(
+    rep(theta$mu_ilr, each = nrow(omega_ilr)),
+    nrow = nrow(omega_ilr),
+    ncol = length(theta$mu_ilr)
+  ) - omega_ilr
+  shift_norm_max <- max(sqrt(rowSums(shift_matrix^2)))
+  lambda_max <- max(theta$eigenvalues_full)
+  t_max <- shift_norm_max + 5 * sqrt(max(lambda_max, 0) * theta$ilr_dim)
+  if (!is.finite(t_max) || t_max <= 0) {
+    t_max <- 1
+  }
+
+  list(
+    omega_grid = omega_grid,
+    t_grid = seq(0, t_max, length.out = as.integer(n_t))
+  )
+}
+
+make_logistic_gaussian_simple_calibration_scenario <- function(id,
+                                                               label,
+                                                               mu_ilr,
+                                                               Sigma_ilr,
+                                                               dominant_mass = 0.6,
+                                                               n_t = 10L) {
+  ambient_dim <- length(mu_ilr) + 1L
+  list(
+    id = id,
+    model = "logistic_gaussian",
+    label = label,
+    null = list(type = "simple", theta = list(mu_ilr = mu_ilr, Sigma_ilr = Sigma_ilr)),
+    sample_params = list(mu_ilr = mu_ilr, Sigma_ilr = Sigma_ilr),
+    distance_type = "aitchison",
+    unknown_param = "both",
+    ks_grid = make_logistic_gaussian_ks_grid(
+      mu_ilr = mu_ilr,
+      Sigma_ilr = Sigma_ilr,
+      ambient_dim = ambient_dim,
+      dominant_mass = dominant_mass,
+      n_t = n_t
+    )
+  )
+}
+
+make_logistic_gaussian_composite_calibration_scenario <- function(id,
+                                                                  label,
+                                                                  mu_ilr,
+                                                                  Sigma_ilr,
+                                                                  dominant_mass = 0.6,
+                                                                  n_t = 10L) {
+  ambient_dim <- length(mu_ilr) + 1L
+  list(
+    id = id,
+    model = "logistic_gaussian",
+    label = label,
+    null = list(type = "composite"),
+    sample_params = list(mu_ilr = mu_ilr, Sigma_ilr = Sigma_ilr),
+    distance_type = "aitchison",
+    unknown_param = "both",
+    ks_grid = make_logistic_gaussian_ks_grid(
+      mu_ilr = mu_ilr,
+      Sigma_ilr = Sigma_ilr,
+      ambient_dim = ambient_dim,
+      dominant_mass = dominant_mass,
+      n_t = n_t
+    )
+  )
+}
+
+default_logistic_gaussian_simple_calibration_scenarios <- function() {
+  list(
+    make_logistic_gaussian_simple_calibration_scenario(
+      id = "lg_simple_delta2_balanced",
+      label = "Logistic Gaussian simple Delta^2 Aitchison: balanced",
+      mu_ilr = c(0, 0),
+      Sigma_ilr = matrix(c(0.35, 0.12, 0.12, 0.25), nrow = 2L)
+    ),
+    make_logistic_gaussian_simple_calibration_scenario(
+      id = "lg_simple_delta2_shifted",
+      label = "Logistic Gaussian simple Delta^2 Aitchison: shifted",
+      mu_ilr = c(0.9, -0.5),
+      Sigma_ilr = matrix(c(0.60, -0.18, -0.18, 0.45), nrow = 2L)
+    )
+  )
+}
+
+default_logistic_gaussian_composite_calibration_scenarios <- function() {
+  list(
+    make_logistic_gaussian_composite_calibration_scenario(
+      id = "lg_composite_delta2_balanced",
+      label = "Logistic Gaussian composite Delta^2 Aitchison: balanced",
+      mu_ilr = c(0, 0),
+      Sigma_ilr = matrix(c(0.35, 0.12, 0.12, 0.25), nrow = 2L)
+    ),
+    make_logistic_gaussian_composite_calibration_scenario(
+      id = "lg_composite_delta2_shifted",
+      label = "Logistic Gaussian composite Delta^2 Aitchison: shifted",
+      mu_ilr = c(0.9, -0.5),
+      Sigma_ilr = matrix(c(0.60, -0.18, -0.18, 0.45), nrow = 2L)
     )
   )
 }
@@ -105,6 +259,61 @@ make_vmf_composite_calibration_scenario <- function(kappa) {
       omega_grid = generate_canonical_lattice(10, dim = 3),
       t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
     )
+  )
+}
+
+make_jp_simple_calibration_scenario <- function(kappa, psi) {
+  mu <- c(0, 0, 1)
+  list(
+    id = sprintf(
+      "jp_simple_s2_geodesic_kappa_%s_psi_%s",
+      format_calibration_number_tag(kappa),
+      format_calibration_number_tag(psi)
+    ),
+    model = "jp",
+    label = sprintf("JP simple S^2 geodesic: kappa=%s, psi=%s", kappa, psi),
+    null = list(type = "simple", theta = list(mu = mu, kappa = kappa, psi = psi)),
+    sample_params = list(mu = mu, kappa = kappa, psi = psi),
+    distance_type = "geodesic",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    )
+  )
+}
+
+make_jp_composite_calibration_scenario <- function(kappa, psi) {
+  mu <- c(0, 0, 1)
+  list(
+    id = sprintf(
+      "jp_composite_s2_geodesic_kappa_%s_psi_%s",
+      format_calibration_number_tag(kappa),
+      format_calibration_number_tag(psi)
+    ),
+    model = "jp",
+    label = sprintf("JP composite S^2 geodesic: kappa=%s, psi=%s", kappa, psi),
+    null = list(type = "composite"),
+    sample_params = list(mu = mu, kappa = kappa, psi = psi),
+    distance_type = "geodesic",
+    unknown_param = "theta",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    )
+  )
+}
+
+default_jp_simple_calibration_scenarios <- function() {
+  list(
+    make_jp_simple_calibration_scenario(1.0, 0.5),
+    make_jp_simple_calibration_scenario(2.0, -0.5)
+  )
+}
+
+default_jp_composite_calibration_scenarios <- function() {
+  list(
+    make_jp_composite_calibration_scenario(1.0, 0.5),
+    make_jp_composite_calibration_scenario(2.0, -0.5)
   )
 }
 
@@ -264,6 +473,15 @@ simulate_h0_sample <- function(scenario, n, replicate_id = NULL) {
     ))
   }
 
+  if (identical(scenario$model, "jp")) {
+    return(r_sph_jp(
+      n = n,
+      mu = scenario$sample_params$mu,
+      kappa = scenario$sample_params$kappa,
+      psi = scenario$sample_params$psi
+    ))
+  }
+
   if (identical(scenario$model, "hvmf")) {
     if (is.null(replicate_id)) {
       stop("HvMF calibration sampling from disk requires `replicate_id`.")
@@ -273,6 +491,14 @@ simulate_h0_sample <- function(scenario, n, replicate_id = NULL) {
       scenario = scenario,
       n = n,
       replicate_id = replicate_id
+    ))
+  }
+
+  if (identical(scenario$model, "logistic_gaussian")) {
+    return(rlogistic_gaussian_simplex(
+      n = n,
+      mu_ilr = scenario$sample_params$mu_ilr,
+      Sigma_ilr = scenario$sample_params$Sigma_ilr
     ))
   }
 
@@ -322,6 +548,25 @@ run_bootstrap_for_scenario <- function(data,
     ))
   }
 
+  if (identical(scenario$model, "jp")) {
+    return(multiplier_bootstrap_jp(
+      data = data,
+      null = scenario$null,
+      statistics = statistics,
+      ks_grid = scenario$ks_grid,
+      B = B,
+      alpha = alpha_nominal,
+      seed = seed,
+      n_cores = 1,
+      keep = list(
+        observed_process = FALSE,
+        bootstrap_statistics = TRUE
+      ),
+      distance_type = scenario$distance_type,
+      control = scenario$control %||% list()
+    ))
+  }
+
   if (identical(scenario$model, "hvmf")) {
     return(multiplier_bootstrap_hvmf(
       data = data,
@@ -336,6 +581,25 @@ run_bootstrap_for_scenario <- function(data,
         observed_process = FALSE,
         bootstrap_statistics = TRUE
       ),
+      unknown_param = scenario$unknown_param %||% "both"
+    ))
+  }
+
+  if (identical(scenario$model, "logistic_gaussian")) {
+    return(multiplier_bootstrap_logistic_gaussian(
+      data = data,
+      null = scenario$null,
+      statistics = statistics,
+      ks_grid = scenario$ks_grid,
+      B = B,
+      alpha = alpha_nominal,
+      seed = seed,
+      n_cores = 1,
+      keep = list(
+        observed_process = FALSE,
+        bootstrap_statistics = TRUE
+      ),
+      control = scenario$control %||% list(),
       unknown_param = scenario$unknown_param %||% "both"
     ))
   }
@@ -773,8 +1037,8 @@ plot_calibration_pvalue_ecdf <- function(raw_results_scenario) {
     ggplot2::facet_grid(statistic ~ n_label) +
     ggplot2::coord_cartesian(xlim = c(0, 1), ylim = c(0, 1)) +
     ggplot2::labs(
-      x = "p-value",
-      y = "Empirical CDF"
+      x = expression(alpha),
+      y = "Empirical probability"
     ) +
     ggplot2::theme_minimal() +
     ggplot2::theme(
@@ -822,7 +1086,7 @@ plot_calibration_rejection_rates <- function(summary_results_scenario) {
     ggplot2::coord_cartesian(xlim = c(0, max(long_results$alpha) * 1.05), ylim = c(0, max(long_results$alpha, long_results$rejection_rate) * 1.15)) +
     ggplot2::labs(
       x = expression(alpha),
-      y = "Empirical rejection rate",
+      y = "Empirical rejection probability",
       color = "Statistic"
     ) +
     ggplot2::theme_minimal() +
@@ -1122,6 +1386,66 @@ run_full_bootstrap_composite_calibration_study <- function(output_dir = NULL,
   )
 }
 
+run_smoke_bootstrap_jp_composite_calibration_study <- function(output_dir = NULL,
+                                                               n_cores_outer = 1,
+                                                               seed = 123,
+                                                               jp_mle_maxit = 30L,
+                                                               jp_mle_reltol = 1e-5) {
+  scenarios <- default_jp_composite_calibration_scenarios()
+  jp_control <- list(
+    jp_mle_maxit = as.integer(jp_mle_maxit),
+    jp_mle_reltol = as.numeric(jp_mle_reltol)
+  )
+  scenarios <- lapply(scenarios, function(scenario) {
+    scenario$control <- modifyList(scenario$control %||% list(), jp_control)
+    scenario
+  })
+
+  run_bootstrap_calibration_study(
+    scenarios = scenarios,
+    n_values = 50,
+    M_outer = 10,
+    B = 19,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "jp_composite_smoke")
+  )
+}
+
+run_full_bootstrap_jp_composite_calibration_study <- function(output_dir = NULL,
+                                                              n_cores_outer = 1,
+                                                              seed = 123,
+                                                              M_outer = 1000,
+                                                              B = 1000,
+                                                              jp_mle_maxit = 30L,
+                                                              jp_mle_reltol = 1e-5) {
+  scenarios <- default_jp_composite_calibration_scenarios()
+  jp_control <- list(
+    jp_mle_maxit = as.integer(jp_mle_maxit),
+    jp_mle_reltol = as.numeric(jp_mle_reltol)
+  )
+  scenarios <- lapply(scenarios, function(scenario) {
+    scenario$control <- modifyList(scenario$control %||% list(), jp_control)
+    scenario
+  })
+
+  run_bootstrap_calibration_study(
+    scenarios = scenarios,
+    n_values = c(50, 100, 200),
+    M_outer = M_outer,
+    B = B,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "jp_composite_full")
+  )
+}
+
 run_smoke_hvmf_composite_cvm_calibration_study <- function(output_dir = NULL,
                                                            n_cores_outer = 1,
                                                            seed = 123,
@@ -1205,6 +1529,94 @@ run_full_hvmf_simple_cvm_calibration_study <- function(output_dir = NULL,
     n_cores_outer = n_cores_outer,
     seed = seed,
     output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "hvmf_simple_cvm_full"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_smoke_logistic_gaussian_calibration_study <- function(output_dir = NULL,
+                                                          n_cores_outer = 1,
+                                                          seed = 123,
+                                                          show_progress = FALSE,
+                                                          verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_logistic_gaussian_simple_calibration_scenarios(),
+    n_values = 30,
+    M_outer = 10,
+    B = 19,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "logistic_gaussian_smoke"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_full_logistic_gaussian_calibration_study <- function(output_dir = NULL,
+                                                         n_cores_outer = 1,
+                                                         seed = 123,
+                                                         M_outer = 500,
+                                                         B = 500,
+                                                         show_progress = FALSE,
+                                                         verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_logistic_gaussian_simple_calibration_scenarios(),
+    n_values = c(50, 100),
+    M_outer = M_outer,
+    B = B,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "logistic_gaussian_full"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_smoke_logistic_gaussian_composite_calibration_study <- function(output_dir = NULL,
+                                                                    n_cores_outer = 1,
+                                                                    seed = 123,
+                                                                    show_progress = FALSE,
+                                                                    verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_logistic_gaussian_composite_calibration_scenarios(),
+    n_values = 24,
+    M_outer = 6,
+    B = 11,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "logistic_gaussian_composite_smoke"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_full_logistic_gaussian_composite_calibration_study <- function(output_dir = NULL,
+                                                                   n_cores_outer = 1,
+                                                                   seed = 123,
+                                                                   M_outer = 100,
+                                                                   B = 100,
+                                                                   show_progress = FALSE,
+                                                                   verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_logistic_gaussian_composite_calibration_scenarios(),
+    n_values = c(30, 50),
+    M_outer = M_outer,
+    B = B,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "logistic_gaussian_composite_full"),
     show_progress = show_progress,
     verbose = verbose
   )

@@ -1,0 +1,16 @@
+Dataset: risoe_clean_77m_sep_oct_start1_1996_2003
+Start timestamp: 2026-05-27 02:32:25
+Height: 77 m
+Months id: sep_oct
+Years used: 1996,1997,1998,1999,2000,2001,2002,2003
+n_final: 128
+Speed mean used for scaling: 7.0307812500
+MLE kappa_hat = 1.3894930752
+MLE mu_hat = (1.0112105018, -0.1379595262, -0.0592777199)
+MLE theta_deg_hat = 203.2519737492
+Configuration: composite CvM, B=1000, n_cores=2, hvmf_profile_method=tabulated
+Observed CvM = 0.1093936852
+p-value = 0.2557442557
+Elapsed seconds = 159.833
+Warnings: none
+End timestamp: 2026-05-27 02:35:05

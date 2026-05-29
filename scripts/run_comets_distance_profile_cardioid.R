@@ -24,15 +24,9 @@ multiplier_bootstrap_script_path <- resolve_comets_cardioid_path(
 )
 utils_script_path_cardioid <- resolve_comets_cardioid_path("utils.R")
 
-if (!exists("make_cardioid_spec", mode = "function")) {
-  source(cardioid_model_spec_script_path)
-}
-if (!exists("multiplier_bootstrap_gof", mode = "function")) {
-  source(multiplier_bootstrap_script_path)
-}
-if (!exists("generate_canonical_lattice", mode = "function")) {
-  source(utils_script_path_cardioid)
-}
+source(cardioid_model_spec_script_path)
+source(multiplier_bootstrap_script_path)
+source(utils_script_path_cardioid)
 
 timestamp_tag_cardioid_comets <- function() {
   format(Sys.time(), "%Y%m%d_%H%M%S")
@@ -482,6 +476,14 @@ run_comets_distance_profile_cardioid <- function(output_root = NULL,
       statistic = "cvm",
       B = cvm_B,
       ks_grid = NULL
+    ),
+    oort_ks = list(
+      stage_id = "04",
+      label = "Oort cardioid KS",
+      dataset = comets_data$oort$normal,
+      statistic = "ks",
+      B = ks_B,
+      ks_grid = ks_grid
     ),
     short_cvm = list(
       stage_id = "02",

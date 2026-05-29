@@ -1,0 +1,16 @@
+Dataset: galicia_ourense_may_jun_2012_2022_step4_start1
+Start timestamp: 2026-05-28 01:36:27
+Height: 10 m
+Months id: may_jun
+Years used: 2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022
+n_final: 176
+Speed mean used for scaling: 1.8296022727
+MLE kappa_hat = 1.7461210210
+MLE mu_hat = (1.0188180943, 0.0292141661, -0.1927092154)
+MLE theta_deg_hat = 278.6202403597
+Configuration: composite CvM, B=19, n_cores=2, hvmf_profile_method=tabulated
+Observed CvM = 0.7587115024
+p-value = 0.0500000000
+Elapsed seconds = 12.952
+Warnings: none
+End timestamp: 2026-05-28 01:36:40

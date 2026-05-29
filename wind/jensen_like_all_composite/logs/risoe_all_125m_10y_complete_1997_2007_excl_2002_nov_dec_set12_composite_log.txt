@@ -1,0 +1,48 @@
+Start timestamp: 2026-05-25 01:35:38 UTC
+Dataset: risoe_all_125m_10y_complete_1997_2007_excl_2002_nov_dec_set12
+Source file: wind/risoe_m_all.nc
+Processed CSV: wind/jensen_like_all/risoe_all_125m_10y_complete_1997_2007_excl_2002_nov_dec_set12_hvmf.csv
+Window ID: 10y_complete_1997_2007_excl_2002
+Years: 1997:2007 excluding 2002
+Height: 125 m
+Pattern: set12
+n_final: 128
+speed_mean: 8.5079687500
+Simple plug-in reference: CvM = 0.3882090939, p = 0.0287942412
+Composite configuration: statistic=CvM, null=composite, unknown_param=both, B=5000, n_cores=4, hvmf_profile_method=tabulated
+MLE on observed sample:
+  kappa_hat = 1.7209507730
+  mu_hat = (1.0857165414, -0.3874482056, -0.1693053346)
+  sinh_chi_hat = 0.4228243232
+  theta_deg_hat = 203.6041443981
+  max abs(minkowski_norm + 1) = 6.7501559897e-14
+Observed CvM simple plug-in = 0.3882090939
+Observed CvM composite   = 0.3882090939
+Observed CvM diff        = 1.665e-16
+Bootstrap CvM summary:
+  min = 0.0257958164
+  q01 = 0.0396707914
+  q05 = 0.0482430041
+  q25 = 0.0673362399
+  median = 0.0863558672
+  mean = 0.0943664612
+  q75 = 0.1121030659
+  q95 = 0.1670919763
+  q99 = 0.2169152294
+  max = 0.4137701219
+n_bootstrap_ge_observed = 2
+p_value_composite = 0.0005998800
+Bootstrap kappa_star summary:
+  min = 1.2293456591
+  q05 = 1.4887989649
+  median = 1.7387572136
+  q95 = 2.0404416076
+  max = 2.4465046460
+mu_star Minkowski norm error:
+  min = 0.0000000000e+00
+  max = 6.6613381478e-16
+n_failed_bootstrap_fits = 0
+elapsed_seconds = 341.014
+Warnings: none
+End timestamp: 2026-05-25 01:41:19 UTC
+Total elapsed seconds: 341.068
