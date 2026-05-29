@@ -1,0 +1,16 @@
+Dataset: galicia_fisterra_mar_1982_2022_step4_start4
+Start timestamp: 2026-05-28 10:28:55
+Height: 10 m
+Months id: mar
+Years used: 1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022
+n_final: 287
+Speed mean used for scaling: 5.7245644599
+MLE kappa_hat = 1.5168844370
+MLE mu_hat = (1.0064250078, 0.1096246305, -0.0295590370)
+MLE theta_deg_hat = 344.9097238930
+Configuration: composite CvM, B=99, n_cores=2, hvmf_profile_method=tabulated
+Observed CvM = 0.9092904653
+p-value = 0.0100000000
+Elapsed seconds = 21.049
+Warnings: none
+End timestamp: 2026-05-28 10:29:16

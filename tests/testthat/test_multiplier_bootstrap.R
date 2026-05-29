@@ -142,6 +142,47 @@ test_that("weighted vMF estimator satisfies the resultant equation", {
   expect_equal(theta_simple$mu, c(1, 0, 0), tolerance = 1e-12)
 })
 
+
+test_that("JP weighted MLE accepts a warm start", {
+  skip_if_not(exists("jp_mle_s2_weighted", mode = "function"))
+
+  x <- rbind(
+    c(0.00, 0.00, 1.00),
+    c(0.20, 0.00, 0.98),
+    c(-0.15, 0.05, 0.9873),
+    c(0.05, -0.20, 0.9787),
+    c(0.30, 0.10, 0.9487),
+    c(-0.10, -0.25, 0.9631)
+  )
+  x <- normalize_jp_data(x)
+
+  control <- list(
+    jp_mle_sign_branches = c(1L),
+    jp_mle_psi_abs_starts = c(0.5),
+    jp_mle_maxit = 40L,
+    jp_mle_reltol = 1e-6
+  )
+
+  theta_start <- jp_mle_s2_weighted(
+    data = x,
+    weights = NULL,
+    control = control
+  )
+
+  theta_warm <- jp_mle_s2_weighted(
+    data = x,
+    weights = c(1.2, 0.8, 1.0, 1.1, 0.9, 1.0),
+    control = modifyList(control, list(jp_mle_start_theta = theta_start))
+  )
+
+  expect_true(is.finite(theta_warm$kappa))
+  expect_true(is.finite(theta_warm$psi))
+  expect_equal(sum(theta_warm$mu^2), 1, tolerance = 1e-8)
+  if (!is.null(theta_warm$loglik)) {
+    expect_true(is.finite(theta_warm$loglik))
+  }
+})
+
 test_that("normal multiplier bootstrap is reproducible and returns valid structure", {
   x <- c(-1.2, -0.5, 0.2, 0.9, 1.4, 2.1)
   ks_grid <- list(

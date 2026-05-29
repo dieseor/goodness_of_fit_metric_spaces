@@ -1,0 +1,16 @@
+Dataset: galicia_vigo_jan_feb_2012_2022_step4_start1
+Start timestamp: 2026-05-28 01:33:17
+Height: 10 m
+Months id: jan_feb
+Years used: 2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022
+n_final: 168
+Speed mean used for scaling: 3.3700595238
+MLE kappa_hat = 1.5716099230
+MLE mu_hat = (1.0175304158, -0.1110460399, -0.1517791954)
+MLE theta_deg_hat = 233.8097204993
+Configuration: composite CvM, B=19, n_cores=2, hvmf_profile_method=tabulated
+Observed CvM = 0.5365615374
+p-value = 0.0500000000
+Elapsed seconds = 13.742
+Warnings: none
+End timestamp: 2026-05-28 01:33:30

@@ -1,0 +1,16 @@
+Dataset: galicia_fisterra_jul_aug_2012_2022_step4_start1
+Start timestamp: 2026-05-28 01:38:02
+Height: 10 m
+Months id: jul_aug
+Years used: 2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022
+n_final: 176
+Speed mean used for scaling: 4.6275568182
+MLE kappa_hat = 1.9411512055
+MLE mu_hat = (1.1063332332, 0.4681444721, 0.0693828234)
+MLE theta_deg_hat = 8.4303326885
+Configuration: composite CvM, B=19, n_cores=2, hvmf_profile_method=tabulated
+Observed CvM = 1.6696804944
+p-value = 0.0500000000
+Elapsed seconds = 13.276
+Warnings: none
+End timestamp: 2026-05-28 01:38:15

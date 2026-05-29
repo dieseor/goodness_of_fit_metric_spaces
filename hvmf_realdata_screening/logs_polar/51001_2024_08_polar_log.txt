@@ -1,0 +1,24 @@
+dataset_id: 51001_2024_08
+start_time: 2026-05-26 20:44:34
+embedding: polar_jensen
+component_csv: hvmf_realdata_screening/processed/51001_2024_08_h2.csv
+n_final: 4405
+configuration: statistic=CvM, null=simple plugin, B=1000, n_cores=3, seed=2026052506
+processed_csv: hvmf_realdata_screening/processed_polar/51001_2024_08_h2_polar.csv
+result_rds: hvmf_realdata_screening/results_polar/51001_2024_08_cvm_simple_plugin_polar_result.rds
+day_stride_filter: applied_every_5_days (unique_days 31 -> 7)
+n_final: 995
+speed_mean_polar: 6.7215075377
+max_abs_minkowski_norm_plus_1: 3.330669073875e-15
+mu_hat: (1.4528851859, 1.0364569788, 0.1913956493)
+kappa_hat: 10.5650585369
+sinh_chi_hat: 1.0539807225
+theta_deg_hat: 10.4625683893
+CvM_observed: 1.1810307078
+p_value: 0.0009990010
+B: 1000
+n_cores: 3
+elapsed_seconds: 57.071
+warnings: none
+status: ok
+end_time: 2026-05-26 20:45:31

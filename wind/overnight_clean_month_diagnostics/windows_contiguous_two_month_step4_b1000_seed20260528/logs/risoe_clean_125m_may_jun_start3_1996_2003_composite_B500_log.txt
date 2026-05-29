@@ -1,0 +1,16 @@
+Dataset: risoe_clean_125m_may_jun_start3_1996_2003
+Start timestamp: 2026-05-27 03:38:32
+Height: 125 m
+Months id: may_jun
+Years used: 1996,1997,1998,1999,2000,2001,2002,2003
+n_final: 108
+Speed mean used for scaling: 6.9830555556
+MLE kappa_hat = 1.3859701983
+MLE mu_hat = (1.0296793675, -0.0872033705, -0.2294235646)
+MLE theta_deg_hat = 249.1883174053
+Configuration: composite CvM, B=1000, n_cores=2, hvmf_profile_method=tabulated
+Observed CvM = 0.2515438517
+p-value = 0.0079920080
+Elapsed seconds = 126.730
+Warnings: none
+End timestamp: 2026-05-27 03:40:39

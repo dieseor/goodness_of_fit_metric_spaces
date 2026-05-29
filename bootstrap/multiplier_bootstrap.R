@@ -21,6 +21,11 @@ if (!exists("make_normal_spec", mode = "function")) {
   source(model_specs_path)
 }
 
+cardioid_model_spec_path <- resolve_multiplier_bootstrap_path("bootstrap", "cardioid_model_spec.R")
+if (!exists("clip_cardioid_dot_products", mode = "function") && file.exists(cardioid_model_spec_path)) {
+  source(cardioid_model_spec_path)
+}
+
 normalize_requested_statistics <- function(statistics) {
   statistics <- unique(tolower(as.character(statistics)))
   valid_statistics <- c("ks", "cvm")
@@ -435,7 +440,8 @@ run_bootstrap_chunk <- function(weight_chunk,
                                 cvm_prep = NULL,
                                 want_ks = FALSE,
                                 want_cvm = FALSE,
-                                keep_bootstrap_thetas = FALSE) {
+                                keep_bootstrap_thetas = FALSE,
+                                theta_start = NULL) {
   n_reps <- nrow(weight_chunk)
   ks_values <- if (want_ks) numeric(n_reps) else NULL
   cvm_values <- if (want_cvm) numeric(n_reps) else NULL
@@ -451,11 +457,19 @@ run_bootstrap_chunk <- function(weight_chunk,
 
     theta_star <- NULL
     if (identical(null$type, "composite")) {
+      bootstrap_control <- control
+      if (!is.null(theta_start) && grepl("^jp_", spec$name)) {
+        bootstrap_control$jp_mle_start_theta <- theta_start
+        bootstrap_control$jp_mle_warm_start_only <- TRUE
+        bootstrap_control$jp_mle_bootstrap_refit <- TRUE
+      } else if (!is.null(theta_start) && is.null(bootstrap_control$jp_mle_start_theta)) {
+        bootstrap_control$jp_mle_start_theta <- theta_start
+      }
       theta_star <- spec$fit_theta(
         data = data,
         weights = normalized_weights,
         null = null,
-        control = control
+        control = bootstrap_control
       )
       if (!is.null(theta_values)) {
         theta_values[[b]] <- theta_star
@@ -675,7 +689,8 @@ multiplier_bootstrap_gof <- function(data,
       cvm_prep = cvm_prep,
       want_ks = want_ks,
       want_cvm = want_cvm,
-      keep_bootstrap_thetas = keep$bootstrap_thetas
+      keep_bootstrap_thetas = keep$bootstrap_thetas,
+      theta_start = theta_hat
     )
   } else {
     utils_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("utils.R"), winslash = "/", mustWork = TRUE)
@@ -716,7 +731,17 @@ multiplier_bootstrap_gof <- function(data,
       "grid_point_at",
       "ensure_profile_matrix",
       "null",
-      "keep"
+      "keep",
+      "theta_hat",
+      "clip_cardioid_dot_products",
+      "normalize_cardioid_data",
+      "normalize_cardioid_theta",
+      "weighted_cardioid_resultant",
+      "normalize_cardioid_mle_weights",
+      "cardioid_distance_threshold",
+      "theoretical_distance_profile_cardioid",
+      "mle_sph_car_weighted",
+      "fit_cardioid_theta"
     )
 
     parallel::clusterExport(cl, worker_symbols, envir = environment())
@@ -733,7 +758,8 @@ multiplier_bootstrap_gof <- function(data,
         cvm_prep = cvm_prep,
         want_ks = want_ks,
         want_cvm = want_cvm,
-        keep_bootstrap_thetas = keep$bootstrap_thetas
+        keep_bootstrap_thetas = keep$bootstrap_thetas,
+        theta_start = theta_hat
       )
     })
   }
@@ -878,6 +904,41 @@ multiplier_bootstrap_vmf <- function(data,
   )
 }
 
+multiplier_bootstrap_jp <- function(data,
+                                    null,
+                                    statistics = c("ks", "cvm"),
+                                    ks_grid = NULL,
+                                    B = 999,
+                                    alpha = 0.05,
+                                    multipliers = NULL,
+                                    n_cores = 1,
+                                    seed = NULL,
+                                    keep = list(
+                                      observed_process = TRUE,
+                                      bootstrap_statistics = TRUE,
+                                      bootstrap_thetas = FALSE
+                                    ),
+                                    control = list(),
+                                    distance_type = c("chordal", "geodesic")) {
+  distance_type <- match.arg(distance_type)
+  spec <- make_jp_spec(distance_type = distance_type)
+
+  multiplier_bootstrap_gof(
+    data = data,
+    spec = spec,
+    null = null,
+    statistics = statistics,
+    ks_grid = ks_grid,
+    B = B,
+    alpha = alpha,
+    multipliers = multipliers,
+    n_cores = n_cores,
+    seed = seed,
+    keep = keep,
+    control = control
+  )
+}
+
 multiplier_bootstrap_hvmf <- function(data,
                                       null,
                                       statistics = c("ks", "cvm"),
@@ -895,6 +956,40 @@ multiplier_bootstrap_hvmf <- function(data,
                                       control = list(),
                                       unknown_param = "both") {
   spec <- make_hvmf_spec(unknown_param = unknown_param)
+
+  multiplier_bootstrap_gof(
+    data = data,
+    spec = spec,
+    null = null,
+    statistics = statistics,
+    ks_grid = ks_grid,
+    B = B,
+    alpha = alpha,
+    multipliers = multipliers,
+    n_cores = n_cores,
+    seed = seed,
+    keep = keep,
+    control = control
+  )
+}
+
+multiplier_bootstrap_logistic_gaussian <- function(data,
+                                                   null,
+                                                   statistics = c("ks", "cvm"),
+                                                   ks_grid = NULL,
+                                                   B = 999,
+                                                   alpha = 0.05,
+                                                   multipliers = NULL,
+                                                   n_cores = 1,
+                                                   seed = NULL,
+                                                   keep = list(
+                                                     observed_process = TRUE,
+                                                     bootstrap_statistics = TRUE,
+                                                     bootstrap_thetas = FALSE
+                                                   ),
+                                                   control = list(),
+                                                   unknown_param = "both") {
+  spec <- make_logistic_gaussian_spec(unknown_param = unknown_param)
 
   multiplier_bootstrap_gof(
     data = data,

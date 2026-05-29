@@ -1,0 +1,16 @@
+Dataset: galicia_acoruna_sep_1982_2022_step4_start3
+Start timestamp: 2026-05-28 10:13:09
+Height: 10 m
+Months id: sep
+Years used: 1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022
+n_final: 287
+Speed mean used for scaling: 3.0432404181
+MLE kappa_hat = 1.5172245396
+MLE mu_hat = (1.0063188318, 0.0896908780, 0.0680671557)
+MLE theta_deg_hat = 37.1951659865
+Configuration: composite CvM, B=99, n_cores=2, hvmf_profile_method=tabulated
+Observed CvM = 1.5155560964
+p-value = 0.0100000000
+Elapsed seconds = 22.708
+Warnings: none
+End timestamp: 2026-05-28 10:13:32

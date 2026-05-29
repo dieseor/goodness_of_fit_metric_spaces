@@ -1,0 +1,16 @@
+Dataset: galicia_acoruna_jan_feb_2012_2022_step4_start1
+Start timestamp: 2026-05-28 01:31:51
+Height: 10 m
+Months id: jan_feb
+Years used: 2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022
+n_final: 168
+Speed mean used for scaling: 3.9074404762
+MLE kappa_hat = 1.6874980905
+MLE mu_hat = (1.0554925511, -0.2203399860, -0.2559586218)
+MLE theta_deg_hat = 229.2767412817
+Configuration: composite CvM, B=19, n_cores=2, hvmf_profile_method=tabulated
+Observed CvM = 0.3370304453
+p-value = 0.0500000000
+Elapsed seconds = 13.971
+Warnings: none
+End timestamp: 2026-05-28 01:32:05

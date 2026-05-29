@@ -1,0 +1,24 @@
+dataset_id: n03020_negative_phase
+start_time: 2026-05-26 20:43:13
+embedding: polar_jensen
+component_csv: hvmf_realdata_screening/processed/n03020_negative_phase_h2.csv
+n_final: 752
+configuration: statistic=CvM, null=simple plugin, B=1000, n_cores=3, seed=2026052501
+processed_csv: hvmf_realdata_screening/processed_polar/n03020_negative_phase_h2_polar.csv
+result_rds: hvmf_realdata_screening/results_polar/n03020_negative_phase_cvm_simple_plugin_polar_result.rds
+day_stride_filter: applied_every_5_days (unique_days 14 -> 3)
+n_final: 161
+speed_mean_polar: 57.4608695652
+max_abs_minkowski_norm_plus_1: 3.108624468950e-15
+mu_hat: (1.5169437056, -0.7605525002, 0.8501047584)
+kappa_hat: 12.3509321069
+sinh_chi_hat: 1.1406656854
+theta_deg_hat: 131.8176413619
+CvM_observed: 0.9052663033
+p_value: 0.0009990010
+B: 1000
+n_cores: 3
+elapsed_seconds: 3.097
+warnings: none
+status: ok
+end_time: 2026-05-26 20:43:17

@@ -1,0 +1,16 @@
+Dataset: galicia_lugo_sep_oct_2012_2022_step4_start1
+Start timestamp: 2026-05-28 01:39:37
+Height: 10 m
+Months id: sep_oct
+Years used: 2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022
+n_final: 176
+Speed mean used for scaling: 1.9161931818
+MLE kappa_hat = 1.5729867459
+MLE mu_hat = (1.0029082850, -0.0621028922, -0.0443650643)
+MLE theta_deg_hat = 215.5412548792
+Configuration: composite CvM, B=20, n_cores=2, hvmf_profile_method=tabulated
+Observed CvM = 0.7531192125
+p-value = 0.0476190476
+Elapsed seconds = 13.303
+Warnings: none
+End timestamp: 2026-05-28 01:39:50

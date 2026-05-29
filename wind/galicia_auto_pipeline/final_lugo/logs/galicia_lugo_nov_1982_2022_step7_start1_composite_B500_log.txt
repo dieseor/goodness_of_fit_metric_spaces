@@ -1,0 +1,16 @@
+Dataset: galicia_lugo_nov_1982_2022_step7_start1
+Start timestamp: 2026-05-28 12:37:27
+Height: 10 m
+Months id: nov
+Years used: 1982,1983,1984,1985,1986,1987,1988,1989,1990,1991,1992,1993,1994,1995,1996,1997,1998,1999,2000,2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022
+n_final: 205
+Speed mean used for scaling: 2.1138048780
+MLE kappa_hat = 1.7188978948
+MLE mu_hat = (1.0455467801, -0.2734103536, -0.1357013184)
+MLE theta_deg_hat = 206.3965095577
+Configuration: composite CvM, B=500, n_cores=10, hvmf_profile_method=tabulated
+Observed CvM = 0.5078292383
+p-value = 0.0019960080
+Elapsed seconds = 30.138
+Warnings: none
+End timestamp: 2026-05-28 12:37:58

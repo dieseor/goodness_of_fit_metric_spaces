@@ -1,0 +1,16 @@
+Dataset: galicia_santiago_jul_aug_2012_2022_step4_start1
+Start timestamp: 2026-05-28 01:30:52
+Height: 10 m
+Months id: jul_aug
+Years used: 2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022
+n_final: 176
+Speed mean used for scaling: 2.6021022727
+MLE kappa_hat = 1.8612381806
+MLE mu_hat = (1.0639737308, 0.3627475509, 0.0213146478)
+MLE theta_deg_hat = 3.3627705354
+Configuration: composite CvM, B=19, n_cores=2, hvmf_profile_method=tabulated
+Observed CvM = 1.6718135746
+p-value = 0.0500000000
+Elapsed seconds = 28.563
+Warnings: none
+End timestamp: 2026-05-28 01:31:20
