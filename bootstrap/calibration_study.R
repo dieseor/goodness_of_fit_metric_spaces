@@ -30,7 +30,12 @@ required_bootstrap_functions <- c(
   "multiplier_bootstrap_vmf",
   "multiplier_bootstrap_jp",
   "multiplier_bootstrap_hvmf",
-  "multiplier_bootstrap_logistic_gaussian"
+  "multiplier_bootstrap_logistic_gaussian",
+  "multiplier_bootstrap_rotational_beta_mixture2",
+  "multiplier_bootstrap_rotational_logitnormal_mixture2",
+  "multiplier_bootstrap_cardioid",
+  "multiplier_bootstrap_spherical_cauchy",
+  "multiplier_bootstrap_small_circle"
 )
 if (any(!vapply(required_bootstrap_functions, exists, logical(1), mode = "function"))) {
   source(multiplier_bootstrap_path_calibration)
@@ -303,6 +308,486 @@ make_jp_composite_calibration_scenario <- function(kappa, psi) {
   )
 }
 
+make_cardioid_simple_calibration_scenario <- function(k,
+                                                      rho = 0.5) {
+  mu <- c(0, 0, 1)
+  k <- as.integer(k)
+
+  list(
+    id = sprintf(
+      "cardioid_simple_s2_geodesic_k%d_rho_%s",
+      k,
+      format_calibration_number_tag(rho)
+    ),
+    model = "cardioid",
+    label = sprintf("Cardioide simple S^2 geodesic: k=%d, rho=%s", k, rho),
+    null = list(type = "simple", theta = list(mu = mu, rho = rho, k = k)),
+    sample_params = list(mu = mu, rho = rho, k = k),
+    distance_type = "geodesic",
+    unknown_param = "both",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    )
+  )
+}
+
+make_cardioid_composite_calibration_scenario <- function(k,
+                                                          rho = 0.5) {
+  mu <- c(0, 0, 1)
+  k <- as.integer(k)
+
+  list(
+    id = sprintf(
+      "cardioid_composite_s2_geodesic_k%d_rho_%s",
+      k,
+      format_calibration_number_tag(rho)
+    ),
+    model = "cardioid",
+    label = sprintf("Cardioide compuesta S^2 geodesic: k=%d, rho=%s", k, rho),
+    null = list(type = "composite"),
+    sample_params = list(mu = mu, rho = rho, k = k),
+    distance_type = "geodesic",
+    unknown_param = "both",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    )
+  )
+}
+
+make_spherical_cauchy_simple_calibration_scenario <- function(rho = 0.5) {
+  mu <- c(0, 0, 1)
+  list(
+    id = sprintf(
+      "spherical_cauchy_simple_s2_geodesic_rho_%s",
+      format_calibration_number_tag(rho)
+    ),
+    model = "spherical_cauchy",
+    label = sprintf("Spherical Cauchy simple S^2 geodesic: rho=%s", rho),
+    null = list(type = "simple", theta = list(mu = mu, rho = rho)),
+    sample_params = list(mu = mu, rho = rho),
+    distance_type = "geodesic",
+    unknown_param = "theta",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    )
+  )
+}
+
+make_spherical_cauchy_composite_calibration_scenario <- function(rho = 0.5) {
+  mu <- c(0, 0, 1)
+  list(
+    id = sprintf(
+      "spherical_cauchy_composite_s2_geodesic_rho_%s",
+      format_calibration_number_tag(rho)
+    ),
+    model = "spherical_cauchy",
+    label = sprintf("Spherical Cauchy composite S^2 geodesic: rho=%s", rho),
+    null = list(type = "composite"),
+    sample_params = list(mu = mu, rho = rho),
+    distance_type = "geodesic",
+    unknown_param = "theta",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    )
+  )
+}
+
+make_rotational_beta_mixture2_simple_calibration_scenario <- function(weight1 = 0.4,
+                                                                      alpha1 = 2,
+                                                                      beta1 = 8,
+                                                                      alpha2 = 8,
+                                                                      beta2 = 2) {
+  mu <- c(0, 0, 1)
+  list(
+    id = sprintf(
+      "rotational_beta_mixture2_simple_s2_geodesic_w%s_a1_%s_b1_%s_a2_%s_b2_%s",
+      format_calibration_number_tag(weight1),
+      format_calibration_number_tag(alpha1),
+      format_calibration_number_tag(beta1),
+      format_calibration_number_tag(alpha2),
+      format_calibration_number_tag(beta2)
+    ),
+    model = "rotational_beta_mixture2",
+    label = sprintf(
+      "Rotational beta-mixture simple S^2 geodesic: w=%s, (a1,b1)=(%s,%s), (a2,b2)=(%s,%s)",
+      weight1,
+      alpha1,
+      beta1,
+      alpha2,
+      beta2
+    ),
+    null = list(
+      type = "simple",
+      theta = list(
+        mu = mu,
+        weight1 = weight1,
+        alpha1 = alpha1,
+        beta1 = beta1,
+        alpha2 = alpha2,
+        beta2 = beta2
+      )
+    ),
+    sample_params = list(
+      mu = mu,
+      weight1 = weight1,
+      alpha1 = alpha1,
+      beta1 = beta1,
+      alpha2 = alpha2,
+      beta2 = beta2
+    ),
+    distance_type = "geodesic",
+    unknown_param = "theta",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    ),
+    control = list(
+      rotational_beta_mixture2_L_max = 150L,
+      rotational_beta_mixture2_quad_n = 400L,
+      rotational_beta_mixture2_tol = 1e-10,
+      rotational_beta_mixture2_optim_control = list(maxit = 300L, reltol = 1e-9)
+    )
+  )
+}
+
+make_rotational_beta_mixture2_composite_calibration_scenario <- function(weight1 = 0.4,
+                                                                         alpha1 = 2,
+                                                                         beta1 = 8,
+                                                                         alpha2 = 8,
+                                                                         beta2 = 2) {
+  mu <- c(0, 0, 1)
+  list(
+    id = sprintf(
+      "rotational_beta_mixture2_composite_s2_geodesic_w%s_a1_%s_b1_%s_a2_%s_b2_%s",
+      format_calibration_number_tag(weight1),
+      format_calibration_number_tag(alpha1),
+      format_calibration_number_tag(beta1),
+      format_calibration_number_tag(alpha2),
+      format_calibration_number_tag(beta2)
+    ),
+    model = "rotational_beta_mixture2",
+    label = sprintf(
+      "Rotational beta-mixture composite S^2 geodesic: w=%s, (a1,b1)=(%s,%s), (a2,b2)=(%s,%s)",
+      weight1,
+      alpha1,
+      beta1,
+      alpha2,
+      beta2
+    ),
+    null = list(type = "composite"),
+    sample_params = list(
+      mu = mu,
+      weight1 = weight1,
+      alpha1 = alpha1,
+      beta1 = beta1,
+      alpha2 = alpha2,
+      beta2 = beta2
+    ),
+    distance_type = "geodesic",
+    unknown_param = "theta",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    ),
+    control = list(
+      rotational_beta_mixture2_L_max = 150L,
+      rotational_beta_mixture2_quad_n = 400L,
+      rotational_beta_mixture2_tol = 1e-10,
+      rotational_beta_mixture2_optim_control = list(maxit = 300L, reltol = 1e-9)
+    )
+  )
+}
+
+make_rotational_logitnormal_mixture2_simple_calibration_scenario <- function(weight1 = 0.45,
+                                                                             mean1 = -1.2,
+                                                                             sd1 = 0.5,
+                                                                             mean2 = 1.0,
+                                                                             sd2 = 0.6) {
+  mu <- c(0, 0, 1)
+  list(
+    id = sprintf(
+      "rotational_logitnormal_mixture2_simple_s2_geodesic_w%s_m1_%s_s1_%s_m2_%s_s2_%s",
+      format_calibration_number_tag(weight1),
+      format_calibration_number_tag(mean1),
+      format_calibration_number_tag(sd1),
+      format_calibration_number_tag(mean2),
+      format_calibration_number_tag(sd2)
+    ),
+    model = "rotational_logitnormal_mixture2",
+    label = sprintf(
+      "Rotational logit-normal-mixture simple S^2 geodesic: w=%s, (m1,s1)=(%s,%s), (m2,s2)=(%s,%s)",
+      weight1,
+      mean1,
+      sd1,
+      mean2,
+      sd2
+    ),
+    null = list(
+      type = "simple",
+      theta = list(
+        mu = mu,
+        weight1 = weight1,
+        mean1 = mean1,
+        sd1 = sd1,
+        mean2 = mean2,
+        sd2 = sd2
+      )
+    ),
+    sample_params = list(
+      mu = mu,
+      weight1 = weight1,
+      mean1 = mean1,
+      sd1 = sd1,
+      mean2 = mean2,
+      sd2 = sd2
+    ),
+    distance_type = "geodesic",
+    unknown_param = "theta",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    ),
+    control = list(
+      rotational_logitnormal_mixture2_L_max = 150L,
+      rotational_logitnormal_mixture2_quad_n = 400L,
+      rotational_logitnormal_mixture2_tol = 1e-10,
+      rotational_logitnormal_mixture2_optim_control = list(maxit = 300L, reltol = 1e-9)
+    )
+  )
+}
+
+make_rotational_logitnormal_mixture2_composite_calibration_scenario <- function(weight1 = 0.45,
+                                                                                mean1 = -1.2,
+                                                                                sd1 = 0.5,
+                                                                                mean2 = 1.0,
+                                                                                sd2 = 0.6) {
+  mu <- c(0, 0, 1)
+  list(
+    id = sprintf(
+      "rotational_logitnormal_mixture2_composite_s2_geodesic_w%s_m1_%s_s1_%s_m2_%s_s2_%s",
+      format_calibration_number_tag(weight1),
+      format_calibration_number_tag(mean1),
+      format_calibration_number_tag(sd1),
+      format_calibration_number_tag(mean2),
+      format_calibration_number_tag(sd2)
+    ),
+    model = "rotational_logitnormal_mixture2",
+    label = sprintf(
+      "Rotational logit-normal-mixture composite S^2 geodesic: w=%s, (m1,s1)=(%s,%s), (m2,s2)=(%s,%s)",
+      weight1,
+      mean1,
+      sd1,
+      mean2,
+      sd2
+    ),
+    null = list(type = "composite"),
+    sample_params = list(
+      mu = mu,
+      weight1 = weight1,
+      mean1 = mean1,
+      sd1 = sd1,
+      mean2 = mean2,
+      sd2 = sd2
+    ),
+    distance_type = "geodesic",
+    unknown_param = "theta",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    ),
+    control = list(
+      rotational_logitnormal_mixture2_L_max = 150L,
+      rotational_logitnormal_mixture2_quad_n = 400L,
+      rotational_logitnormal_mixture2_tol = 1e-10,
+      rotational_logitnormal_mixture2_optim_control = list(maxit = 300L, reltol = 1e-9)
+    )
+  )
+}
+
+make_small_circle_simple_calibration_scenario <- function(kappa,
+                                                          nu) {
+  mu <- c(0, 0, 1)
+  list(
+    id = sprintf(
+      "small_circle_simple_s2_geodesic_kappa_%s_nu_%s",
+      format_calibration_number_tag(kappa),
+      format_calibration_number_tag(nu)
+    ),
+    model = "small_circle",
+    label = sprintf("Small Circle simple S^2 geodesic: kappa=%s, nu=%s", kappa, nu),
+    null = list(type = "simple", theta = list(mu = mu, kappa = kappa, nu = nu)),
+    sample_params = list(mu = mu, kappa = kappa, nu = nu),
+    distance_type = "geodesic",
+    unknown_param = "theta",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    )
+  )
+}
+
+make_small_circle_composite_calibration_scenario <- function(kappa,
+                                                             nu) {
+  mu <- c(0, 0, 1)
+  list(
+    id = sprintf(
+      "small_circle_composite_s2_geodesic_kappa_%s_nu_%s",
+      format_calibration_number_tag(kappa),
+      format_calibration_number_tag(nu)
+    ),
+    model = "small_circle",
+    label = sprintf("Small Circle composite S^2 geodesic: kappa=%s, nu=%s", kappa, nu),
+    null = list(type = "composite"),
+    sample_params = list(mu = mu, kappa = kappa, nu = nu),
+    distance_type = "geodesic",
+    unknown_param = "theta",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    ),
+    control = list(
+      small_circle_L_max = 200L,
+      small_circle_quad_n = 400L,
+      small_circle_tol = 1e-10,
+      small_circle_optim_control = list(maxit = 300L, reltol = 1e-9)
+    )
+  )
+}
+
+default_cardioid_simple_calibration_scenarios <- function(rho = 0.5) {
+  list(
+    make_cardioid_simple_calibration_scenario(k = 1L, rho = rho),
+    make_cardioid_simple_calibration_scenario(k = 2L, rho = rho)
+  )
+}
+
+default_cardioid_composite_calibration_scenarios <- function(rho = 0.5) {
+  list(
+    make_cardioid_composite_calibration_scenario(k = 1L, rho = rho),
+    make_cardioid_composite_calibration_scenario(k = 2L, rho = rho)
+  )
+}
+
+default_spherical_cauchy_simple_calibration_scenarios <- function(rho_values = c(0.3, 0.7)) {
+  lapply(as.numeric(rho_values), make_spherical_cauchy_simple_calibration_scenario)
+}
+
+default_spherical_cauchy_composite_calibration_scenarios <- function(rho_values = c(0.3, 0.7)) {
+  lapply(as.numeric(rho_values), make_spherical_cauchy_composite_calibration_scenario)
+}
+
+default_rotational_beta_mixture2_simple_calibration_scenarios <- function() {
+  list(
+    make_rotational_beta_mixture2_simple_calibration_scenario(
+      weight1 = 0.4,
+      alpha1 = 2,
+      beta1 = 8,
+      alpha2 = 8,
+      beta2 = 2
+    ),
+    make_rotational_beta_mixture2_simple_calibration_scenario(
+      weight1 = 0.55,
+      alpha1 = 4,
+      beta1 = 12,
+      alpha2 = 10,
+      beta2 = 3
+    )
+  )
+}
+
+default_rotational_beta_mixture2_composite_calibration_scenarios <- function() {
+  list(
+    make_rotational_beta_mixture2_composite_calibration_scenario(
+      weight1 = 0.4,
+      alpha1 = 2,
+      beta1 = 8,
+      alpha2 = 8,
+      beta2 = 2
+    ),
+    make_rotational_beta_mixture2_composite_calibration_scenario(
+      weight1 = 0.55,
+      alpha1 = 4,
+      beta1 = 12,
+      alpha2 = 10,
+      beta2 = 3
+    )
+  )
+}
+
+default_rotational_logitnormal_mixture2_simple_calibration_scenarios <- function() {
+  list(
+    make_rotational_logitnormal_mixture2_simple_calibration_scenario(
+      weight1 = 0.45,
+      mean1 = -1.2,
+      sd1 = 0.5,
+      mean2 = 1.0,
+      sd2 = 0.6
+    ),
+    make_rotational_logitnormal_mixture2_simple_calibration_scenario(
+      weight1 = 0.35,
+      mean1 = -0.7,
+      sd1 = 0.35,
+      mean2 = 1.4,
+      sd2 = 0.45
+    )
+  )
+}
+
+default_rotational_logitnormal_mixture2_composite_calibration_scenarios <- function() {
+  list(
+    make_rotational_logitnormal_mixture2_composite_calibration_scenario(
+      weight1 = 0.45,
+      mean1 = -1.2,
+      sd1 = 0.5,
+      mean2 = 1.0,
+      sd2 = 0.6
+    ),
+    make_rotational_logitnormal_mixture2_composite_calibration_scenario(
+      weight1 = 0.35,
+      mean1 = -0.7,
+      sd1 = 0.35,
+      mean2 = 1.4,
+      sd2 = 0.45
+    )
+  )
+}
+
+default_small_circle_simple_calibration_scenarios <- function(kappa_values = c(5, 20),
+                                                              nu_values = c(0, 0.3, 0.7)) {
+  grid <- expand.grid(
+    kappa = as.numeric(kappa_values),
+    nu = as.numeric(nu_values),
+    KEEP.OUT.ATTRS = FALSE,
+    stringsAsFactors = FALSE
+  )
+  lapply(seq_len(nrow(grid)), function(i) {
+    make_small_circle_simple_calibration_scenario(
+      kappa = grid$kappa[[i]],
+      nu = grid$nu[[i]]
+    )
+  })
+}
+
+default_small_circle_composite_calibration_scenarios <- function(kappa_values = c(5, 20),
+                                                                 nu_values = c(0, 0.3, 0.7)) {
+  grid <- expand.grid(
+    kappa = as.numeric(kappa_values),
+    nu = as.numeric(nu_values),
+    KEEP.OUT.ATTRS = FALSE,
+    stringsAsFactors = FALSE
+  )
+  lapply(seq_len(nrow(grid)), function(i) {
+    make_small_circle_composite_calibration_scenario(
+      kappa = grid$kappa[[i]],
+      nu = grid$nu[[i]]
+    )
+  })
+}
+
 default_jp_simple_calibration_scenarios <- function() {
   list(
     make_jp_simple_calibration_scenario(1.0, 0.5),
@@ -378,7 +863,9 @@ default_bootstrap_calibration_scenarios <- function() {
   list(
     make_normal_simple_calibration_scenario(),
     make_vmf_simple_calibration_scenario(0.5),
-    make_vmf_simple_calibration_scenario(2.0)
+    make_vmf_simple_calibration_scenario(2.0),
+    default_rotational_beta_mixture2_simple_calibration_scenarios()[[1L]],
+    default_rotational_logitnormal_mixture2_simple_calibration_scenarios()[[1L]]
   )
 }
 
@@ -386,7 +873,9 @@ default_bootstrap_composite_calibration_scenarios <- function() {
   list(
     make_normal_composite_calibration_scenario(),
     make_vmf_composite_calibration_scenario(0.5),
-    make_vmf_composite_calibration_scenario(2.0)
+    make_vmf_composite_calibration_scenario(2.0),
+    default_rotational_beta_mixture2_composite_calibration_scenarios()[[1L]],
+    default_rotational_logitnormal_mixture2_composite_calibration_scenarios()[[1L]]
   )
 }
 
@@ -502,6 +991,56 @@ simulate_h0_sample <- function(scenario, n, replicate_id = NULL) {
     ))
   }
 
+  if (identical(scenario$model, "cardioid")) {
+    return(r_sph_car(
+      n = n,
+      mu = scenario$sample_params$mu,
+      rho = scenario$sample_params$rho,
+      k = as.integer(scenario$sample_params$k)
+    ))
+  }
+
+  if (identical(scenario$model, "spherical_cauchy")) {
+    return(r_sph_spherical_cauchy(
+      n = n,
+      mu = scenario$sample_params$mu,
+      rho = scenario$sample_params$rho
+    ))
+  }
+
+  if (identical(scenario$model, "rotational_beta_mixture2")) {
+    return(r_sph_rotational_beta_mixture2(
+      n = n,
+      mu = scenario$sample_params$mu,
+      weight1 = scenario$sample_params$weight1,
+      alpha1 = scenario$sample_params$alpha1,
+      beta1 = scenario$sample_params$beta1,
+      alpha2 = scenario$sample_params$alpha2,
+      beta2 = scenario$sample_params$beta2
+    ))
+  }
+
+  if (identical(scenario$model, "rotational_logitnormal_mixture2")) {
+    return(r_sph_rotational_logitnormal_mixture2(
+      n = n,
+      mu = scenario$sample_params$mu,
+      weight1 = scenario$sample_params$weight1,
+      mean1 = scenario$sample_params$mean1,
+      sd1 = scenario$sample_params$sd1,
+      mean2 = scenario$sample_params$mean2,
+      sd2 = scenario$sample_params$sd2
+    ))
+  }
+
+  if (identical(scenario$model, "small_circle")) {
+    return(r_sph_small_circle(
+      n = n,
+      mu = scenario$sample_params$mu,
+      kappa = scenario$sample_params$kappa,
+      nu = scenario$sample_params$nu
+    ))
+  }
+
   stop(sprintf("Unsupported scenario model: %s", scenario$model))
 }
 
@@ -601,6 +1140,107 @@ run_bootstrap_for_scenario <- function(data,
       ),
       control = scenario$control %||% list(),
       unknown_param = scenario$unknown_param %||% "both"
+    ))
+  }
+
+  if (identical(scenario$model, "rotational_beta_mixture2")) {
+    return(multiplier_bootstrap_rotational_beta_mixture2(
+      data = data,
+      null = scenario$null,
+      statistics = statistics,
+      ks_grid = scenario$ks_grid,
+      B = B,
+      alpha = alpha_nominal,
+      seed = seed,
+      n_cores = 1,
+      keep = list(
+        observed_process = FALSE,
+        bootstrap_statistics = TRUE,
+        bootstrap_thetas = TRUE
+      ),
+      control = scenario$control %||% list(),
+      distance_type = scenario$distance_type %||% "geodesic"
+    ))
+  }
+
+  if (identical(scenario$model, "rotational_logitnormal_mixture2")) {
+    return(multiplier_bootstrap_rotational_logitnormal_mixture2(
+      data = data,
+      null = scenario$null,
+      statistics = statistics,
+      ks_grid = scenario$ks_grid,
+      B = B,
+      alpha = alpha_nominal,
+      seed = seed,
+      n_cores = 1,
+      keep = list(
+        observed_process = FALSE,
+        bootstrap_statistics = TRUE,
+        bootstrap_thetas = TRUE
+      ),
+      control = scenario$control %||% list(),
+      distance_type = scenario$distance_type %||% "geodesic"
+    ))
+  }
+
+  if (identical(scenario$model, "cardioid")) {
+    return(multiplier_bootstrap_cardioid(
+      data = data,
+      null = scenario$null,
+      k = as.integer(scenario$sample_params$k),
+      statistics = statistics,
+      ks_grid = scenario$ks_grid %||% NULL,
+      B = B,
+      alpha = alpha_nominal,
+      seed = seed,
+      n_cores = 1,
+      keep = list(
+        observed_process = FALSE,
+        bootstrap_statistics = TRUE
+      ),
+      control = scenario$control %||% list(),
+      distance_type = scenario$distance_type %||% "geodesic",
+      unknown_param = scenario$unknown_param %||% "both"
+    ))
+  }
+
+  if (identical(scenario$model, "spherical_cauchy")) {
+    return(multiplier_bootstrap_spherical_cauchy(
+      data = data,
+      null = scenario$null,
+      statistics = statistics,
+      ks_grid = scenario$ks_grid,
+      B = B,
+      alpha = alpha_nominal,
+      seed = seed,
+      n_cores = 1,
+      keep = list(
+        observed_process = FALSE,
+        bootstrap_statistics = TRUE,
+        bootstrap_thetas = TRUE
+      ),
+      control = scenario$control %||% list(),
+      distance_type = scenario$distance_type %||% "geodesic"
+    ))
+  }
+
+  if (identical(scenario$model, "small_circle")) {
+    return(multiplier_bootstrap_small_circle(
+      data = data,
+      null = scenario$null,
+      statistics = statistics,
+      ks_grid = scenario$ks_grid,
+      B = B,
+      alpha = alpha_nominal,
+      seed = seed,
+      n_cores = 1,
+      keep = list(
+        observed_process = FALSE,
+        bootstrap_statistics = TRUE,
+        bootstrap_thetas = TRUE
+      ),
+      control = scenario$control %||% list(),
+      distance_type = scenario$distance_type %||% "geodesic"
     ))
   }
 
@@ -1065,6 +1705,20 @@ plot_calibration_rejection_rates <- function(summary_results_scenario) {
     stringsAsFactors = FALSE
   )
 
+  group_counts <- stats::aggregate(
+    alpha ~ n_label + statistic,
+    data = long_results,
+    FUN = length
+  )
+  names(group_counts)[names(group_counts) == "alpha"] <- "n_group_points"
+  long_results <- merge(
+    long_results,
+    group_counts,
+    by = c("n_label", "statistic"),
+    all.x = TRUE,
+    sort = FALSE
+  )
+
   ggplot2::ggplot(
     long_results,
     ggplot2::aes(
@@ -1080,7 +1734,10 @@ plot_calibration_rejection_rates <- function(summary_results_scenario) {
       linetype = "dashed",
       color = "#333333"
     ) +
-    ggplot2::geom_line(linewidth = 0.9) +
+    ggplot2::geom_line(
+      data = long_results[long_results$n_group_points > 1L, , drop = FALSE],
+      linewidth = 0.9
+    ) +
     ggplot2::geom_point(size = 2) +
     ggplot2::facet_wrap(~ n_label) +
     ggplot2::coord_cartesian(xlim = c(0, max(long_results$alpha) * 1.05), ylim = c(0, max(long_results$alpha, long_results$rejection_rate) * 1.15)) +
@@ -1170,6 +1827,62 @@ persist_calibration_outputs <- function(raw_results,
   )
 }
 
+is_pid_alive <- function(pid) {
+  pid <- suppressWarnings(as.integer(pid))
+  if (!is.finite(pid) || pid <= 0L) {
+    return(FALSE)
+  }
+
+  probe <- tryCatch(
+    suppressWarnings(system2("ps", args = c("-p", as.character(pid), "-o", "pid="), stdout = TRUE, stderr = TRUE)),
+    error = function(...) character(0)
+  )
+
+  length(trimws(probe)) > 0L
+}
+
+acquire_calibration_run_lock <- function(output_dir) {
+  lock_path <- file.path(output_dir, ".calibration_run.lock")
+  pid <- Sys.getpid()
+
+  if (file.exists(lock_path)) {
+    lock_contents <- tryCatch(readLines(lock_path, warn = FALSE), error = function(...) character(0))
+    lock_pid_line <- lock_contents[grepl("^pid=", lock_contents)]
+    lock_pid <- if (length(lock_pid_line) > 0L) sub("^pid=", "", lock_pid_line[[1]]) else NA_character_
+
+    if (is_pid_alive(lock_pid)) {
+      stop(sprintf(
+        paste0(
+          "A calibration run is already active for this output directory. ",
+          "output_dir='%s', active_pid=%s, lock_path='%s'. ",
+          "Stop the existing run or choose a different output_dir."
+        ),
+        output_dir,
+        lock_pid,
+        lock_path
+      ))
+    }
+
+    unlink(lock_path, force = TRUE)
+  }
+
+  created <- file.create(lock_path)
+  if (!isTRUE(created)) {
+    stop(sprintf("Unable to create calibration lock file at '%s'.", lock_path))
+  }
+
+  writeLines(
+    c(
+      sprintf("pid=%d", pid),
+      sprintf("started_at=%s", format(Sys.time(), tz = "UTC", usetz = TRUE)),
+      sprintf("output_dir=%s", normalizePath(output_dir, winslash = "/", mustWork = FALSE))
+    ),
+    con = lock_path
+  )
+
+  lock_path
+}
+
 run_bootstrap_calibration_study <- function(scenarios = default_bootstrap_calibration_scenarios(),
                                             n_values = c(50, 100, 200),
                                             M_outer = 1000,
@@ -1186,6 +1899,9 @@ run_bootstrap_calibration_study <- function(scenarios = default_bootstrap_calibr
     output_dir <- default_calibration_output_dir("full")
   }
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+  lock_path <- acquire_calibration_run_lock(output_dir)
+  on.exit(unlink(lock_path, force = TRUE), add = TRUE)
 
   shared_cluster <- NULL
   if (as.integer(n_cores_outer) > 1L) {
@@ -1446,6 +2162,47 @@ run_full_bootstrap_jp_composite_calibration_study <- function(output_dir = NULL,
   )
 }
 
+run_full_bootstrap_jp_composite_nm_boot_local_calibration_study <- function(output_dir = NULL,
+                                                                             n_cores_outer = 1,
+                                                                             seed = 123,
+                                                                             M_outer = 500,
+                                                                             B = 500,
+                                                                             jp_mle_maxit = 500L,
+                                                                             jp_mle_reltol = 1e-10,
+                                                                             jp_mle_max_abs_kappa_psi = 6,
+                                                                             statistics = c("ks", "cvm"),
+                                                                             n_values = c(50, 100, 200)) {
+  scenarios <- default_jp_composite_calibration_scenarios()
+  jp_control <- list(
+    jp_mle_method = "Nelder-Mead",
+    jp_mle_maxit = as.integer(jp_mle_maxit),
+    jp_mle_reltol = as.numeric(jp_mle_reltol),
+    jp_mle_max_abs_kappa_psi = as.numeric(jp_mle_max_abs_kappa_psi),
+    jp_profile_method = "tabulated",
+    jp_profile_n_u = 1025L,
+    jp_profile_n_delta = 257L,
+    jp_vmf_switch_abs_kappa_psi = 1e-3
+  )
+
+  scenarios <- lapply(scenarios, function(scenario) {
+    scenario$control <- modifyList(scenario$control %||% list(), jp_control)
+    scenario
+  })
+
+  run_bootstrap_calibration_study(
+    scenarios = scenarios,
+    n_values = as.integer(n_values),
+    M_outer = as.integer(M_outer),
+    B = as.integer(B),
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = statistics,
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "jp_composite_nm_boot_local_full")
+  )
+}
+
 run_smoke_hvmf_composite_cvm_calibration_study <- function(output_dir = NULL,
                                                            n_cores_outer = 1,
                                                            seed = 123,
@@ -1617,6 +2374,114 @@ run_full_logistic_gaussian_composite_calibration_study <- function(output_dir = 
     n_cores_outer = n_cores_outer,
     seed = seed,
     output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "logistic_gaussian_composite_full"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_smoke_small_circle_simple_calibration_study <- function(output_dir = NULL,
+                                                            n_cores_outer = 1,
+                                                            seed = 123,
+                                                            kappa_values = c(5, 20),
+                                                            nu_values = c(0, 0.3, 0.7),
+                                                            show_progress = FALSE,
+                                                            verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_small_circle_simple_calibration_scenarios(
+      kappa_values = kappa_values,
+      nu_values = nu_values
+    ),
+    n_values = 50,
+    M_outer = 10,
+    B = 19,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "small_circle_simple_smoke"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_full_small_circle_simple_calibration_study <- function(output_dir = NULL,
+                                                           n_cores_outer = 1,
+                                                           seed = 123,
+                                                           M_outer = 500,
+                                                           B = 500,
+                                                           kappa_values = c(5, 20),
+                                                           nu_values = c(0, 0.3, 0.7),
+                                                           show_progress = FALSE,
+                                                           verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_small_circle_simple_calibration_scenarios(
+      kappa_values = kappa_values,
+      nu_values = nu_values
+    ),
+    n_values = c(50, 100, 200),
+    M_outer = M_outer,
+    B = B,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "small_circle_simple_full"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_smoke_small_circle_composite_calibration_study <- function(output_dir = NULL,
+                                                               n_cores_outer = 1,
+                                                               seed = 123,
+                                                               kappa_values = c(5, 20),
+                                                               nu_values = c(0, 0.3, 0.7),
+                                                               show_progress = FALSE,
+                                                               verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_small_circle_composite_calibration_scenarios(
+      kappa_values = kappa_values,
+      nu_values = nu_values
+    ),
+    n_values = 50,
+    M_outer = 10,
+    B = 19,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "small_circle_composite_smoke"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_full_small_circle_composite_calibration_study <- function(output_dir = NULL,
+                                                              n_cores_outer = 1,
+                                                              seed = 123,
+                                                              M_outer = 500,
+                                                              B = 500,
+                                                              kappa_values = c(5, 20),
+                                                              nu_values = c(0, 0.3, 0.7),
+                                                              show_progress = FALSE,
+                                                              verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_small_circle_composite_calibration_scenarios(
+      kappa_values = kappa_values,
+      nu_values = nu_values
+    ),
+    n_values = c(50, 100, 200),
+    M_outer = M_outer,
+    B = B,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "bootstrap_calibration", "small_circle_composite_full"),
     show_progress = show_progress,
     verbose = verbose
   )

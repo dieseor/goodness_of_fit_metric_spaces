@@ -51,8 +51,6 @@ dataset_names <- if (is.null(args$datasets)) {
     "WhiteCells",
     "expenditures",
     "expendituresEU",
-    "Hongite",
-    "Kongite",
     "Sediments",
     "HouseholdExp",
     "coffee"

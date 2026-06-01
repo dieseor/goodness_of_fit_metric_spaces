@@ -26,6 +26,11 @@ if (!exists("clip_cardioid_dot_products", mode = "function") && file.exists(card
   source(cardioid_model_spec_path)
 }
 
+small_circle_model_spec_path <- resolve_multiplier_bootstrap_path("bootstrap", "small_circle_model_spec.R")
+if (!exists("make_small_circle_spec", mode = "function") && file.exists(small_circle_model_spec_path)) {
+  source(small_circle_model_spec_path)
+}
+
 normalize_requested_statistics <- function(statistics) {
   statistics <- unique(tolower(as.character(statistics)))
   valid_statistics <- c("ks", "cvm")
@@ -459,6 +464,11 @@ run_bootstrap_chunk <- function(weight_chunk,
     if (identical(null$type, "composite")) {
       bootstrap_control <- control
       if (!is.null(theta_start) && grepl("^jp_", spec$name)) {
+        # JP composite bootstrap refits use a warm-started local re-optimization.
+        # Together with the logic in jp_mle_s2_weighted(), this keeps the refit
+        # on the observed sign branch of psi unless the caller explicitly
+        # overrides it. This is a stabilization device for the JP optimizer, not
+        # the fully unconstrained composite re-fit.
         bootstrap_control$jp_mle_start_theta <- theta_start
         bootstrap_control$jp_mle_warm_start_only <- TRUE
         bootstrap_control$jp_mle_bootstrap_refit <- TRUE
@@ -596,6 +606,7 @@ multiplier_bootstrap_gof <- function(data,
                                      multipliers = NULL,
                                      n_cores = 1,
                                      seed = NULL,
+                                     observed_theta_hat = NULL,
                                      keep = list(
                                        observed_process = TRUE,
                                        bootstrap_statistics = TRUE,
@@ -634,12 +645,16 @@ multiplier_bootstrap_gof <- function(data,
 
   start_time <- Sys.time()
 
-  theta_hat <- spec$fit_theta(
-    data = data_normalized,
-    weights = NULL,
-    null = null,
-    control = control
-  )
+  theta_hat <- if (is.null(observed_theta_hat)) {
+    spec$fit_theta(
+      data = data_normalized,
+      weights = NULL,
+      null = null,
+      control = control
+    )
+  } else {
+    observed_theta_hat
+  }
 
   ks_prep <- if (want_ks) {
     prepare_ks_observed_data(
@@ -696,19 +711,21 @@ multiplier_bootstrap_gof <- function(data,
     utils_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("utils.R"), winslash = "/", mustWork = TRUE)
     model_specs_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "model_specs.R"), winslash = "/", mustWork = TRUE)
     cardioid_model_spec_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "cardioid_model_spec.R"), winslash = "/", mustWork = TRUE)
+    small_circle_model_spec_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "small_circle_model_spec.R"), winslash = "/", mustWork = TRUE)
 
     cl <- parallel::makeCluster(n_cores_effective)
     on.exit(parallel::stopCluster(cl), add = TRUE)
 
     parallel::clusterExport(
       cl,
-      c("utils_path_worker", "model_specs_path_worker", "cardioid_model_spec_path_worker"),
+      c("utils_path_worker", "model_specs_path_worker", "cardioid_model_spec_path_worker", "small_circle_model_spec_path_worker"),
       envir = environment()
     )
     parallel::clusterEvalQ(cl, {
       source(utils_path_worker)
       source(model_specs_path_worker)
       source(cardioid_model_spec_path_worker)
+      source(small_circle_model_spec_path_worker)
       NULL
     })
 
@@ -741,7 +758,11 @@ multiplier_bootstrap_gof <- function(data,
       "cardioid_distance_threshold",
       "theoretical_distance_profile_cardioid",
       "mle_sph_car_weighted",
-      "fit_cardioid_theta"
+      "fit_cardioid_theta",
+      "normalize_small_circle_data",
+      "normalize_small_circle_theta",
+      "fit_small_circle_theta",
+      "make_small_circle_spec"
     )
 
     parallel::clusterExport(cl, worker_symbols, envir = environment())
@@ -990,6 +1011,187 @@ multiplier_bootstrap_logistic_gaussian <- function(data,
                                                    control = list(),
                                                    unknown_param = "both") {
   spec <- make_logistic_gaussian_spec(unknown_param = unknown_param)
+
+  multiplier_bootstrap_gof(
+    data = data,
+    spec = spec,
+    null = null,
+    statistics = statistics,
+    ks_grid = ks_grid,
+    B = B,
+    alpha = alpha,
+    multipliers = multipliers,
+    n_cores = n_cores,
+    seed = seed,
+    keep = keep,
+    control = control
+  )
+}
+
+multiplier_bootstrap_rotational_beta_mixture2 <- function(data,
+                                                          null,
+                                                          statistics = c("ks", "cvm"),
+                                                          ks_grid = NULL,
+                                                          B = 999,
+                                                          alpha = 0.05,
+                                                          multipliers = NULL,
+                                                          n_cores = 1,
+                                                          seed = NULL,
+                                                          keep = list(
+                                                            observed_process = TRUE,
+                                                            bootstrap_statistics = TRUE,
+                                                            bootstrap_thetas = FALSE
+                                                          ),
+                                                          control = list(),
+                                                          distance_type = c("chordal", "geodesic")) {
+  distance_type <- match.arg(distance_type)
+  spec <- make_rotational_beta_mixture2_spec(distance_type = distance_type)
+
+  multiplier_bootstrap_gof(
+    data = data,
+    spec = spec,
+    null = null,
+    statistics = statistics,
+    ks_grid = ks_grid,
+    B = B,
+    alpha = alpha,
+    multipliers = multipliers,
+    n_cores = n_cores,
+    seed = seed,
+    keep = keep,
+    control = control
+  )
+}
+
+multiplier_bootstrap_rotational_logitnormal_mixture2 <- function(data,
+                                                                 null,
+                                                                 statistics = c("ks", "cvm"),
+                                                                 ks_grid = NULL,
+                                                                 B = 999,
+                                                                 alpha = 0.05,
+                                                                 multipliers = NULL,
+                                                                 n_cores = 1,
+                                                                 seed = NULL,
+                                                                 keep = list(
+                                                                   observed_process = TRUE,
+                                                                   bootstrap_statistics = TRUE,
+                                                                   bootstrap_thetas = FALSE
+                                                                 ),
+                                                                 control = list(),
+                                                                 distance_type = c("chordal", "geodesic")) {
+  distance_type <- match.arg(distance_type)
+  spec <- make_rotational_logitnormal_mixture2_spec(distance_type = distance_type)
+
+  multiplier_bootstrap_gof(
+    data = data,
+    spec = spec,
+    null = null,
+    statistics = statistics,
+    ks_grid = ks_grid,
+    B = B,
+    alpha = alpha,
+    multipliers = multipliers,
+    n_cores = n_cores,
+    seed = seed,
+    keep = keep,
+    control = control
+  )
+}
+
+multiplier_bootstrap_cardioid <- function(data,
+                                          null,
+                                          k,
+                                          statistics = c("ks", "cvm"),
+                                          ks_grid = NULL,
+                                          B = 999,
+                                          alpha = 0.05,
+                                          multipliers = NULL,
+                                          n_cores = 1,
+                                          seed = NULL,
+                                          keep = list(
+                                            observed_process = TRUE,
+                                            bootstrap_statistics = TRUE,
+                                            bootstrap_thetas = FALSE
+                                          ),
+                                          control = list(),
+                                          distance_type = c("chordal", "geodesic"),
+                                          unknown_param = "both") {
+  distance_type <- match.arg(distance_type)
+  spec <- make_cardioid_spec(
+    k = as.integer(k),
+    distance_type = distance_type,
+    unknown_param = unknown_param
+  )
+
+  multiplier_bootstrap_gof(
+    data = data,
+    spec = spec,
+    null = null,
+    statistics = statistics,
+    ks_grid = ks_grid,
+    B = B,
+    alpha = alpha,
+    multipliers = multipliers,
+    n_cores = n_cores,
+    seed = seed,
+    keep = keep,
+    control = control
+  )
+}
+
+multiplier_bootstrap_spherical_cauchy <- function(data,
+                                                  null,
+                                                  statistics = c("ks", "cvm"),
+                                                  ks_grid = NULL,
+                                                  B = 999,
+                                                  alpha = 0.05,
+                                                  multipliers = NULL,
+                                                  n_cores = 1,
+                                                  seed = NULL,
+                                                  keep = list(
+                                                    observed_process = TRUE,
+                                                    bootstrap_statistics = TRUE,
+                                                    bootstrap_thetas = FALSE
+                                                  ),
+                                                  control = list(),
+                                                  distance_type = c("chordal", "geodesic")) {
+  distance_type <- match.arg(distance_type)
+  spec <- make_spherical_cauchy_spec(distance_type = distance_type)
+
+  multiplier_bootstrap_gof(
+    data = data,
+    spec = spec,
+    null = null,
+    statistics = statistics,
+    ks_grid = ks_grid,
+    B = B,
+    alpha = alpha,
+    multipliers = multipliers,
+    n_cores = n_cores,
+    seed = seed,
+    keep = keep,
+    control = control
+  )
+}
+
+multiplier_bootstrap_small_circle <- function(data,
+                                              null,
+                                              statistics = c("ks", "cvm"),
+                                              ks_grid = NULL,
+                                              B = 999,
+                                              alpha = 0.05,
+                                              multipliers = NULL,
+                                              n_cores = 1,
+                                              seed = NULL,
+                                              keep = list(
+                                                observed_process = TRUE,
+                                                bootstrap_statistics = TRUE,
+                                                bootstrap_thetas = FALSE
+                                              ),
+                                              control = list(),
+                                              distance_type = c("chordal", "geodesic")) {
+  distance_type <- match.arg(distance_type)
+  spec <- make_small_circle_spec(distance_type = distance_type)
 
   multiplier_bootstrap_gof(
     data = data,

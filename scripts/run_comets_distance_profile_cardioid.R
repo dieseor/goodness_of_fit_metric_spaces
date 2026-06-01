@@ -87,14 +87,34 @@ load_comets_distance_profile_data <- function() {
     cos(comets$i)
   )
 
+  valid_rows <-
+    !is.na(comets$class) &
+    is.finite(comets$per_y) &
+    is.finite(comets$i) &
+    is.finite(comets$om) &
+    !is.na(comets$frag)
+
+  dropped_incomplete <- sum(!valid_rows)
+  if (dropped_incomplete > 0L) {
+    warning(
+      sprintf(
+        "Dropping %d comet rows with incomplete orbital elements before cardioid comet filtering.",
+        dropped_incomplete
+      ),
+      call. = FALSE
+    )
+  }
+
+  comets_valid <- comets[valid_rows, , drop = FALSE]
+
   comets_oort <- subset(
-    x = comets,
+    x = comets_valid,
     subset = !(class %in% c("HYP", "PAR")) & per_y >= 200
   )
   comets_oort <- comets_oort[!comets_oort$frag, ]
 
   comets_short <- subset(
-    x = comets,
+    x = comets_valid,
     subset = !(class %in% c("HYP", "PAR")) & per_y < 200
   )
   comets_short <- comets_short[!comets_short$frag, ]

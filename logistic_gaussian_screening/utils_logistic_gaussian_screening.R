@@ -150,26 +150,6 @@ logistic_gaussian_screening_dataset_registry <- function() {
         "The depth covariate is excluded from the compositional analysis."
       )
     ),
-    Hongite = list(
-      source_type = "compositions_data",
-      candidate_names = "Hongite",
-      candidate_packages = "compositions",
-      compositional_columns = c("A", "B", "C", "D", "E"),
-      notes = c(
-        "Hongite compositions.",
-        "All five columns are treated compositionally after closure."
-      )
-    ),
-    Kongite = list(
-      source_type = "compositions_data",
-      candidate_names = "Kongite",
-      candidate_packages = "compositions",
-      compositional_columns = c("A", "B", "C", "D", "E"),
-      notes = c(
-        "Kongite compositions.",
-        "All five columns are treated compositionally after closure."
-      )
-    ),
     arcticLake = list(
       source_type = "search_r_packages",
       candidate_names = c("arcticLake", "ArcticLake"),
