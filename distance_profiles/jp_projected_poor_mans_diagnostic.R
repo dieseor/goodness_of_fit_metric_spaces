@@ -317,7 +317,9 @@ plot_jp_projected_diagnostic <- function(z,
                                          cdf_grid,
                                          fits,
                                          sample_label,
-                                         output_path) {
+                                         output_path,
+                                         legend_position = "topleft",
+                                         hat_curve = NULL) {
   dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
 
   palette_values <- grDevices::hcl.colors(max(nrow(fits), 3L), palette = "Dark 3")
@@ -346,6 +348,16 @@ plot_jp_projected_diagnostic <- function(z,
     lines(cdf_i$z_grid, cdf_i$cdf, col = line_colors[i], lwd = 2)
   }
 
+  if (!is.null(hat_curve)) {
+    lines(
+      hat_curve$z_grid,
+      hat_curve$cdf,
+      col = hat_curve$color,
+      lwd = hat_curve$lwd,
+      lty = hat_curve$lty
+    )
+  }
+
   legend_labels <- sprintf(
     "psi=%s, kappa=%.3f, ll=%.3f",
     format(fits$psi, trim = TRUE, scientific = FALSE),
@@ -353,12 +365,23 @@ plot_jp_projected_diagnostic <- function(z,
     fits$loglik_projected
   )
 
+  if (!is.null(hat_curve)) {
+    legend_labels <- c(legend_labels, hat_curve$label)
+    legend_colors <- c("black", line_colors, hat_curve$color)
+    legend_lty <- c(1, rep(1, nrow(fits)), hat_curve$lty)
+    legend_lwd <- c(2, rep(2, nrow(fits)), hat_curve$lwd)
+  } else {
+    legend_colors <- c("black", line_colors)
+    legend_lty <- c(1, rep(1, nrow(fits)))
+    legend_lwd <- c(2, rep(2, nrow(fits)))
+  }
+
   legend(
-    "bottomright",
+    legend_position,
     legend = c("ECDF", legend_labels),
-    col = c("black", line_colors),
-    lty = 1,
-    lwd = 2,
+    col = legend_colors,
+    lty = legend_lty,
+    lwd = legend_lwd,
     bty = "n",
     cex = 0.9
   )
@@ -373,6 +396,8 @@ run_jp_projected_poor_mans_diagnostic <- function(data,
                                                   kappa_upper_vmf = 100,
                                                   z_grid_size = 401L,
                                                   n_cores = 1L,
+                                                  hat_params = NULL,
+                                                  legend_position = "topleft",
                                                   save_plot = TRUE,
                                                   verbose = TRUE) {
   data <- normalize_jp_s2_data(data)
@@ -420,6 +445,45 @@ run_jp_projected_poor_mans_diagnostic <- function(data,
   rownames(fits) <- NULL
 
   z_grid <- seq(-1, 1, length.out = max(as.integer(z_grid_size), 101L))
+  hat_curve <- NULL
+  if (!is.null(hat_params)) {
+    if (is.list(hat_params)) {
+      kappa_hat <- as.numeric(hat_params$kappa)
+      psi_hat <- as.numeric(hat_params$psi)
+      hat_label <- hat_params$label
+      hat_color <- hat_params$color
+    } else if (is.numeric(hat_params) && length(hat_params) >= 2L) {
+      kappa_hat <- as.numeric(hat_params[[1L]])
+      psi_hat <- as.numeric(hat_params[[2L]])
+      hat_label <- NULL
+      hat_color <- NULL
+    } else {
+      stop("`hat_params` must be a list with `kappa` and `psi`, or a numeric vector of length >= 2.")
+    }
+
+    if (!is.finite(kappa_hat) || !is.finite(psi_hat) || kappa_hat < 0) {
+      stop("`hat_params` contains invalid `kappa`/`psi` values.")
+    }
+
+    if (is.null(hat_label) || !nzchar(as.character(hat_label)[[1L]])) {
+      hat_label <- sprintf("hat: psi=%.4f, kappa=%.3f", psi_hat, kappa_hat)
+    }
+    if (is.null(hat_color) || !nzchar(as.character(hat_color)[[1L]])) {
+      hat_color <- "#b30000"
+    }
+
+    hat_curve <- list(
+      z_grid = z_grid,
+      cdf = jp_projected_cdf_z(z_grid, kappa = kappa_hat, psi = psi_hat),
+      label = as.character(hat_label)[[1L]],
+      color = as.character(hat_color)[[1L]],
+      lwd = 3,
+      lty = 2,
+      kappa_hat = kappa_hat,
+      psi_hat = psi_hat
+    )
+  }
+
   cdf_grid <- do.call(
     rbind,
     lapply(seq_len(nrow(fits)), function(i) {
@@ -469,7 +533,9 @@ run_jp_projected_poor_mans_diagnostic <- function(data,
       cdf_grid = cdf_grid,
       fits = fits,
       sample_label = sample_label,
-      output_path = plot_path
+      output_path = plot_path,
+      legend_position = legend_position,
+      hat_curve = hat_curve
     )
   }
 
@@ -484,6 +550,7 @@ run_jp_projected_poor_mans_diagnostic <- function(data,
     z = z,
     fits = fits,
     cdf_grid = cdf_grid,
+    hat_curve = hat_curve,
     output_paths = list(
       fits = fits_path,
       cdf_grid = cdf_path,

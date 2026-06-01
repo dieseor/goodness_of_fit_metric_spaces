@@ -2,6 +2,8 @@
 
 This project explores goodness of fit tests and methods in metric space contexts.
 
+Current supported directional families in the bootstrap pipeline include vMF, HvMF, Jones-Pewsey, spherical cardioid, and spherical Cauchy / Poisson-kernel on S^2.
+
 ## Project structure
 
 ```
@@ -37,4 +39,14 @@ To restore the project environment locally:
 Rscript -e "install.packages('remotes', repos='https://cloud.r-project.org')"
 Rscript -e "remotes::install_github('rstudio/renv')"
 Rscript -e "renv::restore()"
+```
+
+## Spherical Cauchy on S^2
+
+The spherical Cauchy / Poisson-kernel family is implemented on S^2 with parameters `(mu, rho)`, where `mu` is a unit vector in `R^3` and `rho` lies in `[0, 1)`. The population distance profile uses a Legendre expansion as the primary path, with numerical safeguards for high `rho` and final clamping to `[0, 1]`.
+
+The sequential calibration launcher for the default geodesic simple/composite study is:
+
+```bash
+Rscript scripts/run_spherical_cauchy_calibration_m500_b500_sequential.R
 ```

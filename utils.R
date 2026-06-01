@@ -1103,13 +1103,20 @@ cov_vmf_s1_simple_exact <- function(omega_grid,
 #' @return Threshold a such that d(x, omega) <= t iff omega^T x >= a
 sphere_distance_to_dot_threshold <- function(t, distance_type = "chordal") {
   distance_type <- match.arg(distance_type, choices = c("chordal", "geodesic"))
+  input_is_matrix <- is.matrix(t)
+  t_dims <- if (input_is_matrix) dim(t) else NULL
   t <- as.numeric(t)
   if (distance_type == "chordal") {
     threshold <- 1 - (t^2) / 2
   } else {
     threshold <- cos(t)
   }
-  pmin(pmax(threshold, -1), 1)
+  threshold <- pmin(pmax(threshold, -1), 1)
+  if (isTRUE(input_is_matrix)) {
+    matrix(threshold, nrow = t_dims[[1L]], ncol = t_dims[[2L]])
+  } else {
+    threshold
+  }
 }
 
 #' Exact projected density on S^2 for U = omega^T X under vMF(mu, kappa)
@@ -1651,6 +1658,736 @@ vmf_s2_projected_density_matrix <- function(rho,
   exp(log_density)
 }
 
+#' Validate spherical Cauchy parameters on S^2
+#' @param mu Mean direction on S^2
+#' @param rho Concentration parameter in [0, 1)
+#' @return Normalized parameter list
+spherical_cauchy_validate_parameters <- function(mu, rho) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  if (length(mu) != 3L) {
+    stop("Spherical Cauchy utilities currently support only S^2 (ambient dimension 3).")
+  }
+
+  rho <- as.numeric(rho)
+  if (length(rho) != 1L || !is.finite(rho) || rho < 0 || rho >= 1) {
+    stop("`rho` must be a finite scalar in [0, 1).")
+  }
+
+  list(
+    mu = mu,
+    rho = rho,
+    phi = rho * mu,
+    q = 2L,
+    ambient_dim = 3L
+  )
+}
+
+spherical_cauchy_projected_cdf_from_inner_products <- function(r,
+                                                               x,
+                                                               rho,
+                                                               tail_tol = 1e-10,
+                                                               l_max = NULL,
+                                                               max_l_max = NULL,
+                                                               warn = TRUE) {
+  r <- as.numeric(r)
+  if (length(r) == 0L || any(!is.finite(r))) {
+    stop("`r` must be a non-empty finite vector.")
+  }
+  r <- pmin(pmax(r, -1), 1)
+
+  x_is_matrix <- is.matrix(x)
+  if (x_is_matrix) {
+    x_mat <- matrix(as.numeric(x), nrow = nrow(x), ncol = ncol(x))
+    if (nrow(x_mat) != length(r)) {
+      stop("When `x` is a matrix, `nrow(x)` must equal `length(r)`.")
+    }
+  } else {
+    x_vec <- as.numeric(x)
+    x_mat <- matrix(
+      rep(x_vec, each = length(r)),
+      nrow = length(r),
+      ncol = length(x_vec)
+    )
+  }
+
+  out <- matrix(0, nrow = nrow(x_mat), ncol = ncol(x_mat))
+  x_clamped <- pmin(pmax(x_mat, -1), 1)
+  out[x_mat <= -1] <- 0
+  out[x_mat >= 1] <- 1
+
+  interior_mask <- x_mat > -1 & x_mat < 1
+  if (!any(interior_mask)) {
+    return(out)
+  }
+
+  if (rho <= 1e-14) {
+    out[interior_mask] <- ((x_clamped + 1) / 2)[interior_mask]
+    return(pmin(pmax(out, 0), 1))
+  }
+
+  exact_axis_rows <- abs(r - 1) <= 1e-12
+  if (any(exact_axis_rows)) {
+    out[exact_axis_rows, ] <- matrix(
+      spherical_cauchy_axis_projected_cdf(
+        x_clamped[exact_axis_rows, , drop = FALSE],
+        rho = rho
+      ),
+      nrow = sum(exact_axis_rows),
+      ncol = ncol(x_clamped)
+    )
+  }
+
+  general_rows <- which(!exact_axis_rows)
+  if (length(general_rows) == 0L) {
+    return(pmin(pmax(out, 0), 1))
+  }
+
+  if (is.null(l_max)) {
+    l_max <- if (rho > 0.95) 8192L else 2048L
+  }
+  if (is.null(max_l_max)) {
+    max_l_max <- max(l_max, if (rho > 0.95) 32768L else 8192L)
+  }
+  l_max <- as.integer(l_max)
+  max_l_max <- as.integer(max_l_max)
+  if (length(l_max) != 1L || !is.finite(l_max) || l_max < 1L) {
+    stop("`l_max` must be a positive integer.")
+  }
+  if (length(max_l_max) != 1L || !is.finite(max_l_max) || max_l_max < l_max) {
+    stop("`max_l_max` must be an integer >= `l_max`.")
+  }
+
+  x_general <- x_clamped[general_rows, , drop = FALSE]
+  cdf_general <- (x_general + 1) / 2
+  r_general <- r[general_rows]
+  p_r_prev <- rep(1, length(general_rows))
+  p_r_curr <- r_general
+  p_x_prev <- matrix(1, nrow = nrow(x_general), ncol = ncol(x_general))
+  p_x_curr <- x_general
+  rho_power <- rho
+  ell <- 1L
+  current_cap <- l_max
+
+  repeat {
+    while (ell <= current_cap) {
+      p_r_next <- ((2 * ell + 1) * r_general * p_r_curr - ell * p_r_prev) / (ell + 1)
+      p_x_next <- ((2 * ell + 1) * x_general * p_x_curr - ell * p_x_prev) / (ell + 1)
+
+      cdf_general <- cdf_general + 0.5 * rho_power * sweep(
+        p_x_next - p_x_prev,
+        1L,
+        p_r_curr,
+        "*"
+      )
+      tail_bound <- rho_power * rho / (1 - rho)
+      if (tail_bound <= tail_tol) {
+        break
+      }
+
+      p_r_prev <- p_r_curr
+      p_r_curr <- p_r_next
+      p_x_prev <- p_x_curr
+      p_x_curr <- p_x_next
+      rho_power <- rho_power * rho
+      ell <- ell + 1L
+    }
+
+    if (tail_bound <= tail_tol) {
+      break
+    }
+
+    if (current_cap >= max_l_max) {
+      if (isTRUE(warn)) {
+        warning(sprintf(
+          "Spherical Cauchy Legendre truncation reached L_max = %d at rho = %.4f with tail bound %.3e.",
+          current_cap,
+          rho,
+          tail_bound
+        ))
+      }
+      break
+    }
+
+    next_cap <- min(max_l_max, max(current_cap + 1L, 2L * current_cap))
+    if (isTRUE(warn) && rho > 0.95 && next_cap > current_cap) {
+      warning(sprintf(
+        "rho = %.4f is close to 1; increasing spherical Cauchy Legendre L_max from %d to %d.",
+        rho,
+        current_cap,
+        next_cap
+      ))
+    }
+    current_cap <- next_cap
+  }
+
+  out[general_rows, ] <- cdf_general
+  out[interior_mask] <- pmin(pmax(out[interior_mask], 0), 1)
+  out
+}
+
+#' Normalize spherical Cauchy theta supplied as {mu, rho} or {phi}
+#' @param theta Parameter list
+#' @param ambient_dim Expected ambient dimension
+#' @return Normalized parameter list with mu, rho, phi, and q
+spherical_cauchy_normalize_theta <- function(theta, ambient_dim = 3L) {
+  if (!is.list(theta)) {
+    stop("Spherical Cauchy theta must be a list containing either `phi` or (`mu`, `rho`).")
+  }
+
+  if (!is.null(theta$phi)) {
+    phi <- as.numeric(theta$phi)
+    if (length(phi) != ambient_dim || any(!is.finite(phi))) {
+      stop("`theta$phi` must be a finite vector with the expected ambient dimension.")
+    }
+    rho <- sqrt(sum(phi^2))
+    if (!is.finite(rho) || rho >= 1) {
+      stop("`theta$phi` must satisfy ||phi|| < 1.")
+    }
+    mu <- if (rho <= 1e-14) c(0, 0, 1) else phi / rho
+    return(list(mu = mu, rho = rho, phi = phi, q = ambient_dim - 1L, ambient_dim = ambient_dim))
+  }
+
+  spherical_cauchy_validate_parameters(mu = theta$mu, rho = theta$rho)
+}
+
+#' Lower projected CDF on the axis omega = mu for spherical Cauchy on S^2
+#' @param x Scalar or vector in [-1, 1]
+#' @param rho Concentration parameter in [0, 1)
+#' @return P(mu^T X <= x)
+spherical_cauchy_axis_projected_cdf <- function(x, rho) {
+  rho <- as.numeric(rho)
+  if (length(rho) != 1L || !is.finite(rho) || rho < 0 || rho >= 1) {
+    stop("`rho` must be a finite scalar in [0, 1).")
+  }
+
+  x <- pmin(pmax(as.numeric(x), -1), 1)
+  if (rho <= 1e-14) {
+    return((x + 1) / 2)
+  }
+
+  coeff <- (1 - rho^2) / (2 * rho)
+  coeff * (
+    1 / sqrt(1 + rho^2 - 2 * rho * x) -
+      1 / (1 + rho)
+  )
+}
+
+#' Axis projected density for spherical Cauchy on S^2
+#' @param x Scalar or vector in [-1, 1]
+#' @param rho Concentration parameter in [0, 1)
+#' @param log Whether to return the log-density
+#' @return Density values
+spherical_cauchy_axis_projected_density <- function(x, rho, log = FALSE) {
+  rho <- as.numeric(rho)
+  if (length(rho) != 1L || !is.finite(rho) || rho < 0 || rho >= 1) {
+    stop("`rho` must be a finite scalar in [0, 1).")
+  }
+
+  x <- as.numeric(x)
+  out <- rep(if (log) -Inf else 0, length(x))
+  valid <- x >= -1 & x <= 1
+  if (!any(valid)) {
+    return(out)
+  }
+
+  log_density <- log1p(-rho^2) - log(2) - 1.5 * log(1 + rho^2 - 2 * rho * x[valid])
+  out[valid] <- if (log) log_density else exp(log_density)
+  out
+}
+
+#' Log-density on S^2 under the spherical Cauchy / Poisson-kernel law
+#' @param x Matrix of observations on S^2
+#' @param mu Mean direction on S^2
+#' @param rho Concentration parameter in [0, 1)
+#' @param phi Optional Euclidean parameter with ||phi|| < 1
+#' @param log Whether to return log-density
+#' @return Density or log-density values
+d_spherical_cauchy_s2 <- function(x, mu = NULL, rho = NULL, phi = NULL, log = FALSE) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  if (ncol(x) != 3L) {
+    stop("Spherical Cauchy density currently supports only S^2 data.")
+  }
+
+  theta <- if (!is.null(phi)) {
+    spherical_cauchy_normalize_theta(list(phi = phi), ambient_dim = 3L)
+  } else {
+    spherical_cauchy_validate_parameters(mu = mu, rho = rho)
+  }
+
+  phi_vec <- theta$phi
+  rho_sq <- sum(phi_vec^2)
+  denom <- as.numeric(1 - 2 * (x %*% phi_vec) + rho_sq)
+  if (any(denom <= 0)) {
+    stop("Encountered a non-positive denominator in the spherical Cauchy density.")
+  }
+
+  log_density <- log1p(-rho_sq) - log(4 * pi) - 1.5 * log(denom)
+  if (log) log_density else exp(log_density)
+}
+
+#' Lower projected CDF for spherical Cauchy on S^2 via Legendre expansion
+#' @param x Scalar or vector in [-1, 1]
+#' @param omega Reference point on S^2
+#' @param mu Mean direction on S^2
+#' @param rho Concentration parameter in [0, 1)
+#' @param tail_tol Geometric tail tolerance for truncation
+#' @param l_max Initial truncation cap
+#' @param max_l_max Maximum truncation cap after adaptive growth
+#' @param warn Whether to emit warnings on aggressive truncation growth
+#' @return Lower CDF values P(omega^T X <= x)
+spherical_cauchy_projected_cdf <- function(x,
+                                           omega,
+                                           mu,
+                                           rho,
+                                           tail_tol = 1e-10,
+                                           l_max = NULL,
+                                           max_l_max = NULL,
+                                           warn = TRUE) {
+  params <- spherical_cauchy_validate_parameters(mu = mu, rho = rho)
+  x <- as.numeric(x)
+
+  if (is.matrix(omega)) {
+    omega <- jp_normalize_unit_matrix(omega, arg_name = "`omega`", min_ncol = 3L)
+    if (ncol(omega) != 3L) {
+      stop("`omega` must have three columns for spherical Cauchy profiles on S^2.")
+    }
+    if (length(x) == 1L) {
+      x <- rep(x, nrow(omega))
+    }
+    if (length(x) != nrow(omega)) {
+      stop("When `omega` is a matrix, `x` must have length 1 or nrow(omega).")
+    }
+
+    return(vapply(seq_len(nrow(omega)), function(i) {
+      spherical_cauchy_projected_cdf(
+        x = x[i],
+        omega = omega[i, ],
+        mu = params$mu,
+        rho = params$rho,
+        tail_tol = tail_tol,
+        l_max = l_max,
+        max_l_max = max_l_max,
+        warn = warn
+      )
+    }, numeric(1)))
+  }
+
+  omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
+  if (length(omega) != 3L) {
+    stop("`omega` must have length 3 for spherical Cauchy profiles on S^2.")
+  }
+
+  rho <- params$rho
+  x_clamped <- pmin(pmax(x, -1), 1)
+  out <- numeric(length(x_clamped))
+  out[x <= -1] <- 0
+  out[x >= 1] <- 1
+  active <- which(x > -1 & x < 1)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  if (rho <= 1e-14) {
+    out[active] <- (x_clamped[active] + 1) / 2
+    return(pmin(pmax(out, 0), 1))
+  }
+
+  r <- pmin(pmax(sum(params$mu * omega), -1), 1)
+  out[active] <- drop(spherical_cauchy_projected_cdf_from_inner_products(
+    r = r,
+    x = x_clamped[active],
+    rho = rho,
+    tail_tol = tail_tol,
+    l_max = l_max,
+    max_l_max = max_l_max,
+    warn = warn
+  ))
+  pmin(pmax(out, 0), 1)
+}
+
+#' Theoretical distance profile for spherical Cauchy on S^2
+#' @param omega Reference point on S^2
+#' @param t_values Distance thresholds
+#' @param mu Mean direction on S^2
+#' @param rho Concentration parameter in [0, 1)
+#' @param distance_type Either "geodesic" or "chordal"
+#' @param tail_tol Geometric tail tolerance for Legendre truncation
+#' @param l_max Initial truncation cap
+#' @param max_l_max Maximum truncation cap after adaptive growth
+#' @param warn Whether to emit warnings when the truncation budget is stressed
+#' @return Vector of probabilities P(d(X, omega) <= t)
+distance_profile_spherical_cauchy <- function(omega,
+                                              t_values,
+                                              mu,
+                                              rho,
+                                              distance_type = c("geodesic", "chordal"),
+                                              tail_tol = 1e-10,
+                                              l_max = NULL,
+                                              max_l_max = NULL,
+                                              warn = TRUE) {
+  distance_type <- match.arg(distance_type)
+  params <- spherical_cauchy_validate_parameters(mu = mu, rho = rho)
+  t_values <- as.numeric(t_values)
+
+  if (is.matrix(omega)) {
+    omega <- jp_normalize_unit_matrix(omega, arg_name = "`omega`", min_ncol = 3L)
+    if (ncol(omega) != 3L) {
+      stop("`omega` must have three columns for spherical Cauchy profiles on S^2.")
+    }
+    if (length(t_values) == 1L) {
+      t_values <- rep(t_values, nrow(omega))
+    }
+    if (length(t_values) != nrow(omega)) {
+      stop("When `omega` is a matrix, `t_values` must have length 1 or nrow(omega).")
+    }
+
+    return(vapply(seq_len(nrow(omega)), function(i) {
+      distance_profile_spherical_cauchy(
+        omega = omega[i, ],
+        t_values = t_values[i],
+        mu = params$mu,
+        rho = params$rho,
+        distance_type = distance_type,
+        tail_tol = tail_tol,
+        l_max = l_max,
+        max_l_max = max_l_max,
+        warn = warn
+      )
+    }, numeric(1)))
+  }
+
+  omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
+  out <- numeric(length(t_values))
+  if (identical(distance_type, "geodesic")) {
+    out[t_values <= 0] <- 0
+    out[t_values >= pi] <- 1
+    active <- which(t_values > 0 & t_values < pi)
+  } else {
+    out[t_values <= 0] <- 0
+    out[t_values >= 2] <- 1
+    active <- which(t_values > 0 & t_values < 2)
+  }
+
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  thresholds <- sphere_distance_to_dot_threshold(t_values[active], distance_type = distance_type)
+  out[active] <- 1 - spherical_cauchy_projected_cdf(
+    x = thresholds,
+    omega = omega,
+    mu = params$mu,
+    rho = params$rho,
+    tail_tol = tail_tol,
+    l_max = l_max,
+    max_l_max = max_l_max,
+    warn = warn
+  )
+
+  pmin(pmax(out, 0), 1)
+}
+
+#' Profile matrix on S^2 for spherical Cauchy
+#' @param omega_grid Matrix of reference points on S^2
+#' @param mu Mean direction on S^2
+#' @param rho Concentration parameter in [0, 1)
+#' @param t_grid Distance thresholds
+#' @param distance_type Either "geodesic" or "chordal"
+#' @param tail_tol Geometric tail tolerance for Legendre truncation
+#' @param l_max Initial truncation cap
+#' @param max_l_max Maximum truncation cap after adaptive growth
+#' @param warn Whether to emit warnings when the truncation budget is stressed
+#' @return Matrix with one row per omega and one column per t
+distance_profile_spherical_cauchy_grid <- function(omega_grid,
+                                                   mu,
+                                                   rho,
+                                                   t_grid,
+                                                   distance_type = c("geodesic", "chordal"),
+                                                   tail_tol = 1e-10,
+                                                   l_max = NULL,
+                                                   max_l_max = NULL,
+                                                   warn = TRUE) {
+  distance_type <- match.arg(distance_type)
+  omega_grid <- jp_normalize_unit_matrix(omega_grid, arg_name = "`omega_grid`", min_ncol = 3L)
+  t_grid <- as.numeric(t_grid)
+  params <- spherical_cauchy_validate_parameters(mu = mu, rho = rho)
+
+  out <- matrix(0, nrow = nrow(omega_grid), ncol = length(t_grid))
+  if (identical(distance_type, "geodesic")) {
+    out[, t_grid <= 0] <- 0
+    out[, t_grid >= pi] <- 1
+    active <- which(t_grid > 0 & t_grid < pi)
+  } else {
+    out[, t_grid <= 0] <- 0
+    out[, t_grid >= 2] <- 1
+    active <- which(t_grid > 0 & t_grid < 2)
+  }
+
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  thresholds <- sphere_distance_to_dot_threshold(t_grid[active], distance_type = distance_type)
+  r_vec <- as.numeric(omega_grid %*% params$mu)
+  out[, active] <- 1 - spherical_cauchy_projected_cdf_from_inner_products(
+    r = r_vec,
+    x = thresholds,
+    rho = params$rho,
+    tail_tol = tail_tol,
+    l_max = l_max,
+    max_l_max = max_l_max,
+    warn = warn
+  )
+
+  pmin(pmax(out, 0), 1)
+}
+
+distance_profile_spherical_cauchy_cvm_grid <- function(data,
+                                                       mu,
+                                                       rho,
+                                                       distance_matrix,
+                                                       distance_type = c("geodesic", "chordal"),
+                                                       tail_tol = 1e-10,
+                                                       l_max = NULL,
+                                                       max_l_max = NULL,
+                                                       warn = TRUE) {
+  distance_type <- match.arg(distance_type)
+  x <- jp_normalize_unit_matrix(data, arg_name = "`data`", min_ncol = 3L)
+  if (ncol(x) != 3L) {
+    stop("Spherical Cauchy CvM profile matrix currently supports only S^2 data.")
+  }
+
+  distance_matrix <- as.matrix(distance_matrix)
+  if (nrow(distance_matrix) != nrow(x) || ncol(distance_matrix) != nrow(x)) {
+    stop("`distance_matrix` must be a square matrix with `nrow(data)` rows.")
+  }
+
+  params <- spherical_cauchy_validate_parameters(mu = mu, rho = rho)
+  thresholds <- sphere_distance_to_dot_threshold(distance_matrix, distance_type = distance_type)
+  r_vec <- as.numeric(x %*% params$mu)
+
+  out <- 1 - spherical_cauchy_projected_cdf_from_inner_products(
+    r = r_vec,
+    x = thresholds,
+    rho = params$rho,
+    tail_tol = tail_tol,
+    l_max = l_max,
+    max_l_max = max_l_max,
+    warn = warn
+  )
+
+  pmin(pmax(out, 0), 1)
+}
+
+#' Convert unconstrained Euclidean parameter u into phi with ||phi|| < 1
+#' @param u Unconstrained vector in R^3
+#' @return Phi inside the open unit ball
+spherical_cauchy_phi_from_u <- function(u) {
+  u <- as.numeric(u)
+  if (length(u) != 3L || any(!is.finite(u))) {
+    stop("`u` must be a finite vector of length 3.")
+  }
+
+  u / sqrt(1 + sum(u^2))
+}
+
+#' Convert spherical Cauchy phi into unconstrained Euclidean parameter u
+#' @param phi Euclidean parameter with ||phi|| < 1
+#' @return Unconstrained vector u
+spherical_cauchy_u_from_phi <- function(phi) {
+  phi <- as.numeric(phi)
+  if (length(phi) != 3L || any(!is.finite(phi))) {
+    stop("`phi` must be a finite vector of length 3.")
+  }
+  phi_norm_sq <- sum(phi^2)
+  if (!is.finite(phi_norm_sq) || phi_norm_sq >= 1) {
+    stop("`phi` must satisfy ||phi|| < 1.")
+  }
+
+  phi / sqrt(1 - phi_norm_sq)
+}
+
+#' Weighted log-likelihood for spherical Cauchy on S^2 in phi parametrization
+#' @param phi Euclidean parameter with ||phi|| < 1
+#' @param x Matrix of observations on S^2
+#' @param prob_weights Probability weights summing to one
+#' @param include_constant Whether to include the additive -log(4*pi) constant
+#' @return Weighted average log-likelihood
+spherical_cauchy_weighted_loglik_phi <- function(phi,
+                                                 x,
+                                                 prob_weights,
+                                                 include_constant = TRUE) {
+  phi <- as.numeric(phi)
+  if (length(phi) != 3L || any(!is.finite(phi))) {
+    stop("`phi` must be a finite vector of length 3.")
+  }
+  phi_norm_sq <- sum(phi^2)
+  if (!is.finite(phi_norm_sq) || phi_norm_sq >= 1) {
+    return(-Inf)
+  }
+
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- jp_normalize_probability_weights(prob_weights, nrow(x))
+  denom <- as.numeric(1 - 2 * (x %*% phi) + phi_norm_sq)
+  if (any(!is.finite(denom)) || any(denom <= 0)) {
+    return(-Inf)
+  }
+
+  constant_term <- if (isTRUE(include_constant)) -log(4 * pi) else 0
+  log1p(-phi_norm_sq) + constant_term - 1.5 * sum(prob_weights * log(denom))
+}
+
+#' Gradient of the weighted log-likelihood for spherical Cauchy on S^2 in phi
+#' @param phi Euclidean parameter with ||phi|| < 1
+#' @param x Matrix of observations on S^2
+#' @param prob_weights Probability weights summing to one
+#' @return Gradient vector with respect to phi
+spherical_cauchy_weighted_loglik_phi_grad <- function(phi, x, prob_weights) {
+  phi <- as.numeric(phi)
+  phi_norm_sq <- sum(phi^2)
+  if (length(phi) != 3L || any(!is.finite(phi)) || !is.finite(phi_norm_sq) || phi_norm_sq >= 1) {
+    return(rep(NaN, 3L))
+  }
+
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- jp_normalize_probability_weights(prob_weights, nrow(x))
+  denom <- as.numeric(1 - 2 * (x %*% phi) + phi_norm_sq)
+  if (any(!is.finite(denom)) || any(denom <= 0)) {
+    return(rep(NaN, 3L))
+  }
+
+  -2 * phi / (1 - phi_norm_sq) +
+    3 * colSums(x * (prob_weights / denom)) -
+    3 * phi * sum(prob_weights / denom)
+}
+
+spherical_cauchy_negloglik_u <- function(u, x, prob_weights) {
+  phi <- spherical_cauchy_phi_from_u(u)
+  -spherical_cauchy_weighted_loglik_phi(phi = phi, x = x, prob_weights = prob_weights)
+}
+
+spherical_cauchy_negloglik_u_grad <- function(u, x, prob_weights) {
+  phi <- spherical_cauchy_phi_from_u(u)
+  grad_phi <- spherical_cauchy_weighted_loglik_phi_grad(phi = phi, x = x, prob_weights = prob_weights)
+  scale <- sqrt(1 + sum(u^2))
+  jacobian <- diag(1 / scale, nrow = 3L, ncol = 3L) - outer(u, u) / (scale^3)
+  drop(-crossprod(jacobian, grad_phi))
+}
+
+#' Weighted spherical Cauchy MLE on S^2
+#' @param data Matrix of observations on S^2
+#' @param weights Optional nonnegative weights
+#' @param control Optimizer and warm-start controls
+#' @return Estimated theta with mu, rho, phi, q, ll, opt, weighted_mle
+spherical_cauchy_mle_s2_weighted <- function(data, weights = NULL, control = list()) {
+  x <- jp_normalize_unit_matrix(data, arg_name = "`data`", min_ncol = 3L)
+  if (ncol(x) != 3L) {
+    stop("`spherical_cauchy_mle_s2_weighted()` currently supports only S^2 data.")
+  }
+
+  prob_weights <- if (is.null(weights)) {
+    rep.int(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(weights, nrow(x))
+  }
+
+  theta_start <- control$spherical_cauchy_start_theta %||%
+    control$cauchy_start_theta %||%
+    control$theta_start %||%
+    NULL
+  maxit <- as.integer(control$spherical_cauchy_maxit %||% 500L)
+  reltol <- as.numeric(control$spherical_cauchy_reltol %||% 1e-10)
+  method <- as.character(control$spherical_cauchy_optim_method %||% "BFGS")
+  use_gradient <- isTRUE(control$spherical_cauchy_use_gradient %||% TRUE)
+
+  if (length(maxit) != 1L || !is.finite(maxit) || maxit < 1L) {
+    stop("`control$spherical_cauchy_maxit` must be a positive integer.")
+  }
+  if (length(reltol) != 1L || !is.finite(reltol) || reltol <= 0) {
+    stop("`control$spherical_cauchy_reltol` must be a positive finite scalar.")
+  }
+
+  resultant <- colSums(x * prob_weights)
+  resultant_norm <- sqrt(sum(resultant^2))
+  mu0 <- if (resultant_norm <= 1e-12) c(0, 0, 1) else resultant / resultant_norm
+  rho0 <- min(max(resultant_norm, 1e-4), 0.95)
+  phi0 <- rho0 * mu0
+
+  if (!is.null(theta_start)) {
+    theta_start <- spherical_cauchy_normalize_theta(theta_start, ambient_dim = 3L)
+    phi0 <- theta_start$phi
+  }
+
+  u0 <- spherical_cauchy_u_from_phi(phi0)
+  optim_control <- list(maxit = maxit, reltol = reltol)
+
+  fit <- stats::optim(
+    par = u0,
+    fn = spherical_cauchy_negloglik_u,
+    gr = if (isTRUE(use_gradient)) spherical_cauchy_negloglik_u_grad else NULL,
+    x = x,
+    prob_weights = prob_weights,
+    method = method,
+    control = optim_control
+  )
+
+  phi_hat <- spherical_cauchy_phi_from_u(fit$par)
+  rho_hat <- sqrt(sum(phi_hat^2))
+  mu_hat <- if (rho_hat <= 1e-12) c(0, 0, 1) else phi_hat / rho_hat
+  ll_hat <- spherical_cauchy_weighted_loglik_phi(
+    phi = phi_hat,
+    x = x,
+    prob_weights = prob_weights,
+    include_constant = TRUE
+  )
+
+  list(
+    mu = mu_hat,
+    rho = rho_hat,
+    phi = phi_hat,
+    q = 2L,
+    ll = ll_hat,
+    opt = fit,
+    weighted_mle = !is.null(weights)
+  )
+}
+
+#' Sample from the spherical Cauchy / Poisson-kernel law on S^2
+#' @param n Sample size
+#' @param mu Mean direction on S^2
+#' @param rho Concentration parameter in [0, 1)
+#' @param check Whether to validate output norms
+#' @return n x 3 matrix with rows on S^2
+r_sph_spherical_cauchy <- function(n, mu, rho, check = TRUE) {
+  n <- as.integer(n)
+  if (length(n) != 1L || !is.finite(n) || n < 1L) {
+    stop("`n` must be a strictly positive integer.")
+  }
+
+  params <- spherical_cauchy_validate_parameters(mu = mu, rho = rho)
+  if (params$rho <= 1e-14) {
+    return(jp_uniform_sphere(n = n, ambient_dim = 3L))
+  }
+
+  u_samples <- stats::runif(n)
+  y <- 1 / (1 + params$rho) + 2 * params$rho * u_samples / (1 - params$rho^2)
+  t_samples <- (1 + params$rho^2 - y^(-2)) / (2 * params$rho)
+  t_samples <- pmin(pmax(t_samples, -1), 1)
+
+  angles <- stats::runif(n, min = 0, max = 2 * pi)
+  xi <- cbind(cos(angles), sin(angles))
+  b_mu <- jp_orthonormal_complement(params$mu)
+  tangential <- xi %*% t(b_mu)
+  sample <- t_samples * matrix(params$mu, nrow = n, ncol = 3L, byrow = TRUE) +
+    sqrt(pmax(0, 1 - t_samples^2)) * tangential
+
+  if (isTRUE(check)) {
+    sample <- sample / sqrt(rowSums(sample^2))
+  }
+
+  sample
+}
+
 build_vmf_s2_projected_cdf_matrix <- function(rho,
                                               kappa,
                                               n_u = 4097L) {
@@ -1951,6 +2688,11 @@ jp_is_near_zero_vmf_s2 <- function(ambient_dim,
     stop("`abs_kappa_psi_tol` must be a strictly positive finite scalar.")
   }
 
+  # Numerical regularization on S^2:
+  # the (kappa, psi) parametrization becomes ill-conditioned near the vMF
+  # submodel psi = 0. In that regime we deliberately replace the JP model by
+  # its exact vMF limit once |kappa * psi| falls below a user-controlled
+  # threshold. This is not an exact JP evaluation for nonzero psi.
   ambient_dim == 3L && abs(kappa * psi) <= abs_kappa_psi_tol
 }
 
@@ -2206,6 +2948,10 @@ jp_weighted_loglik_s2 <- function(mu, kappa, psi, x, prob_weights) {
     kappa = params$kappa,
     psi = params$psi
   )) {
+    # Regularized evaluation near the numerically ill-conditioned vMF limit.
+    # On S^2, once |kappa * psi| is sufficiently small we replace the JP
+    # loglikelihood by the exact vMF one. This stabilizes optimization but is
+    # not the exact JP likelihood for nonzero psi.
     return(rotasym::c_vMF(p = 3L, kappa = params$kappa, log = TRUE) +
       params$kappa * sum(prob_weights * z))
   }
@@ -2248,6 +2994,8 @@ jp_weighted_loglik_s2_prepared <- function(mu, kappa, psi, x, prob_weights) {
   z <- as.numeric(x %*% mu)
 
   if (jp_is_near_zero_vmf_s2(ambient_dim = 3L, kappa = kappa, psi = psi)) {
+    # Same S^2 regularization as above, but with already prepared inputs:
+    # use the exact vMF objective in the nearly-singular JP regime.
     return(rotasym::c_vMF(p = 3L, kappa = kappa, log = TRUE) +
       kappa * sum(prob_weights * z))
   }
@@ -2526,7 +3274,15 @@ jp_mle_s2_weighted <- function(data, weights = NULL, control = list()) {
       ))
     }
 
-    # Bootstrap refits stay on the observed JP sign branch unless explicitly overridden.
+    # Stabilized bootstrap refit:
+    # once the observed fit selects a nonzero-psi JP branch, the weighted
+    # bootstrap refits are kept on that same sign branch unless the caller
+    # explicitly overrides this behavior. This avoids unstable cross-branch
+    # jumps during local optimization, but it is a computational restriction,
+    # not the full unconstrained composite JP re-optimization.
+    # TODO: revisit this restriction empirically. In particular, check whether
+    # the bootstrap calibration remains acceptable if branch forcing is removed
+    # and both JP sign branches are explored again in the refits.
     branches <- as.integer(ifelse(warm_psi >= 0, 1L, -1L))
   }
 
@@ -2986,6 +3742,8 @@ d_proj_jp <- function(t, mu, kappa, psi, log = FALSE) {
     kappa = params$kappa,
     psi = params$psi
   )) {
+    # The axis density inherits the same S^2 regularization: near psi = 0 we
+    # evaluate the exact vMF projected density instead of the JP one.
     return(jp_vmf_axis_density(
       t = t,
       q = params$q,
@@ -3031,6 +3789,7 @@ p_proj_jp <- function(s, omega, mu, kappa, psi, log = FALSE) {
     kappa = params$kappa,
     psi = params$psi
   )) {
+    # Same regularized vMF limit for general one-dimensional projections.
     return(jp_vmf_projected_density(
       s = s,
       rho = rho,
@@ -3113,6 +3872,9 @@ distance_profile_jp <- function(omega,
     kappa = params$kappa,
     psi = params$psi
   )) {
+    # Theoretical profiles near the JP-vMF boundary are evaluated through the
+    # exact vMF profile. This preserves numerical stability in S^2 at the cost
+    # of replacing JP by its limit model when |kappa * psi| is small.
     if (params$ambient_dim == 3L) {
       return(theoretical_distance_profile_vmf_s2_fast(
         omega = omega,
@@ -3192,6 +3954,8 @@ r_sph_jp <- function(n,
     kappa = params$kappa,
     psi = params$psi
   )) {
+    # The sampler follows the same regularization policy near psi = 0 on S^2,
+    # drawing from the exact vMF limit instead of inverting the JP CDF.
     return(rotasym::r_vMF(n = n, mu = params$mu, kappa = params$kappa))
   }
   if (abs(params$alpha) <= 1e-15) {
@@ -3453,6 +4217,2577 @@ compute_precomp_vmf <- function(mc_samples, omega_grid, t_grid, mu, kappa, dista
     m2_mat = m2_mat,
     in_ball_list = in_ball_list
   ))
+}
+
+small_circle_validate_parameters <- function(mu, kappa, nu, allow_negative_nu = FALSE) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  if (length(mu) != 3L) {
+    stop("The Small Circle implementation currently supports only S^2, i.e. `mu` of length 3.")
+  }
+
+  kappa <- as.numeric(kappa)
+  nu <- as.numeric(nu)
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa < 0) {
+    stop("`kappa` must be a finite scalar in [0, Inf).")
+  }
+  if (length(nu) != 1L || !is.finite(nu)) {
+    stop("`nu` must be a finite scalar.")
+  }
+
+  if (!allow_negative_nu && (nu < 0 || nu >= 1)) {
+    stop("`nu` must lie in [0, 1).")
+  }
+  if (allow_negative_nu && abs(nu) >= 1) {
+    stop("`nu` must lie in (-1, 1) before canonicalization.")
+  }
+
+  list(mu = mu, kappa = kappa, nu = nu)
+}
+
+small_circle_canonicalize_theta <- function(mu, nu, tol = 1e-12) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  nu <- as.numeric(nu)
+  if (length(nu) != 1L || !is.finite(nu) || abs(nu) >= 1) {
+    stop("`nu` must be a finite scalar in (-1, 1).")
+  }
+
+  if (nu < 0) {
+    mu <- -mu
+    nu <- -nu
+  }
+  if (abs(nu) <= tol) {
+    nu <- 0
+  }
+
+  list(mu = mu, nu = nu)
+}
+
+small_circle_erf <- function(x) {
+  2 * stats::pnorm(sqrt(2) * as.numeric(x)) - 1
+}
+
+small_circle_log_norm_constant <- function(kappa, nu) {
+  params <- small_circle_validate_parameters(mu = c(0, 0, 1), kappa = kappa, nu = nu)
+  if (params$kappa <= 0) {
+    return(0)
+  }
+
+  root_kappa <- sqrt(params$kappa)
+  erf_sum <- small_circle_erf(root_kappa * (1 - params$nu)) +
+    small_circle_erf(root_kappa * (1 + params$nu))
+  log(sqrt(pi) / (4 * root_kappa)) + log(erf_sum)
+}
+
+small_circle_norm_constant <- function(kappa, nu) {
+  exp(small_circle_log_norm_constant(kappa = kappa, nu = nu))
+}
+
+small_circle_axis_density <- function(z, kappa, nu, log = FALSE) {
+  params <- small_circle_validate_parameters(mu = c(0, 0, 1), kappa = kappa, nu = nu)
+  z <- as.numeric(z)
+  out <- rep(if (log) -Inf else 0, length(z))
+  valid <- is.finite(z) & z >= -1 & z <= 1
+  if (!any(valid)) {
+    return(out)
+  }
+
+  if (params$kappa <= 0) {
+    log_density <- rep(log(0.5), sum(valid))
+  } else {
+    log_density <- -log(2) - small_circle_log_norm_constant(params$kappa, params$nu) -
+      params$kappa * (z[valid] - params$nu)^2
+  }
+
+  out[valid] <- if (log) log_density else exp(log_density)
+  out
+}
+
+small_circle_axis_cdf <- function(z, kappa, nu) {
+  params <- small_circle_validate_parameters(mu = c(0, 0, 1), kappa = kappa, nu = nu)
+  z <- as.numeric(z)
+  out <- numeric(length(z))
+  out[z <= -1] <- 0
+  out[z >= 1] <- 1
+  active <- which(is.finite(z) & z > -1 & z < 1)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  if (params$kappa <= 0) {
+    out[active] <- (z[active] + 1) / 2
+    return(out)
+  }
+
+  root_kappa <- sqrt(params$kappa)
+  denominator <- small_circle_erf(root_kappa * (1 - params$nu)) +
+    small_circle_erf(root_kappa * (1 + params$nu))
+  numerator <- small_circle_erf(root_kappa * (z[active] - params$nu)) +
+    small_circle_erf(root_kappa * (1 + params$nu))
+  out[active] <- numerator / denominator
+  pmin(pmax(out, 0), 1)
+}
+
+small_circle_gauss_legendre_cache <- new.env(parent = emptyenv())
+
+small_circle_gauss_legendre <- function(n) {
+  n <- as.integer(n)
+  if (length(n) != 1L || !is.finite(n) || n < 2L) {
+    stop("`n` must be an integer >= 2.")
+  }
+
+  key <- as.character(n)
+  if (exists(key, envir = small_circle_gauss_legendre_cache, inherits = FALSE)) {
+    return(get(key, envir = small_circle_gauss_legendre_cache, inherits = FALSE))
+  }
+
+  beta <- seq_len(n - 1L) / sqrt(4 * seq_len(n - 1L)^2 - 1)
+  jacobi <- matrix(0, nrow = n, ncol = n)
+  jacobi[cbind(seq_len(n - 1L), seq_len(n - 1L) + 1L)] <- beta
+  jacobi[cbind(seq_len(n - 1L) + 1L, seq_len(n - 1L))] <- beta
+  eig <- eigen(jacobi, symmetric = TRUE)
+  order_idx <- order(eig$values)
+  nodes <- eig$values[order_idx]
+  weights <- 2 * (eig$vectors[1L, order_idx]^2)
+  out <- list(nodes = nodes, weights = weights)
+  assign(key, out, envir = small_circle_gauss_legendre_cache)
+  out
+}
+
+small_circle_legendre_matrix <- function(x, l_max) {
+  x <- pmin(pmax(as.numeric(x), -1), 1)
+  l_max <- as.integer(l_max)
+  if (length(l_max) != 1L || !is.finite(l_max) || l_max < 0L) {
+    stop("`l_max` must be a nonnegative integer.")
+  }
+
+  out <- matrix(0, nrow = length(x), ncol = l_max + 1L)
+  out[, 1L] <- 1
+  if (l_max == 0L) {
+    return(out)
+  }
+
+  out[, 2L] <- x
+  if (l_max == 1L) {
+    return(out)
+  }
+
+  for (ell in seq_len(l_max - 1L)) {
+    out[, ell + 2L] <- ((2 * ell + 1) * x * out[, ell + 1L] - ell * out[, ell]) / (ell + 1)
+  }
+  out
+}
+
+small_circle_legendre_coefficients <- function(kappa,
+                                               nu,
+                                               l_max = 150L,
+                                               quad_n = 400L,
+                                               tol = 1e-10) {
+  params <- small_circle_validate_parameters(mu = c(0, 0, 1), kappa = kappa, nu = nu)
+  l_max <- as.integer(l_max)
+  quad_n <- as.integer(quad_n)
+  tol <- as.numeric(tol)
+
+  if (params$kappa <= 0) {
+    coeffs <- c(1, rep(0, l_max))
+    return(list(coefficients = coeffs, a0_error = 0, max_abs_nonzero = 0))
+  }
+
+  quad <- small_circle_gauss_legendre(quad_n)
+  legendre_matrix <- small_circle_legendre_matrix(quad$nodes, l_max = l_max)
+  h_values <- exp(-params$kappa * (quad$nodes - params$nu)^2 -
+    small_circle_log_norm_constant(params$kappa, params$nu))
+  raw_moments <- as.numeric(crossprod(legendre_matrix, quad$weights * h_values))
+  ell <- 0:l_max
+  coeffs <- ((2 * ell + 1) / 2) * raw_moments
+  coeffs[[1L]] <- 1
+
+  a0_error <- abs(((1 / 2) * raw_moments[[1L]]) - 1)
+  if (a0_error > tol) {
+    stop(sprintf("Small Circle Legendre coefficient check failed: |a0 - 1| = %.3e.", a0_error))
+  }
+
+  list(
+    coefficients = coeffs,
+    a0_error = a0_error,
+    max_abs_nonzero = if (l_max >= 1L) max(abs(coeffs[-1L])) else 0
+  )
+}
+
+small_circle_projection_cdf_legendre <- function(x,
+                                                 r,
+                                                 coefficients,
+                                                 enforce_bounds = TRUE) {
+  x <- pmin(pmax(as.numeric(x), -1), 1)
+  r <- pmin(pmax(as.numeric(r), -1), 1)
+  coefficients <- as.numeric(coefficients)
+  l_max <- length(coefficients) - 1L
+
+  if (length(r) != 1L || !is.finite(r)) {
+    stop("`r` must be a finite scalar.")
+  }
+
+  out <- (x + 1) / 2
+  if (l_max < 1L) {
+    return(out)
+  }
+
+  p_r <- as.numeric(small_circle_legendre_matrix(r, l_max = l_max))
+  p_x <- small_circle_legendre_matrix(x, l_max = l_max + 1L)
+  basis_matrix <- matrix(0, nrow = length(x), ncol = l_max)
+  for (ell in seq_len(l_max)) {
+    basis_matrix[, ell] <- (p_x[, ell + 2L] - p_x[, ell]) / (2 * (2 * ell + 1))
+  }
+
+  out <- out + as.numeric(basis_matrix %*% (coefficients[-1L] * p_r[-1L]))
+  if (isTRUE(enforce_bounds)) {
+    out <- pmin(pmax(out, 0), 1)
+  }
+  out
+}
+
+small_circle_projection_kernel <- function(c_thresholds, z_nodes, r) {
+  c_thresholds <- pmin(pmax(as.numeric(c_thresholds), -1), 1)
+  z_nodes <- pmin(pmax(as.numeric(z_nodes), -1), 1)
+  r <- pmin(pmax(as.numeric(r), -1), 1)
+  one_minus_r2 <- pmax(0, 1 - r^2)
+  a_values <- r * z_nodes
+  b_values <- sqrt(one_minus_r2) * sqrt(pmax(0, 1 - z_nodes^2))
+  kernel <- matrix(0, nrow = length(c_thresholds), ncol = length(z_nodes))
+
+  for (j in seq_along(z_nodes)) {
+    if (b_values[[j]] <= 1e-15) {
+      kernel[, j] <- as.numeric(a_values[[j]] >= c_thresholds)
+    } else {
+      ratio <- (c_thresholds - a_values[[j]]) / b_values[[j]]
+      kernel[, j] <- ifelse(
+        ratio <= -1,
+        1,
+        ifelse(ratio >= 1, 0, acos(pmin(pmax(ratio, -1), 1)) / pi)
+      )
+    }
+  }
+
+  kernel
+}
+
+small_circle_distance_profile_integral <- function(omega,
+                                                   t_values,
+                                                   mu,
+                                                   kappa,
+                                                   nu,
+                                                   distance_type = c("geodesic", "chordal"),
+                                                   quad_n = 400L) {
+  distance_type <- match.arg(distance_type)
+  params <- small_circle_validate_parameters(mu = mu, kappa = kappa, nu = nu)
+  omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
+  if (length(omega) != 3L) {
+    stop("The Small Circle implementation currently supports only S^2.")
+  }
+
+  t_values <- as.numeric(t_values)
+  out <- numeric(length(t_values))
+  upper_bound <- if (identical(distance_type, "geodesic")) pi else 2
+  out[t_values <= 0] <- 0
+  out[t_values >= upper_bound] <- 1
+  active <- which(is.finite(t_values) & t_values > 0 & t_values < upper_bound)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  if (params$kappa <= 0) {
+    out[active] <- if (identical(distance_type, "geodesic")) {
+      (1 - cos(t_values[active])) / 2
+    } else {
+      (t_values[active]^2) / 4
+    }
+    return(out)
+  }
+
+  r_value <- sum(omega * params$mu)
+  thresholds <- sphere_distance_to_dot_threshold(t_values[active], distance_type = distance_type)
+  if (abs(r_value - 1) <= 1e-12) {
+    out[active] <- 1 - small_circle_axis_cdf(thresholds, kappa = params$kappa, nu = params$nu)
+    return(pmin(pmax(out, 0), 1))
+  }
+  if (abs(r_value + 1) <= 1e-12) {
+    out[active] <- small_circle_axis_cdf(-thresholds, kappa = params$kappa, nu = params$nu)
+    return(pmin(pmax(out, 0), 1))
+  }
+
+  quad <- small_circle_gauss_legendre(as.integer(quad_n))
+  density_z <- small_circle_axis_density(quad$nodes, kappa = params$kappa, nu = params$nu)
+  kernel <- small_circle_projection_kernel(
+    c_thresholds = thresholds,
+    z_nodes = quad$nodes,
+    r = r_value
+  )
+  out[active] <- as.numeric(kernel %*% (quad$weights * density_z))
+  pmin(pmax(out, 0), 1)
+}
+
+small_circle_monotone_clip <- function(t_values, values, upper_bound) {
+  if (length(values) <= 1L) {
+    return(pmin(pmax(values, 0), 1))
+  }
+
+  order_idx <- order(t_values)
+  sorted_values <- pmin(pmax(values[order_idx], 0), 1)
+  sorted_values <- cummax(sorted_values)
+  sorted_values[t_values[order_idx] <= 0] <- 0
+  sorted_values[t_values[order_idx] >= upper_bound] <- 1
+  out <- numeric(length(sorted_values))
+  out[order_idx] <- sorted_values
+  out
+}
+
+distance_profile_small_circle <- function(omega,
+                                          t_values,
+                                          mu,
+                                          kappa,
+                                          nu,
+                                          distance_type = c("geodesic", "chordal"),
+                                          method = c("legendre", "integral"),
+                                          l_max = 150L,
+                                          quad_n = 400L,
+                                          tol = 1e-10,
+                                          validate_against_integral = FALSE,
+                                          validation_tol = 5e-6) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  params <- small_circle_validate_parameters(mu = mu, kappa = kappa, nu = nu)
+  t_values <- as.numeric(t_values)
+
+  if (is.matrix(omega)) {
+    omega <- jp_normalize_unit_matrix(omega, arg_name = "`omega`", min_ncol = 3L)
+    if (ncol(omega) != 3L) {
+      stop("`omega` must have three columns for Small Circle profiles on S^2.")
+    }
+    if (length(t_values) == 1L) {
+      t_values <- rep(t_values, nrow(omega))
+    }
+    if (length(t_values) != nrow(omega)) {
+      stop("When `omega` is a matrix, `t_values` must have length 1 or nrow(omega).")
+    }
+
+    return(vapply(seq_len(nrow(omega)), function(i) {
+      distance_profile_small_circle(
+        omega = omega[i, ],
+        t_values = t_values[i],
+        mu = params$mu,
+        kappa = params$kappa,
+        nu = params$nu,
+        distance_type = distance_type,
+        method = method,
+        l_max = l_max,
+        quad_n = quad_n,
+        tol = tol,
+        validate_against_integral = validate_against_integral,
+        validation_tol = validation_tol
+      )
+    }, numeric(1)))
+  }
+
+  omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
+  upper_bound <- if (identical(distance_type, "geodesic")) pi else 2
+  out <- numeric(length(t_values))
+  out[t_values <= 0] <- 0
+  out[t_values >= upper_bound] <- 1
+  active <- which(is.finite(t_values) & t_values > 0 & t_values < upper_bound)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  if (params$kappa <= 0) {
+    out[active] <- if (identical(distance_type, "geodesic")) {
+      (1 - cos(t_values[active])) / 2
+    } else {
+      (t_values[active]^2) / 4
+    }
+    return(out)
+  }
+
+  if (identical(method, "integral")) {
+    return(small_circle_distance_profile_integral(
+      omega = omega,
+      t_values = t_values,
+      mu = params$mu,
+      kappa = params$kappa,
+      nu = params$nu,
+      distance_type = distance_type,
+      quad_n = quad_n
+    ))
+  }
+
+  thresholds <- sphere_distance_to_dot_threshold(t_values[active], distance_type = distance_type)
+  coeffs <- small_circle_legendre_coefficients(
+    kappa = params$kappa,
+    nu = params$nu,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol
+  )$coefficients
+  cdf_values <- small_circle_projection_cdf_legendre(
+    x = thresholds,
+    r = sum(omega * params$mu),
+    coefficients = coeffs
+  )
+  out[active] <- 1 - cdf_values
+  out <- small_circle_monotone_clip(t_values = t_values, values = out, upper_bound = upper_bound)
+
+  if (isTRUE(validate_against_integral)) {
+    integral_values <- small_circle_distance_profile_integral(
+      omega = omega,
+      t_values = t_values,
+      mu = params$mu,
+      kappa = params$kappa,
+      nu = params$nu,
+      distance_type = distance_type,
+      quad_n = quad_n
+    )
+    discrepancy <- max(abs(out - integral_values))
+    if (discrepancy > validation_tol) {
+      stop(sprintf(
+        "Small Circle Legendre profile validation failed: max discrepancy %.3e exceeds %.3e.",
+        discrepancy,
+        validation_tol
+      ))
+    }
+  }
+
+  out
+}
+
+distance_profile_small_circle_grid <- function(omega_grid,
+                                               mu,
+                                               kappa,
+                                               nu,
+                                               t_grid,
+                                               distance_type = c("geodesic", "chordal"),
+                                               method = c("legendre", "integral"),
+                                               l_max = 150L,
+                                               quad_n = 400L,
+                                               tol = 1e-10) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  params <- small_circle_validate_parameters(mu = mu, kappa = kappa, nu = nu)
+  omega_grid <- jp_normalize_unit_matrix(omega_grid, arg_name = "`omega_grid`", min_ncol = 3L)
+  t_grid <- as.numeric(t_grid)
+
+  t(vapply(seq_len(nrow(omega_grid)), function(i) {
+    distance_profile_small_circle(
+      omega = omega_grid[i, ],
+      t_values = t_grid,
+      mu = params$mu,
+      kappa = params$kappa,
+      nu = params$nu,
+      distance_type = distance_type,
+      method = method,
+      l_max = l_max,
+      quad_n = quad_n,
+      tol = tol
+    )
+  }, numeric(length(t_grid))))
+}
+
+distance_profile_small_circle_cvm_grid <- function(X,
+                                                   mu,
+                                                   kappa,
+                                                   nu,
+                                                   method = c("legendre", "integral"),
+                                                   l_max = 150L,
+                                                   quad_n = 400L,
+                                                   tol = 1e-10) {
+  method <- match.arg(method)
+  X <- jp_normalize_unit_matrix(X, arg_name = "`X`", min_ncol = 3L)
+  dot_products <- pmin(pmax(X %*% t(X), -1), 1)
+  t(vapply(seq_len(nrow(X)), function(i) {
+    distance_profile_small_circle(
+      omega = X[i, ],
+      t_values = acos(dot_products[i, ]),
+      mu = mu,
+      kappa = kappa,
+      nu = nu,
+      distance_type = "geodesic",
+      method = method,
+      l_max = l_max,
+      quad_n = quad_n,
+      tol = tol
+    )
+  }, numeric(nrow(X))))
+}
+
+r_sph_small_circle <- function(n, mu, kappa, nu, check = TRUE) {
+  n <- as.integer(n)
+  if (length(n) != 1L || !is.finite(n) || n < 1L) {
+    stop("`n` must be a strictly positive integer.")
+  }
+
+  params <- small_circle_validate_parameters(mu = mu, kappa = kappa, nu = nu)
+  if (params$kappa <= 0) {
+    x <- jp_uniform_sphere(n = n, ambient_dim = 3L)
+    if (isTRUE(check)) {
+      expect_norms <- sqrt(rowSums(x^2))
+      if (max(abs(expect_norms - 1)) > 1e-8) {
+        stop("Small Circle uniform sampler returned non-unit vectors.")
+      }
+    }
+    return(x)
+  }
+
+  sigma <- 1 / sqrt(2 * params$kappa)
+  lower_prob <- stats::pnorm((-1 - params$nu) / sigma)
+  upper_prob <- stats::pnorm((1 - params$nu) / sigma)
+  uniforms <- stats::runif(n)
+  z <- params$nu + sigma * stats::qnorm(lower_prob + uniforms * (upper_prob - lower_prob))
+  z <- pmin(pmax(z, -1), 1)
+
+  phi <- stats::runif(n, min = 0, max = 2 * pi)
+  basis <- jp_orthonormal_complement(params$mu)
+  tangent <- tcrossprod(cos(phi), basis[, 1L]) + tcrossprod(sin(phi), basis[, 2L])
+  radial <- sqrt(pmax(0, 1 - z^2))
+  x <- tcrossprod(z, params$mu) + sweep(tangent, 1, radial, "*")
+
+  if (isTRUE(check)) {
+    norms <- sqrt(rowSums(x^2))
+    if (any(!is.finite(norms)) || max(abs(norms - 1)) > 1e-8) {
+      stop("Small Circle sampler returned non-unit vectors.")
+    }
+  }
+
+  x
+}
+
+small_circle_weighted_loglik_s2 <- function(mu,
+                                            kappa,
+                                            nu,
+                                            x,
+                                            prob_weights = NULL) {
+  params <- small_circle_validate_parameters(mu = mu, kappa = kappa, nu = nu)
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(prob_weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(prob_weights, nrow(x))
+  }
+
+  projections <- as.numeric(x %*% params$mu)
+  -small_circle_log_norm_constant(params$kappa, params$nu) -
+    params$kappa * sum(prob_weights * (projections - params$nu)^2)
+}
+
+small_circle_start_theta_s2 <- function(x,
+                                        weights = NULL,
+                                        nu_min = 1e-6,
+                                        nu_eps = 1e-6,
+                                        kappa_min = 1e-8,
+                                        kappa_max = 1e6) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(weights, nrow(x))
+  }
+
+  xbar <- colSums(x * prob_weights)
+  weighted_x <- sweep(x, 1, sqrt(prob_weights), "*")
+  s_matrix <- crossprod(weighted_x)
+  sigma_matrix <- s_matrix - tcrossprod(xbar)
+  eig <- eigen(sigma_matrix, symmetric = TRUE)
+  mu0 <- eig$vectors[, which.min(eig$values)]
+  nu0 <- sum(mu0 * xbar)
+  canonical <- small_circle_canonicalize_theta(mu0, nu0)
+  mu0 <- canonical$mu
+  nu0 <- canonical$nu
+  nu0 <- min(max(nu0, nu_min), 1 - nu_eps)
+
+  t3 <- max(min(eig$values), .Machine$double.eps)
+  kappa0 <- min(max(1 / (2 * t3), kappa_min), kappa_max)
+
+  list(mu = mu0, kappa = kappa0, nu = nu0)
+}
+
+small_circle_logistic_bounded <- function(x, upper = 1 - 1e-6) {
+  upper / (1 + exp(-x))
+}
+
+small_circle_inverse_logistic_bounded <- function(y, upper = 1 - 1e-6) {
+  y <- min(max(y, 1e-8), upper - 1e-8)
+  stats::qlogis(y / upper)
+}
+
+small_circle_mle_s2_weighted <- function(x,
+                                         weights = NULL,
+                                         control = list()) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(weights, nrow(x))
+  }
+
+  nu_eps <- as.numeric(control$small_circle_nu_eps %||% 1e-6)
+  kappa_min <- as.numeric(control$small_circle_kappa_min %||% 1e-8)
+  kappa_max <- as.numeric(control$small_circle_kappa_max %||% 1e6)
+  theta_start <- control$small_circle_mle_start_theta %||% control$theta_start %||% control$jp_mle_start_theta %||% NULL
+
+  if (is.null(theta_start)) {
+    theta_start <- small_circle_start_theta_s2(
+      x = x,
+      weights = prob_weights,
+      nu_min = nu_eps,
+      nu_eps = nu_eps,
+      kappa_min = kappa_min,
+      kappa_max = kappa_max
+    )
+  } else {
+    theta_start <- small_circle_validate_parameters(
+      mu = theta_start$mu,
+      kappa = theta_start$kappa,
+      nu = theta_start$nu,
+      allow_negative_nu = TRUE
+    )
+    canonical <- small_circle_canonicalize_theta(theta_start$mu, theta_start$nu)
+    theta_start$mu <- canonical$mu
+    theta_start$nu <- min(max(canonical$nu, nu_eps), 1 - nu_eps)
+    theta_start$kappa <- min(max(theta_start$kappa, kappa_min), kappa_max)
+  }
+
+  objective <- function(par) {
+    kappa_value <- min(max(log1p(exp(par[[1L]])), kappa_min), kappa_max)
+    nu_value <- small_circle_logistic_bounded(par[[2L]], upper = 1 - nu_eps)
+    mu_raw <- par[3:5]
+    mu_norm <- sqrt(sum(mu_raw^2))
+    if (!is.finite(mu_norm) || mu_norm <= 0) {
+      return(.Machine$double.xmax / 100)
+    }
+
+    mu_value <- mu_raw / mu_norm
+    value <- -small_circle_weighted_loglik_s2(
+      mu = mu_value,
+      kappa = kappa_value,
+      nu = nu_value,
+      x = x,
+      prob_weights = prob_weights
+    )
+    if (!is.finite(value)) {
+      return(.Machine$double.xmax / 100)
+    }
+    value
+  }
+
+  optim_control <- control$small_circle_optim_control %||% list(maxit = 500L, reltol = 1e-10)
+  opt <- stats::optim(
+    par = c(
+      log(expm1(theta_start$kappa)),
+      small_circle_inverse_logistic_bounded(theta_start$nu, upper = 1 - nu_eps),
+      theta_start$mu
+    ),
+    fn = objective,
+    method = control$small_circle_optim_method %||% "BFGS",
+    control = optim_control
+  )
+
+  kappa_hat <- min(max(log1p(exp(opt$par[[1L]])), kappa_min), kappa_max)
+  nu_hat <- small_circle_logistic_bounded(opt$par[[2L]], upper = 1 - nu_eps)
+  mu_hat <- opt$par[3:5] / sqrt(sum(opt$par[3:5]^2))
+  canonical <- small_circle_canonicalize_theta(mu_hat, nu_hat)
+
+  list(
+    mu = canonical$mu,
+    kappa = kappa_hat,
+    nu = canonical$nu,
+    loglik = -opt$value,
+    opt = opt,
+    weighted_mle = TRUE,
+    start_theta = theta_start
+  )
+}
+
+small_circle_compare_profile_methods <- function(mu,
+                                                 kappa,
+                                                 nu,
+                                                 omega_list,
+                                                 t_grid,
+                                                 distance_type = c("geodesic", "chordal"),
+                                                 l_max = 150L,
+                                                 quad_n = 400L,
+                                                 tol = 1e-10) {
+  distance_type <- match.arg(distance_type)
+  comparison_rows <- lapply(seq_along(omega_list), function(i) {
+    omega <- omega_list[[i]]
+    legendre <- distance_profile_small_circle(
+      omega = omega,
+      t_values = t_grid,
+      mu = mu,
+      kappa = kappa,
+      nu = nu,
+      distance_type = distance_type,
+      method = "legendre",
+      l_max = l_max,
+      quad_n = quad_n,
+      tol = tol
+    )
+    integral <- distance_profile_small_circle(
+      omega = omega,
+      t_values = t_grid,
+      mu = mu,
+      kappa = kappa,
+      nu = nu,
+      distance_type = distance_type,
+      method = "integral",
+      quad_n = quad_n,
+      tol = tol
+    )
+
+    data.frame(
+      omega_id = i,
+      max_abs_diff = max(abs(legendre - integral)),
+      mean_abs_diff = mean(abs(legendre - integral)),
+      stringsAsFactors = FALSE
+    )
+  })
+
+  do.call(rbind, comparison_rows)
+}
+
+rotational_logsumexp2 <- function(log_x, log_y) {
+  m <- pmax(log_x, log_y)
+  m + log(exp(log_x - m) + exp(log_y - m))
+}
+
+rotational_clamp_unit_interval <- function(x, eps = 1e-12) {
+  pmin(pmax(as.numeric(x), eps), 1 - eps)
+}
+
+rotational_bounded_weight <- function(eta, weight_eps = 1e-6) {
+  pmin(pmax(stats::plogis(eta), weight_eps), 1 - weight_eps)
+}
+
+rotational_positive_parameter <- function(log_value,
+                                          lower = 1e-6,
+                                          upper = 1e6) {
+  pmin(pmax(exp(log_value), lower), upper)
+}
+
+rotational_weighted_mean <- function(x, weights) {
+  sum(as.numeric(weights) * as.numeric(x))
+}
+
+rotational_weighted_variance <- function(x, weights, center = NULL) {
+  x <- as.numeric(x)
+  weights <- as.numeric(weights)
+  if (is.null(center)) {
+    center <- rotational_weighted_mean(x, weights)
+  }
+  sum(weights * (x - center)^2)
+}
+
+rotational_weighted_quantile <- function(x, weights, prob) {
+  x <- as.numeric(x)
+  weights <- as.numeric(weights)
+  prob <- as.numeric(prob)
+
+  if (length(prob) != 1L || !is.finite(prob) || prob < 0 || prob > 1) {
+    stop("`prob` must be a finite scalar in [0, 1].")
+  }
+
+  ord <- order(x)
+  x_sorted <- x[ord]
+  w_sorted <- weights[ord]
+  cum_weights <- cumsum(w_sorted)
+  total <- cum_weights[[length(cum_weights)]]
+  x_sorted[[which(cum_weights >= prob * total)[[1L]]]]
+}
+
+rotational_weighted_covariance_matrix <- function(x, weights) {
+  x <- as.matrix(x)
+  weights <- as.numeric(weights)
+  center <- colSums(x * weights)
+  centered <- sweep(x, 2L, center, FUN = "-")
+  crossprod(sweep(centered, 1L, sqrt(weights), FUN = "*"))
+}
+
+rotational_unit_vector_fallback <- function(x,
+                                            fallback = c(0, 0, 1),
+                                            tol = 1e-12) {
+  x <- as.numeric(x)
+  norm_x <- sqrt(sum(x^2))
+  if (!is.finite(norm_x) || norm_x <= tol) {
+    fallback <- as.numeric(fallback)
+    fallback / sqrt(sum(fallback^2))
+  } else {
+    x / norm_x
+  }
+}
+
+rotational_unique_mu_candidates <- function(mu_candidates,
+                                            tol = 1e-8) {
+  out <- list()
+  for (mu in mu_candidates) {
+    mu_vec <- rotational_unit_vector_fallback(mu)
+    keep <- TRUE
+    if (length(out) > 0L) {
+      for (existing in out) {
+        if (max(abs(mu_vec - existing)) <= tol || max(abs(mu_vec + existing)) <= tol) {
+          keep <- FALSE
+          break
+        }
+      }
+    }
+    if (keep) {
+      out[[length(out) + 1L]] <- mu_vec
+    }
+  }
+  out
+}
+
+rotational_gauss_legendre <- function(n) {
+  small_circle_gauss_legendre(n)
+}
+
+rotational_legendre_matrix <- function(x, l_max) {
+  small_circle_legendre_matrix(x, l_max)
+}
+
+rotational_legendre_coefficients <- function(density_h,
+                                             Lmax,
+                                             quad_n = 400L,
+                                             tol = 1e-10) {
+  if (!is.function(density_h)) {
+    stop("`density_h` must be a function.")
+  }
+
+  Lmax <- as.integer(Lmax)
+  quad_n <- as.integer(quad_n)
+  tol <- as.numeric(tol)
+
+  if (length(Lmax) != 1L || !is.finite(Lmax) || Lmax < 0L) {
+    stop("`Lmax` must be a nonnegative integer.")
+  }
+
+  quad <- rotational_gauss_legendre(quad_n)
+  legendre_matrix <- rotational_legendre_matrix(quad$nodes, l_max = Lmax)
+  h_values <- as.numeric(density_h(quad$nodes))
+  if (length(h_values) != length(quad$nodes) || any(!is.finite(h_values)) || any(h_values < 0)) {
+    stop("`density_h` must return finite nonnegative values of the same length as its input.")
+  }
+
+  raw_moments <- as.numeric(crossprod(legendre_matrix, quad$weights * h_values))
+  ell <- 0:Lmax
+  coeffs <- ((2 * ell + 1) / 2) * raw_moments
+  a0_error <- abs(raw_moments[[1L]] / 2 - 1)
+  coeffs[[1L]] <- 1
+
+  if (a0_error > tol) {
+    stop(sprintf("Rotational Legendre coefficient check failed: |a0 - 1| = %.3e.", a0_error))
+  }
+
+  list(
+    coefficients = coeffs,
+    a0_error = a0_error
+  )
+}
+
+rotational_projection_cdf_legendre <- function(x,
+                                               r,
+                                               coefficients,
+                                               enforce_bounds = TRUE) {
+  x <- pmin(pmax(as.numeric(x), -1), 1)
+  r <- pmin(pmax(as.numeric(r), -1), 1)
+  coefficients <- as.numeric(coefficients)
+  l_max <- length(coefficients) - 1L
+
+  if (length(r) != 1L || !is.finite(r)) {
+    stop("`r` must be a finite scalar.")
+  }
+
+  out <- (x + 1) / 2
+  if (l_max < 1L) {
+    return(out)
+  }
+
+  p_r <- as.numeric(rotational_legendre_matrix(r, l_max = l_max))
+  p_x <- rotational_legendre_matrix(x, l_max = l_max + 1L)
+  basis_matrix <- matrix(0, nrow = length(x), ncol = l_max)
+  for (ell in seq_len(l_max)) {
+    basis_matrix[, ell] <- (p_x[, ell + 2L] - p_x[, ell]) / (2 * (2 * ell + 1))
+  }
+
+  out <- out + as.numeric(basis_matrix %*% (coefficients[-1L] * p_r[-1L]))
+  if (isTRUE(enforce_bounds)) {
+    out <- pmin(pmax(out, 0), 1)
+  }
+  out
+}
+
+rotational_profile_legendre <- function(t,
+                                        omega,
+                                        mu,
+                                        coeffs,
+                                        Lmax = length(coeffs) - 1L,
+                                        distance_type = c("geodesic", "chordal")) {
+  distance_type <- match.arg(distance_type)
+  omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = length(omega))
+  coeffs <- as.numeric(coeffs)
+  Lmax <- as.integer(Lmax)
+  if (Lmax != length(coeffs) - 1L) {
+    stop("`Lmax` must match `length(coeffs) - 1`.")
+  }
+
+  t <- as.numeric(t)
+  upper_bound <- if (identical(distance_type, "geodesic")) pi else 2
+  out <- numeric(length(t))
+  out[t <= 0] <- 0
+  out[t >= upper_bound] <- 1
+  active <- which(is.finite(t) & t > 0 & t < upper_bound)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  thresholds <- sphere_distance_to_dot_threshold(t[active], distance_type = distance_type)
+  out[active] <- 1 - rotational_projection_cdf_legendre(
+    x = thresholds,
+    r = sum(omega * mu),
+    coefficients = coeffs
+  )
+  small_circle_monotone_clip(t_values = t, values = out, upper_bound = upper_bound)
+}
+
+rotational_profile_matrix_legendre <- function(t_grid,
+                                               omega_grid,
+                                               mu,
+                                               coeffs,
+                                               Lmax = length(coeffs) - 1L,
+                                               distance_type = c("geodesic", "chordal")) {
+  distance_type <- match.arg(distance_type)
+  omega_grid <- jp_normalize_unit_matrix(omega_grid, arg_name = "`omega_grid`", min_ncol = 3L)
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = ncol(omega_grid))
+  coeffs <- as.numeric(coeffs)
+  Lmax <- as.integer(Lmax)
+  if (Lmax != length(coeffs) - 1L) {
+    stop("`Lmax` must match `length(coeffs) - 1`.")
+  }
+
+  t_grid <- as.numeric(t_grid)
+  n_omega <- nrow(omega_grid)
+  upper_bound <- if (identical(distance_type, "geodesic")) pi else 2
+  out <- matrix(0, nrow = n_omega, ncol = length(t_grid))
+
+  if (length(t_grid) == 0L) {
+    return(out)
+  }
+
+  active <- which(is.finite(t_grid) & t_grid > 0 & t_grid < upper_bound)
+  out[, t_grid >= upper_bound] <- 1
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  thresholds <- sphere_distance_to_dot_threshold(t_grid[active], distance_type = distance_type)
+  p_r <- rotational_legendre_matrix(as.numeric(omega_grid %*% mu), l_max = Lmax)
+  if (Lmax == 0L) {
+    out[, active] <- matrix((1 - thresholds) / 2, nrow = n_omega, ncol = length(active), byrow = TRUE)
+    return(out)
+  }
+
+  p_x <- rotational_legendre_matrix(thresholds, l_max = Lmax + 1L)
+  basis <- matrix(0, nrow = length(active), ncol = Lmax)
+  for (ell in seq_len(Lmax)) {
+    basis[, ell] <- (p_x[, ell] - p_x[, ell + 2L]) / (2 * (2 * ell + 1))
+  }
+
+  out[, active] <- matrix((1 - thresholds) / 2, nrow = n_omega, ncol = length(active), byrow = TRUE) +
+    p_r[, -1L, drop = FALSE] %*% t(sweep(basis, 2L, coeffs[-1L], FUN = "*"))
+  out <- pmin(pmax(out, 0), 1)
+
+  for (i in seq_len(n_omega)) {
+    out[i, ] <- small_circle_monotone_clip(
+      t_values = t_grid,
+      values = out[i, ],
+      upper_bound = upper_bound
+    )
+  }
+  out
+}
+
+rotational_distance_profile_integral <- function(omega,
+                                                 t_values,
+                                                 mu,
+                                                 density_gz,
+                                                 distance_type = c("geodesic", "chordal"),
+                                                 quad_n = 400L) {
+  distance_type <- match.arg(distance_type)
+  omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = length(omega))
+  if (!is.function(density_gz)) {
+    stop("`density_gz` must be a function.")
+  }
+
+  t_values <- as.numeric(t_values)
+  upper_bound <- if (identical(distance_type, "geodesic")) pi else 2
+  out <- numeric(length(t_values))
+  out[t_values <= 0] <- 0
+  out[t_values >= upper_bound] <- 1
+  active <- which(is.finite(t_values) & t_values > 0 & t_values < upper_bound)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  quad <- rotational_gauss_legendre(as.integer(quad_n))
+  density_z <- as.numeric(density_gz(quad$nodes))
+  if (length(density_z) != length(quad$nodes) || any(!is.finite(density_z)) || any(density_z < 0)) {
+    stop("`density_gz` must return finite nonnegative values of the same length as its input.")
+  }
+
+  thresholds <- sphere_distance_to_dot_threshold(t_values[active], distance_type = distance_type)
+  kernel <- small_circle_projection_kernel(
+    c_thresholds = thresholds,
+    z_nodes = quad$nodes,
+    r = sum(omega * mu)
+  )
+  out[active] <- as.numeric(kernel %*% (quad$weights * density_z))
+  pmin(pmax(out, 0), 1)
+}
+
+rotational_sample_profile_matrix <- function(X,
+                                             mu,
+                                             profile_fun,
+                                             ...) {
+  X <- jp_normalize_unit_matrix(X, arg_name = "`X`", min_ncol = 3L)
+  dot_products <- pmin(pmax(X %*% t(X), -1), 1)
+  t(vapply(seq_len(nrow(X)), function(i) {
+    as.numeric(profile_fun(
+      omega = X[i, ],
+      t_values = acos(dot_products[i, ]),
+      mu = mu,
+      ...
+    ))
+  }, numeric(nrow(X))))
+}
+
+rotational_beta_mixture2_validate_parameters <- function(mu,
+                                                         weight1,
+                                                         alpha1,
+                                                         beta1,
+                                                         alpha2,
+                                                         beta2) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  if (length(mu) != 3L) {
+    stop("Rotational beta-mixture utilities currently support only S^2.")
+  }
+
+  weight1 <- as.numeric(weight1)
+  alpha1 <- as.numeric(alpha1)
+  beta1 <- as.numeric(beta1)
+  alpha2 <- as.numeric(alpha2)
+  beta2 <- as.numeric(beta2)
+
+  if (length(weight1) != 1L || !is.finite(weight1) || weight1 <= 0 || weight1 >= 1) {
+    stop("`weight1` must be a finite scalar in (0, 1).")
+  }
+  positive_shapes <- c(alpha1, beta1, alpha2, beta2)
+  if (any(!is.finite(positive_shapes)) || any(positive_shapes <= 0)) {
+    stop("Beta-mixture shape parameters must be finite and strictly positive.")
+  }
+
+  list(
+    mu = mu,
+    weight1 = weight1,
+    alpha1 = alpha1,
+    beta1 = beta1,
+    alpha2 = alpha2,
+    beta2 = beta2,
+    ambient_dim = 3L
+  )
+}
+
+rotational_beta_mixture2_canonicalize_theta <- function(theta) {
+  params <- rotational_beta_mixture2_validate_parameters(
+    mu = theta$mu,
+    weight1 = theta$weight1,
+    alpha1 = theta$alpha1,
+    beta1 = theta$beta1,
+    alpha2 = theta$alpha2,
+    beta2 = theta$beta2
+  )
+
+  mean1 <- params$alpha1 / (params$alpha1 + params$beta1)
+  mean2 <- params$alpha2 / (params$alpha2 + params$beta2)
+  if (mean1 <= mean2) {
+    return(params)
+  }
+
+  list(
+    mu = params$mu,
+    weight1 = 1 - params$weight1,
+    alpha1 = params$alpha2,
+    beta1 = params$beta2,
+    alpha2 = params$alpha1,
+    beta2 = params$beta1,
+    ambient_dim = params$ambient_dim
+  )
+}
+
+rotational_beta_mixture2_normalize_theta <- function(theta,
+                                                     ambient_dim = 3L) {
+  if (!is.list(theta)) {
+    stop("Beta-mixture theta must be a list.")
+  }
+
+  params <- rotational_beta_mixture2_canonicalize_theta(theta)
+  if (params$ambient_dim != ambient_dim) {
+    stop("Beta-mixture theta has incompatible ambient dimension.")
+  }
+  params
+}
+
+rotational_beta_mixture2_density_y <- function(y,
+                                               weight1,
+                                               alpha1,
+                                               beta1,
+                                               alpha2,
+                                               beta2,
+                                               log = FALSE) {
+  y <- as.numeric(y)
+  density1 <- stats::dbeta(y, shape1 = alpha1, shape2 = beta1, log = TRUE)
+  density2 <- stats::dbeta(y, shape1 = alpha2, shape2 = beta2, log = TRUE)
+  log_density <- rotational_logsumexp2(
+    log(weight1) + density1,
+    log1p(-weight1) + density2
+  )
+  if (log) log_density else exp(log_density)
+}
+
+rotational_beta_mixture2_cdf_y <- function(y,
+                                           weight1,
+                                           alpha1,
+                                           beta1,
+                                           alpha2,
+                                           beta2) {
+  y <- as.numeric(y)
+  out <- numeric(length(y))
+  out[y <= 0] <- 0
+  out[y >= 1] <- 1
+  active <- which(y > 0 & y < 1)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  out[active] <- weight1 * stats::pbeta(y[active], alpha1, beta1) +
+    (1 - weight1) * stats::pbeta(y[active], alpha2, beta2)
+  pmin(pmax(out, 0), 1)
+}
+
+rotational_beta_mixture2_density_h <- function(z,
+                                               weight1,
+                                               alpha1,
+                                               beta1,
+                                               alpha2,
+                                               beta2) {
+  z <- as.numeric(z)
+  y <- (z + 1) / 2
+  out <- numeric(length(z))
+  valid <- z >= -1 & z <= 1
+  if (!any(valid)) {
+    return(out)
+  }
+
+  out[valid] <- rotational_beta_mixture2_density_y(
+    y = y[valid],
+    weight1 = weight1,
+    alpha1 = alpha1,
+    beta1 = beta1,
+    alpha2 = alpha2,
+    beta2 = beta2,
+    log = FALSE
+  )
+  out
+}
+
+rotational_beta_mixture2_density_gz <- function(z,
+                                                weight1,
+                                                alpha1,
+                                                beta1,
+                                                alpha2,
+                                                beta2) {
+  0.5 * rotational_beta_mixture2_density_h(
+    z = z,
+    weight1 = weight1,
+    alpha1 = alpha1,
+    beta1 = beta1,
+    alpha2 = alpha2,
+    beta2 = beta2
+  )
+}
+
+d_sph_rotational_beta_mixture2_s2 <- function(x,
+                                              mu,
+                                              weight1,
+                                              alpha1,
+                                              beta1,
+                                              alpha2,
+                                              beta2,
+                                              log = FALSE) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  params <- rotational_beta_mixture2_validate_parameters(
+    mu = mu,
+    weight1 = weight1,
+    alpha1 = alpha1,
+    beta1 = beta1,
+    alpha2 = alpha2,
+    beta2 = beta2
+  )
+  y <- (pmin(pmax(as.numeric(x %*% params$mu), -1), 1) + 1) / 2
+  log_density <- -log(4 * pi) + rotational_beta_mixture2_density_y(
+    y = y,
+    weight1 = params$weight1,
+    alpha1 = params$alpha1,
+    beta1 = params$beta1,
+    alpha2 = params$alpha2,
+    beta2 = params$beta2,
+    log = TRUE
+  )
+  if (log) log_density else exp(log_density)
+}
+
+rotational_beta_mixture2_weighted_loglik_s2 <- function(mu,
+                                                        weight1,
+                                                        alpha1,
+                                                        beta1,
+                                                        alpha2,
+                                                        beta2,
+                                                        x,
+                                                        prob_weights = NULL) {
+  params <- rotational_beta_mixture2_validate_parameters(
+    mu = mu,
+    weight1 = weight1,
+    alpha1 = alpha1,
+    beta1 = beta1,
+    alpha2 = alpha2,
+    beta2 = beta2
+  )
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(prob_weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(prob_weights, nrow(x))
+  }
+
+  y <- (pmin(pmax(as.numeric(x %*% params$mu), -1), 1) + 1) / 2
+  sum(prob_weights * rotational_beta_mixture2_density_y(
+    y = y,
+    weight1 = params$weight1,
+    alpha1 = params$alpha1,
+    beta1 = params$beta1,
+    alpha2 = params$alpha2,
+    beta2 = params$beta2,
+    log = TRUE
+  ))
+}
+
+rotational_beta_mixture2_moment_match <- function(y,
+                                                  weights,
+                                                  shape_floor = 1e-3,
+                                                  shape_ceiling = 1e4) {
+  y <- rotational_clamp_unit_interval(y, eps = 1e-8)
+  weights <- jp_normalize_probability_weights(weights, length(y))
+  m <- min(max(rotational_weighted_mean(y, weights), 1e-4), 1 - 1e-4)
+  v <- rotational_weighted_variance(y, weights, center = m)
+  max_var <- m * (1 - m) * (1 - 1e-6)
+  v <- min(max(v, 1e-6), max_var)
+  precision <- min(max(m * (1 - m) / v - 1, 2 * shape_floor), shape_ceiling)
+
+  list(
+    alpha = min(max(m * precision, shape_floor), shape_ceiling),
+    beta = min(max((1 - m) * precision, shape_floor), shape_ceiling)
+  )
+}
+
+rotational_beta_mixture2_start_thetas_s2 <- function(x,
+                                                      weights = NULL,
+                                                      control = list()) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(weights, nrow(x))
+  }
+
+  warm_start <- control$rotational_beta_mixture2_start_theta %||%
+    control$theta_start %||%
+    control$jp_mle_start_theta %||%
+    NULL
+  out <- list()
+  if (!is.null(warm_start)) {
+    warm_start <- rotational_beta_mixture2_normalize_theta(warm_start, ambient_dim = 3L)
+    out[[length(out) + 1L]] <- warm_start
+    if (isTRUE(control$rotational_beta_mixture2_warm_start_only %||% FALSE)) {
+      return(list(warm_start))
+    }
+  }
+
+  resultant <- colSums(x * prob_weights)
+  second_moment <- rotational_weighted_covariance_matrix(x, prob_weights)
+  eig <- eigen(second_moment, symmetric = TRUE)
+  mu_candidates <- rotational_unique_mu_candidates(list(
+    resultant,
+    -resultant,
+    eig$vectors[, which.max(eig$values)],
+    -eig$vectors[, which.max(eig$values)],
+    eig$vectors[, which.min(eig$values)],
+    -eig$vectors[, which.min(eig$values)],
+    c(0, 0, 1),
+    c(0, 0, -1)
+  ))
+
+  split_probs <- c(0.35, 0.5, 0.65)
+  for (mu0 in mu_candidates) {
+    y <- rotational_clamp_unit_interval((pmin(pmax(as.numeric(x %*% mu0), -1), 1) + 1) / 2, eps = 1e-8)
+    for (split_prob in split_probs) {
+      threshold <- rotational_weighted_quantile(y, prob_weights, prob = split_prob)
+      group1 <- y <= threshold
+      if (all(group1) || !any(group1)) {
+        next
+      }
+
+      w1 <- prob_weights[group1]
+      w2 <- prob_weights[!group1]
+      p1 <- sum(w1)
+      if (p1 <= 1e-6 || p1 >= 1 - 1e-6) {
+        next
+      }
+
+      comp1 <- rotational_beta_mixture2_moment_match(y[group1], w1 / sum(w1))
+      comp2 <- rotational_beta_mixture2_moment_match(y[!group1], w2 / sum(w2))
+      out[[length(out) + 1L]] <- rotational_beta_mixture2_canonicalize_theta(list(
+        mu = mu0,
+        weight1 = p1,
+        alpha1 = comp1$alpha,
+        beta1 = comp1$beta,
+        alpha2 = comp2$alpha,
+        beta2 = comp2$beta
+      ))
+    }
+  }
+
+  if (length(out) == 0L) {
+    out[[1L]] <- rotational_beta_mixture2_canonicalize_theta(list(
+      mu = c(0, 0, 1),
+      weight1 = 0.5,
+      alpha1 = 2,
+      beta1 = 5,
+      alpha2 = 5,
+      beta2 = 2
+    ))
+  }
+
+  out
+}
+
+rotational_beta_mixture2_pack_par <- function(theta,
+                                              control = list()) {
+  theta <- rotational_beta_mixture2_normalize_theta(theta, ambient_dim = 3L)
+  list(
+    par = c(
+      stats::qlogis(theta$weight1),
+      log(theta$alpha1),
+      log(theta$beta1),
+      log(theta$alpha2),
+      log(theta$beta2),
+      theta$mu
+    ),
+    theta = theta
+  )
+}
+
+rotational_beta_mixture2_unpack_par <- function(par,
+                                                control = list()) {
+  shape_lower <- as.numeric(control$rotational_beta_mixture2_shape_lower %||% 0.05)
+  shape_upper <- as.numeric(control$rotational_beta_mixture2_shape_upper %||% 1e3)
+  weight_eps <- as.numeric(control$rotational_beta_mixture2_weight_eps %||% 0.01)
+
+  mu_raw <- par[6:8]
+  mu_hat <- rotational_unit_vector_fallback(mu_raw)
+  rotational_beta_mixture2_canonicalize_theta(list(
+    mu = mu_hat,
+    weight1 = rotational_bounded_weight(par[[1L]], weight_eps = weight_eps),
+    alpha1 = rotational_positive_parameter(par[[2L]], lower = shape_lower, upper = shape_upper),
+    beta1 = rotational_positive_parameter(par[[3L]], lower = shape_lower, upper = shape_upper),
+    alpha2 = rotational_positive_parameter(par[[4L]], lower = shape_lower, upper = shape_upper),
+    beta2 = rotational_positive_parameter(par[[5L]], lower = shape_lower, upper = shape_upper)
+  ))
+}
+
+rotational_beta_mixture2_mle_s2_weighted <- function(x,
+                                                      weights = NULL,
+                                                      control = list()) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(weights, nrow(x))
+  }
+
+  candidate_thetas <- rotational_beta_mixture2_start_thetas_s2(
+    x = x,
+    weights = prob_weights,
+    control = control
+  )
+  candidate_thetas <- candidate_thetas[seq_len(min(length(candidate_thetas), as.integer(control$rotational_beta_mixture2_n_starts %||% 12L)))]
+
+  objective <- function(par) {
+    theta <- rotational_beta_mixture2_unpack_par(par, control = control)
+    value <- -rotational_beta_mixture2_weighted_loglik_s2(
+      mu = theta$mu,
+      weight1 = theta$weight1,
+      alpha1 = theta$alpha1,
+      beta1 = theta$beta1,
+      alpha2 = theta$alpha2,
+      beta2 = theta$beta2,
+      x = x,
+      prob_weights = prob_weights
+    )
+    if (!is.finite(value)) {
+      .Machine$double.xmax / 100
+    } else {
+      value
+    }
+  }
+
+  optim_method <- control$rotational_beta_mixture2_optim_method %||% "BFGS"
+  optim_control <- control$rotational_beta_mixture2_optim_control %||% list(maxit = 400L, reltol = 1e-9)
+
+  best <- NULL
+  for (theta0 in candidate_thetas) {
+    par0 <- rotational_beta_mixture2_pack_par(theta0, control = control)$par
+    opt <- try(stats::optim(
+      par = par0,
+      fn = objective,
+      method = optim_method,
+      control = optim_control
+    ), silent = TRUE)
+    if (inherits(opt, "try-error")) {
+      next
+    }
+
+    theta_hat <- rotational_beta_mixture2_unpack_par(opt$par, control = control)
+    if (is.null(best) || opt$value < best$opt$value) {
+      best <- list(theta = theta_hat, opt = opt, start_theta = theta0)
+    }
+  }
+
+  if (is.null(best)) {
+    stop("Beta-mixture weighted MLE failed for all starting values.")
+  }
+
+  c(
+    best$theta,
+    list(
+      loglik = -best$opt$value,
+      opt = best$opt,
+      weighted_mle = TRUE,
+      start_theta = best$start_theta
+    )
+  )
+}
+
+rotational_beta_mixture2_legendre_coefficients <- function(theta,
+                                                           l_max = 150L,
+                                                           quad_n = 400L,
+                                                           tol = 1e-10) {
+  theta <- rotational_beta_mixture2_normalize_theta(theta, ambient_dim = 3L)
+  rotational_legendre_coefficients(
+    density_h = function(z) {
+      rotational_beta_mixture2_density_h(
+        z = z,
+        weight1 = theta$weight1,
+        alpha1 = theta$alpha1,
+        beta1 = theta$beta1,
+        alpha2 = theta$alpha2,
+        beta2 = theta$beta2
+      )
+    },
+    Lmax = l_max,
+    quad_n = quad_n,
+    tol = tol
+  )
+}
+
+distance_profile_rotational_beta_mixture2 <- function(omega,
+                                                      t_values,
+                                                      mu,
+                                                      weight1,
+                                                      alpha1,
+                                                      beta1,
+                                                      alpha2,
+                                                      beta2,
+                                                      distance_type = c("geodesic", "chordal"),
+                                                      method = c("legendre", "integral"),
+                                                      l_max = 150L,
+                                                      quad_n = 400L,
+                                                      tol = 1e-10,
+                                                      validate_against_integral = FALSE,
+                                                      validation_tol = 5e-6) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  theta <- rotational_beta_mixture2_validate_parameters(
+    mu = mu,
+    weight1 = weight1,
+    alpha1 = alpha1,
+    beta1 = beta1,
+    alpha2 = alpha2,
+    beta2 = beta2
+  )
+
+  if (is.matrix(omega)) {
+    omega <- jp_normalize_unit_matrix(omega, arg_name = "`omega`", min_ncol = 3L)
+    if (length(t_values) == 1L) {
+      t_values <- rep(t_values, nrow(omega))
+    }
+    if (length(t_values) != nrow(omega)) {
+      stop("When `omega` is a matrix, `t_values` must have length 1 or nrow(omega).")
+    }
+    return(vapply(seq_len(nrow(omega)), function(i) {
+      distance_profile_rotational_beta_mixture2(
+        omega = omega[i, ],
+        t_values = t_values[i],
+        mu = theta$mu,
+        weight1 = theta$weight1,
+        alpha1 = theta$alpha1,
+        beta1 = theta$beta1,
+        alpha2 = theta$alpha2,
+        beta2 = theta$beta2,
+        distance_type = distance_type,
+        method = method,
+        l_max = l_max,
+        quad_n = quad_n,
+        tol = tol,
+        validate_against_integral = validate_against_integral,
+        validation_tol = validation_tol
+      )
+    }, numeric(1)))
+  }
+
+  omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
+  t_values <- as.numeric(t_values)
+  upper_bound <- if (identical(distance_type, "geodesic")) pi else 2
+  out <- numeric(length(t_values))
+  out[t_values <= 0] <- 0
+  out[t_values >= upper_bound] <- 1
+  active <- which(is.finite(t_values) & t_values > 0 & t_values < upper_bound)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  thresholds <- sphere_distance_to_dot_threshold(t_values[active], distance_type = distance_type)
+  r_value <- sum(omega * theta$mu)
+  if (abs(r_value - 1) <= 1e-12) {
+    out[active] <- 1 - rotational_beta_mixture2_cdf_y(
+      y = (thresholds + 1) / 2,
+      weight1 = theta$weight1,
+      alpha1 = theta$alpha1,
+      beta1 = theta$beta1,
+      alpha2 = theta$alpha2,
+      beta2 = theta$beta2
+    )
+    return(small_circle_monotone_clip(t_values = t_values, values = out, upper_bound = upper_bound))
+  }
+  if (abs(r_value + 1) <= 1e-12) {
+    out[active] <- rotational_beta_mixture2_cdf_y(
+      y = (1 - thresholds) / 2,
+      weight1 = theta$weight1,
+      alpha1 = theta$alpha1,
+      beta1 = theta$beta1,
+      alpha2 = theta$alpha2,
+      beta2 = theta$beta2
+    )
+    return(small_circle_monotone_clip(t_values = t_values, values = out, upper_bound = upper_bound))
+  }
+
+  if (identical(method, "integral")) {
+    return(rotational_distance_profile_integral(
+      omega = omega,
+      t_values = t_values,
+      mu = theta$mu,
+      density_gz = function(z) {
+        rotational_beta_mixture2_density_gz(
+          z = z,
+          weight1 = theta$weight1,
+          alpha1 = theta$alpha1,
+          beta1 = theta$beta1,
+          alpha2 = theta$alpha2,
+          beta2 = theta$beta2
+        )
+      },
+      distance_type = distance_type,
+      quad_n = quad_n
+    ))
+  }
+
+  coeffs <- rotational_beta_mixture2_legendre_coefficients(
+    theta = theta,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol
+  )$coefficients
+  out[active] <- 1 - rotational_projection_cdf_legendre(
+    x = thresholds,
+    r = r_value,
+    coefficients = coeffs
+  )
+  out <- small_circle_monotone_clip(t_values = t_values, values = out, upper_bound = upper_bound)
+
+  if (isTRUE(validate_against_integral)) {
+    out_integral <- rotational_distance_profile_integral(
+      omega = omega,
+      t_values = t_values,
+      mu = theta$mu,
+      density_gz = function(z) {
+        rotational_beta_mixture2_density_gz(
+          z = z,
+          weight1 = theta$weight1,
+          alpha1 = theta$alpha1,
+          beta1 = theta$beta1,
+          alpha2 = theta$alpha2,
+          beta2 = theta$beta2
+        )
+      },
+      distance_type = distance_type,
+      quad_n = quad_n
+    )
+    discrepancy <- max(abs(out - out_integral))
+    if (discrepancy > validation_tol) {
+      stop(sprintf(
+        "Beta-mixture Legendre profile validation failed: max discrepancy %.3e exceeds %.3e.",
+        discrepancy,
+        validation_tol
+      ))
+    }
+  }
+
+  out
+}
+
+distance_profile_rotational_beta_mixture2_grid <- function(omega_grid,
+                                                           mu,
+                                                           weight1,
+                                                           alpha1,
+                                                           beta1,
+                                                           alpha2,
+                                                           beta2,
+                                                           t_grid,
+                                                           distance_type = c("geodesic", "chordal"),
+                                                           method = c("legendre", "integral"),
+                                                           l_max = 150L,
+                                                           quad_n = 400L,
+                                                           tol = 1e-10) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  theta <- rotational_beta_mixture2_validate_parameters(
+    mu = mu,
+    weight1 = weight1,
+    alpha1 = alpha1,
+    beta1 = beta1,
+    alpha2 = alpha2,
+    beta2 = beta2
+  )
+
+  if (identical(method, "integral")) {
+    omega_grid <- jp_normalize_unit_matrix(omega_grid, arg_name = "`omega_grid`", min_ncol = 3L)
+    t_grid <- as.numeric(t_grid)
+    return(t(vapply(seq_len(nrow(omega_grid)), function(i) {
+      distance_profile_rotational_beta_mixture2(
+        omega = omega_grid[i, ],
+        t_values = t_grid,
+        mu = theta$mu,
+        weight1 = theta$weight1,
+        alpha1 = theta$alpha1,
+        beta1 = theta$beta1,
+        alpha2 = theta$alpha2,
+        beta2 = theta$beta2,
+        distance_type = distance_type,
+        method = "integral",
+        quad_n = quad_n
+      )
+    }, numeric(length(t_grid)))))
+  }
+
+  coeffs <- rotational_beta_mixture2_legendre_coefficients(
+    theta = theta,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol
+  )$coefficients
+  rotational_profile_matrix_legendre(
+    t_grid = t_grid,
+    omega_grid = omega_grid,
+    mu = theta$mu,
+    coeffs = coeffs,
+    Lmax = l_max,
+    distance_type = distance_type
+  )
+}
+
+distance_profile_rotational_beta_mixture2_cvm_grid <- function(X,
+                                                               mu,
+                                                               weight1,
+                                                               alpha1,
+                                                               beta1,
+                                                               alpha2,
+                                                               beta2,
+                                                               method = c("legendre", "integral"),
+                                                               l_max = 150L,
+                                                               quad_n = 400L,
+                                                               tol = 1e-10) {
+  method <- match.arg(method)
+  theta <- rotational_beta_mixture2_validate_parameters(
+    mu = mu,
+    weight1 = weight1,
+    alpha1 = alpha1,
+    beta1 = beta1,
+    alpha2 = alpha2,
+    beta2 = beta2
+  )
+
+  rotational_sample_profile_matrix(
+    X = X,
+    mu = theta$mu,
+    profile_fun = distance_profile_rotational_beta_mixture2,
+    weight1 = theta$weight1,
+    alpha1 = theta$alpha1,
+    beta1 = theta$beta1,
+    alpha2 = theta$alpha2,
+    beta2 = theta$beta2,
+    distance_type = "geodesic",
+    method = method,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol
+  )
+}
+
+r_sph_rotational_beta_mixture2 <- function(n,
+                                           mu,
+                                           weight1,
+                                           alpha1,
+                                           beta1,
+                                           alpha2,
+                                           beta2,
+                                           check = TRUE) {
+  n <- as.integer(n)
+  if (length(n) != 1L || !is.finite(n) || n < 1L) {
+    stop("`n` must be a strictly positive integer.")
+  }
+
+  theta <- rotational_beta_mixture2_validate_parameters(
+    mu = mu,
+    weight1 = weight1,
+    alpha1 = alpha1,
+    beta1 = beta1,
+    alpha2 = alpha2,
+    beta2 = beta2
+  )
+
+  component1 <- stats::runif(n) <= theta$weight1
+  y <- numeric(n)
+  n1 <- sum(component1)
+  n2 <- n - n1
+  if (n1 > 0L) {
+    y[component1] <- stats::rbeta(n1, theta$alpha1, theta$beta1)
+  }
+  if (n2 > 0L) {
+    y[!component1] <- stats::rbeta(n2, theta$alpha2, theta$beta2)
+  }
+
+  z <- pmin(pmax(2 * y - 1, -1), 1)
+  phi <- stats::runif(n, min = 0, max = 2 * pi)
+  basis <- jp_orthonormal_complement(theta$mu)
+  tangent <- tcrossprod(cos(phi), basis[, 1L]) + tcrossprod(sin(phi), basis[, 2L])
+  radial <- sqrt(pmax(0, 1 - z^2))
+  x <- tcrossprod(z, theta$mu) + sweep(tangent, 1L, radial, FUN = "*")
+
+  if (isTRUE(check)) {
+    norms <- sqrt(rowSums(x^2))
+    if (any(!is.finite(norms)) || max(abs(norms - 1)) > 1e-8) {
+      stop("Beta-mixture sampler returned non-unit vectors.")
+    }
+  }
+  x
+}
+
+rotational_logitnormal_mixture2_validate_parameters <- function(mu,
+                                                                weight1,
+                                                                mean1,
+                                                                sd1,
+                                                                mean2,
+                                                                sd2) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  if (length(mu) != 3L) {
+    stop("Rotational logit-normal-mixture utilities currently support only S^2.")
+  }
+
+  weight1 <- as.numeric(weight1)
+  mean1 <- as.numeric(mean1)
+  mean2 <- as.numeric(mean2)
+  sd1 <- as.numeric(sd1)
+  sd2 <- as.numeric(sd2)
+
+  if (length(weight1) != 1L || !is.finite(weight1) || weight1 <= 0 || weight1 >= 1) {
+    stop("`weight1` must be a finite scalar in (0, 1).")
+  }
+  if (length(mean1) != 1L || !is.finite(mean1) || length(mean2) != 1L || !is.finite(mean2)) {
+    stop("Logit-normal mixture means must be finite scalars.")
+  }
+  if (length(sd1) != 1L || !is.finite(sd1) || sd1 <= 0 || length(sd2) != 1L || !is.finite(sd2) || sd2 <= 0) {
+    stop("Logit-normal mixture standard deviations must be strictly positive finite scalars.")
+  }
+
+  list(
+    mu = mu,
+    weight1 = weight1,
+    mean1 = mean1,
+    sd1 = sd1,
+    mean2 = mean2,
+    sd2 = sd2,
+    ambient_dim = 3L
+  )
+}
+
+rotational_logitnormal_mixture2_canonicalize_theta <- function(theta) {
+  params <- rotational_logitnormal_mixture2_validate_parameters(
+    mu = theta$mu,
+    weight1 = theta$weight1,
+    mean1 = theta$mean1,
+    sd1 = theta$sd1,
+    mean2 = theta$mean2,
+    sd2 = theta$sd2
+  )
+
+  if (params$mean1 <= params$mean2) {
+    return(params)
+  }
+
+  list(
+    mu = params$mu,
+    weight1 = 1 - params$weight1,
+    mean1 = params$mean2,
+    sd1 = params$sd2,
+    mean2 = params$mean1,
+    sd2 = params$sd1,
+    ambient_dim = params$ambient_dim
+  )
+}
+
+rotational_logitnormal_mixture2_normalize_theta <- function(theta,
+                                                            ambient_dim = 3L) {
+  if (!is.list(theta)) {
+    stop("Logit-normal-mixture theta must be a list.")
+  }
+  params <- rotational_logitnormal_mixture2_canonicalize_theta(theta)
+  if (params$ambient_dim != ambient_dim) {
+    stop("Logit-normal-mixture theta has incompatible ambient dimension.")
+  }
+  params
+}
+
+rotational_logitnormal_mixture2_density_y <- function(y,
+                                                      weight1,
+                                                      mean1,
+                                                      sd1,
+                                                      mean2,
+                                                      sd2,
+                                                      log = FALSE,
+                                                      eps = 1e-12) {
+  y <- as.numeric(y)
+  out <- rep(if (log) -Inf else 0, length(y))
+  active <- y > 0 & y < 1
+  if (!any(active)) {
+    return(out)
+  }
+
+  y_active <- rotational_clamp_unit_interval(y[active], eps = eps)
+  x_active <- stats::qlogis(y_active)
+  log_jacobian <- -log(y_active) - log1p(-y_active)
+  log_density <- rotational_logsumexp2(
+    log(weight1) + stats::dnorm(x_active, mean = mean1, sd = sd1, log = TRUE) + log_jacobian,
+    log1p(-weight1) + stats::dnorm(x_active, mean = mean2, sd = sd2, log = TRUE) + log_jacobian
+  )
+  out[active] <- if (log) log_density else exp(log_density)
+  out
+}
+
+rotational_logitnormal_mixture2_cdf_y <- function(y,
+                                                  weight1,
+                                                  mean1,
+                                                  sd1,
+                                                  mean2,
+                                                  sd2,
+                                                  eps = 1e-12) {
+  y <- as.numeric(y)
+  out <- numeric(length(y))
+  out[y <= 0] <- 0
+  out[y >= 1] <- 1
+  active <- which(y > 0 & y < 1)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  y_active <- rotational_clamp_unit_interval(y[active], eps = eps)
+  x_active <- stats::qlogis(y_active)
+  out[active] <- weight1 * stats::pnorm((x_active - mean1) / sd1) +
+    (1 - weight1) * stats::pnorm((x_active - mean2) / sd2)
+  pmin(pmax(out, 0), 1)
+}
+
+rotational_logitnormal_mixture2_density_h <- function(z,
+                                                      weight1,
+                                                      mean1,
+                                                      sd1,
+                                                      mean2,
+                                                      sd2,
+                                                      eps = 1e-12) {
+  z <- as.numeric(z)
+  y <- (z + 1) / 2
+  out <- numeric(length(z))
+  valid <- z > -1 & z < 1
+  if (!any(valid)) {
+    return(out)
+  }
+
+  out[valid] <- rotational_logitnormal_mixture2_density_y(
+    y = y[valid],
+    weight1 = weight1,
+    mean1 = mean1,
+    sd1 = sd1,
+    mean2 = mean2,
+    sd2 = sd2,
+    log = FALSE,
+    eps = eps
+  )
+  out
+}
+
+rotational_logitnormal_mixture2_density_gz <- function(z,
+                                                       weight1,
+                                                       mean1,
+                                                       sd1,
+                                                       mean2,
+                                                       sd2,
+                                                       eps = 1e-12) {
+  0.5 * rotational_logitnormal_mixture2_density_h(
+    z = z,
+    weight1 = weight1,
+    mean1 = mean1,
+    sd1 = sd1,
+    mean2 = mean2,
+    sd2 = sd2,
+    eps = eps
+  )
+}
+
+d_sph_rotational_logitnormal_mixture2_s2 <- function(x,
+                                                     mu,
+                                                     weight1,
+                                                     mean1,
+                                                     sd1,
+                                                     mean2,
+                                                     sd2,
+                                                     log = FALSE,
+                                                     eps = 1e-12) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  params <- rotational_logitnormal_mixture2_validate_parameters(
+    mu = mu,
+    weight1 = weight1,
+    mean1 = mean1,
+    sd1 = sd1,
+    mean2 = mean2,
+    sd2 = sd2
+  )
+  z <- pmin(pmax(as.numeric(x %*% params$mu), -1 + eps, 1 - eps), 1 - eps)
+  y <- (z + 1) / 2
+  log_density <- -log(4 * pi) + rotational_logitnormal_mixture2_density_y(
+    y = y,
+    weight1 = params$weight1,
+    mean1 = params$mean1,
+    sd1 = params$sd1,
+    mean2 = params$mean2,
+    sd2 = params$sd2,
+    log = TRUE,
+    eps = eps
+  )
+  if (log) log_density else exp(log_density)
+}
+
+rotational_logitnormal_mixture2_weighted_loglik_s2 <- function(mu,
+                                                               weight1,
+                                                               mean1,
+                                                               sd1,
+                                                               mean2,
+                                                               sd2,
+                                                               x,
+                                                               prob_weights = NULL,
+                                                               eps = 1e-12) {
+  params <- rotational_logitnormal_mixture2_validate_parameters(
+    mu = mu,
+    weight1 = weight1,
+    mean1 = mean1,
+    sd1 = sd1,
+    mean2 = mean2,
+    sd2 = sd2
+  )
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(prob_weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(prob_weights, nrow(x))
+  }
+
+  z <- pmin(pmax(as.numeric(x %*% params$mu), -1 + eps, 1 - eps), 1 - eps)
+  y <- (z + 1) / 2
+  sum(prob_weights * rotational_logitnormal_mixture2_density_y(
+    y = y,
+    weight1 = params$weight1,
+    mean1 = params$mean1,
+    sd1 = params$sd1,
+    mean2 = params$mean2,
+    sd2 = params$sd2,
+    log = TRUE,
+    eps = eps
+  ))
+}
+
+rotational_logitnormal_mixture2_start_thetas_s2 <- function(x,
+                                                            weights = NULL,
+                                                            control = list()) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(weights, nrow(x))
+  }
+
+  warm_start <- control$rotational_logitnormal_mixture2_start_theta %||%
+    control$theta_start %||%
+    control$jp_mle_start_theta %||%
+    NULL
+  out <- list()
+  if (!is.null(warm_start)) {
+    warm_start <- rotational_logitnormal_mixture2_normalize_theta(warm_start, ambient_dim = 3L)
+    out[[length(out) + 1L]] <- warm_start
+    if (isTRUE(control$rotational_logitnormal_mixture2_warm_start_only %||% FALSE)) {
+      return(list(warm_start))
+    }
+  }
+
+  resultant <- colSums(x * prob_weights)
+  second_moment <- rotational_weighted_covariance_matrix(x, prob_weights)
+  eig <- eigen(second_moment, symmetric = TRUE)
+  mu_candidates <- rotational_unique_mu_candidates(list(
+    resultant,
+    -resultant,
+    eig$vectors[, which.max(eig$values)],
+    -eig$vectors[, which.max(eig$values)],
+    eig$vectors[, which.min(eig$values)],
+    -eig$vectors[, which.min(eig$values)],
+    c(0, 0, 1),
+    c(0, 0, -1)
+  ))
+
+  split_probs <- c(0.35, 0.5, 0.65)
+  for (mu0 in mu_candidates) {
+    y <- rotational_clamp_unit_interval((pmin(pmax(as.numeric(x %*% mu0), -1 + 1e-10), 1 - 1e-10) + 1) / 2, eps = 1e-8)
+    x_logit <- stats::qlogis(y)
+    for (split_prob in split_probs) {
+      threshold <- rotational_weighted_quantile(x_logit, prob_weights, prob = split_prob)
+      group1 <- x_logit <= threshold
+      if (all(group1) || !any(group1)) {
+        next
+      }
+
+      w1 <- prob_weights[group1]
+      w2 <- prob_weights[!group1]
+      p1 <- sum(w1)
+      if (p1 <= 1e-6 || p1 >= 1 - 1e-6) {
+        next
+      }
+
+      mean1 <- rotational_weighted_mean(x_logit[group1], w1 / sum(w1))
+      mean2 <- rotational_weighted_mean(x_logit[!group1], w2 / sum(w2))
+      sd1 <- sqrt(max(rotational_weighted_variance(x_logit[group1], w1 / sum(w1), center = mean1), 0.05^2))
+      sd2 <- sqrt(max(rotational_weighted_variance(x_logit[!group1], w2 / sum(w2), center = mean2), 0.05^2))
+      out[[length(out) + 1L]] <- rotational_logitnormal_mixture2_canonicalize_theta(list(
+        mu = mu0,
+        weight1 = p1,
+        mean1 = mean1,
+        sd1 = sd1,
+        mean2 = mean2,
+        sd2 = sd2
+      ))
+    }
+  }
+
+  if (length(out) == 0L) {
+    out[[1L]] <- rotational_logitnormal_mixture2_canonicalize_theta(list(
+      mu = c(0, 0, 1),
+      weight1 = 0.5,
+      mean1 = -1,
+      sd1 = 0.7,
+      mean2 = 1,
+      sd2 = 0.7
+    ))
+  }
+
+  out
+}
+
+rotational_logitnormal_mixture2_pack_par <- function(theta,
+                                                     control = list()) {
+  theta <- rotational_logitnormal_mixture2_normalize_theta(theta, ambient_dim = 3L)
+  list(
+    par = c(
+      stats::qlogis(theta$weight1),
+      theta$mean1,
+      log(theta$sd1),
+      theta$mean2,
+      log(theta$sd2),
+      theta$mu
+    ),
+    theta = theta
+  )
+}
+
+rotational_logitnormal_mixture2_unpack_par <- function(par,
+                                                       control = list()) {
+  mean_lower <- as.numeric(control$rotational_logitnormal_mixture2_mean_lower %||% -8)
+  mean_upper <- as.numeric(control$rotational_logitnormal_mixture2_mean_upper %||% 8)
+  sd_lower <- as.numeric(control$rotational_logitnormal_mixture2_sd_lower %||% 0.05)
+  sd_upper <- as.numeric(control$rotational_logitnormal_mixture2_sd_upper %||% 5)
+  weight_eps <- as.numeric(control$rotational_logitnormal_mixture2_weight_eps %||% 0.01)
+
+  mu_raw <- par[6:8]
+  mu_hat <- rotational_unit_vector_fallback(mu_raw)
+  rotational_logitnormal_mixture2_canonicalize_theta(list(
+    mu = mu_hat,
+    weight1 = rotational_bounded_weight(par[[1L]], weight_eps = weight_eps),
+    mean1 = pmin(pmax(par[[2L]], mean_lower), mean_upper),
+    sd1 = rotational_positive_parameter(par[[3L]], lower = sd_lower, upper = sd_upper),
+    mean2 = pmin(pmax(par[[4L]], mean_lower), mean_upper),
+    sd2 = rotational_positive_parameter(par[[5L]], lower = sd_lower, upper = sd_upper)
+  ))
+}
+
+rotational_logitnormal_mixture2_mle_s2_weighted <- function(x,
+                                                            weights = NULL,
+                                                            control = list()) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(weights, nrow(x))
+  }
+
+  candidate_thetas <- rotational_logitnormal_mixture2_start_thetas_s2(
+    x = x,
+    weights = prob_weights,
+    control = control
+  )
+  candidate_thetas <- candidate_thetas[seq_len(min(length(candidate_thetas), as.integer(control$rotational_logitnormal_mixture2_n_starts %||% 12L)))]
+
+  objective <- function(par) {
+    theta <- rotational_logitnormal_mixture2_unpack_par(par, control = control)
+    value <- -rotational_logitnormal_mixture2_weighted_loglik_s2(
+      mu = theta$mu,
+      weight1 = theta$weight1,
+      mean1 = theta$mean1,
+      sd1 = theta$sd1,
+      mean2 = theta$mean2,
+      sd2 = theta$sd2,
+      x = x,
+      prob_weights = prob_weights,
+      eps = as.numeric(control$rotational_logitnormal_mixture2_eps %||% 1e-12)
+    )
+    if (!is.finite(value)) {
+      .Machine$double.xmax / 100
+    } else {
+      value
+    }
+  }
+
+  optim_method <- control$rotational_logitnormal_mixture2_optim_method %||% "BFGS"
+  optim_control <- control$rotational_logitnormal_mixture2_optim_control %||% list(maxit = 400L, reltol = 1e-9)
+
+  best <- NULL
+  for (theta0 in candidate_thetas) {
+    par0 <- rotational_logitnormal_mixture2_pack_par(theta0, control = control)$par
+    opt <- try(stats::optim(
+      par = par0,
+      fn = objective,
+      method = optim_method,
+      control = optim_control
+    ), silent = TRUE)
+    if (inherits(opt, "try-error")) {
+      next
+    }
+
+    theta_hat <- rotational_logitnormal_mixture2_unpack_par(opt$par, control = control)
+    if (is.null(best) || opt$value < best$opt$value) {
+      best <- list(theta = theta_hat, opt = opt, start_theta = theta0)
+    }
+  }
+
+  if (is.null(best)) {
+    stop("Logit-normal-mixture weighted MLE failed for all starting values.")
+  }
+
+  c(
+    best$theta,
+    list(
+      loglik = -best$opt$value,
+      opt = best$opt,
+      weighted_mle = TRUE,
+      start_theta = best$start_theta
+    )
+  )
+}
+
+rotational_logitnormal_mixture2_legendre_coefficients <- function(theta,
+                                                                  l_max = 150L,
+                                                                  quad_n = 400L,
+                                                                  tol = 1e-10,
+                                                                  eps = 1e-12) {
+  theta <- rotational_logitnormal_mixture2_normalize_theta(theta, ambient_dim = 3L)
+  rotational_legendre_coefficients(
+    density_h = function(z) {
+      rotational_logitnormal_mixture2_density_h(
+        z = z,
+        weight1 = theta$weight1,
+        mean1 = theta$mean1,
+        sd1 = theta$sd1,
+        mean2 = theta$mean2,
+        sd2 = theta$sd2,
+        eps = eps
+      )
+    },
+    Lmax = l_max,
+    quad_n = quad_n,
+    tol = tol
+  )
+}
+
+distance_profile_rotational_logitnormal_mixture2 <- function(omega,
+                                                             t_values,
+                                                             mu,
+                                                             weight1,
+                                                             mean1,
+                                                             sd1,
+                                                             mean2,
+                                                             sd2,
+                                                             distance_type = c("geodesic", "chordal"),
+                                                             method = c("legendre", "integral"),
+                                                             l_max = 150L,
+                                                             quad_n = 400L,
+                                                             tol = 1e-10,
+                                                             eps = 1e-12,
+                                                             validate_against_integral = FALSE,
+                                                             validation_tol = 5e-6) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  theta <- rotational_logitnormal_mixture2_validate_parameters(
+    mu = mu,
+    weight1 = weight1,
+    mean1 = mean1,
+    sd1 = sd1,
+    mean2 = mean2,
+    sd2 = sd2
+  )
+
+  if (is.matrix(omega)) {
+    omega <- jp_normalize_unit_matrix(omega, arg_name = "`omega`", min_ncol = 3L)
+    if (length(t_values) == 1L) {
+      t_values <- rep(t_values, nrow(omega))
+    }
+    if (length(t_values) != nrow(omega)) {
+      stop("When `omega` is a matrix, `t_values` must have length 1 or nrow(omega).")
+    }
+    return(vapply(seq_len(nrow(omega)), function(i) {
+      distance_profile_rotational_logitnormal_mixture2(
+        omega = omega[i, ],
+        t_values = t_values[i],
+        mu = theta$mu,
+        weight1 = theta$weight1,
+        mean1 = theta$mean1,
+        sd1 = theta$sd1,
+        mean2 = theta$mean2,
+        sd2 = theta$sd2,
+        distance_type = distance_type,
+        method = method,
+        l_max = l_max,
+        quad_n = quad_n,
+        tol = tol,
+        eps = eps,
+        validate_against_integral = validate_against_integral,
+        validation_tol = validation_tol
+      )
+    }, numeric(1)))
+  }
+
+  omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
+  t_values <- as.numeric(t_values)
+  upper_bound <- if (identical(distance_type, "geodesic")) pi else 2
+  out <- numeric(length(t_values))
+  out[t_values <= 0] <- 0
+  out[t_values >= upper_bound] <- 1
+  active <- which(is.finite(t_values) & t_values > 0 & t_values < upper_bound)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  thresholds <- sphere_distance_to_dot_threshold(t_values[active], distance_type = distance_type)
+  r_value <- sum(omega * theta$mu)
+  if (abs(r_value - 1) <= 1e-12) {
+    out[active] <- 1 - rotational_logitnormal_mixture2_cdf_y(
+      y = (thresholds + 1) / 2,
+      weight1 = theta$weight1,
+      mean1 = theta$mean1,
+      sd1 = theta$sd1,
+      mean2 = theta$mean2,
+      sd2 = theta$sd2,
+      eps = eps
+    )
+    return(small_circle_monotone_clip(t_values = t_values, values = out, upper_bound = upper_bound))
+  }
+  if (abs(r_value + 1) <= 1e-12) {
+    out[active] <- rotational_logitnormal_mixture2_cdf_y(
+      y = (1 - thresholds) / 2,
+      weight1 = theta$weight1,
+      mean1 = theta$mean1,
+      sd1 = theta$sd1,
+      mean2 = theta$mean2,
+      sd2 = theta$sd2,
+      eps = eps
+    )
+    return(small_circle_monotone_clip(t_values = t_values, values = out, upper_bound = upper_bound))
+  }
+
+  if (identical(method, "integral")) {
+    return(rotational_distance_profile_integral(
+      omega = omega,
+      t_values = t_values,
+      mu = theta$mu,
+      density_gz = function(z) {
+        rotational_logitnormal_mixture2_density_gz(
+          z = z,
+          weight1 = theta$weight1,
+          mean1 = theta$mean1,
+          sd1 = theta$sd1,
+          mean2 = theta$mean2,
+          sd2 = theta$sd2,
+          eps = eps
+        )
+      },
+      distance_type = distance_type,
+      quad_n = quad_n
+    ))
+  }
+
+  coeffs <- rotational_logitnormal_mixture2_legendre_coefficients(
+    theta = theta,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol,
+    eps = eps
+  )$coefficients
+  out[active] <- 1 - rotational_projection_cdf_legendre(
+    x = thresholds,
+    r = r_value,
+    coefficients = coeffs
+  )
+  out <- small_circle_monotone_clip(t_values = t_values, values = out, upper_bound = upper_bound)
+
+  if (isTRUE(validate_against_integral)) {
+    out_integral <- rotational_distance_profile_integral(
+      omega = omega,
+      t_values = t_values,
+      mu = theta$mu,
+      density_gz = function(z) {
+        rotational_logitnormal_mixture2_density_gz(
+          z = z,
+          weight1 = theta$weight1,
+          mean1 = theta$mean1,
+          sd1 = theta$sd1,
+          mean2 = theta$mean2,
+          sd2 = theta$sd2,
+          eps = eps
+        )
+      },
+      distance_type = distance_type,
+      quad_n = quad_n
+    )
+    discrepancy <- max(abs(out - out_integral))
+    if (discrepancy > validation_tol) {
+      stop(sprintf(
+        "Logit-normal-mixture Legendre profile validation failed: max discrepancy %.3e exceeds %.3e.",
+        discrepancy,
+        validation_tol
+      ))
+    }
+  }
+
+  out
+}
+
+distance_profile_rotational_logitnormal_mixture2_grid <- function(omega_grid,
+                                                                  mu,
+                                                                  weight1,
+                                                                  mean1,
+                                                                  sd1,
+                                                                  mean2,
+                                                                  sd2,
+                                                                  t_grid,
+                                                                  distance_type = c("geodesic", "chordal"),
+                                                                  method = c("legendre", "integral"),
+                                                                  l_max = 150L,
+                                                                  quad_n = 400L,
+                                                                  tol = 1e-10,
+                                                                  eps = 1e-12) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  theta <- rotational_logitnormal_mixture2_validate_parameters(
+    mu = mu,
+    weight1 = weight1,
+    mean1 = mean1,
+    sd1 = sd1,
+    mean2 = mean2,
+    sd2 = sd2
+  )
+
+  if (identical(method, "integral")) {
+    omega_grid <- jp_normalize_unit_matrix(omega_grid, arg_name = "`omega_grid`", min_ncol = 3L)
+    t_grid <- as.numeric(t_grid)
+    return(t(vapply(seq_len(nrow(omega_grid)), function(i) {
+      distance_profile_rotational_logitnormal_mixture2(
+        omega = omega_grid[i, ],
+        t_values = t_grid,
+        mu = theta$mu,
+        weight1 = theta$weight1,
+        mean1 = theta$mean1,
+        sd1 = theta$sd1,
+        mean2 = theta$mean2,
+        sd2 = theta$sd2,
+        distance_type = distance_type,
+        method = "integral",
+        quad_n = quad_n,
+        eps = eps
+      )
+    }, numeric(length(t_grid)))))
+  }
+
+  coeffs <- rotational_logitnormal_mixture2_legendre_coefficients(
+    theta = theta,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol,
+    eps = eps
+  )$coefficients
+  rotational_profile_matrix_legendre(
+    t_grid = t_grid,
+    omega_grid = omega_grid,
+    mu = theta$mu,
+    coeffs = coeffs,
+    Lmax = l_max,
+    distance_type = distance_type
+  )
+}
+
+distance_profile_rotational_logitnormal_mixture2_cvm_grid <- function(X,
+                                                                      mu,
+                                                                      weight1,
+                                                                      mean1,
+                                                                      sd1,
+                                                                      mean2,
+                                                                      sd2,
+                                                                      method = c("legendre", "integral"),
+                                                                      l_max = 150L,
+                                                                      quad_n = 400L,
+                                                                      tol = 1e-10,
+                                                                      eps = 1e-12) {
+  method <- match.arg(method)
+  theta <- rotational_logitnormal_mixture2_validate_parameters(
+    mu = mu,
+    weight1 = weight1,
+    mean1 = mean1,
+    sd1 = sd1,
+    mean2 = mean2,
+    sd2 = sd2
+  )
+
+  rotational_sample_profile_matrix(
+    X = X,
+    mu = theta$mu,
+    profile_fun = distance_profile_rotational_logitnormal_mixture2,
+    weight1 = theta$weight1,
+    mean1 = theta$mean1,
+    sd1 = theta$sd1,
+    mean2 = theta$mean2,
+    sd2 = theta$sd2,
+    distance_type = "geodesic",
+    method = method,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol,
+    eps = eps
+  )
+}
+
+r_sph_rotational_logitnormal_mixture2 <- function(n,
+                                                  mu,
+                                                  weight1,
+                                                  mean1,
+                                                  sd1,
+                                                  mean2,
+                                                  sd2,
+                                                  check = TRUE) {
+  n <- as.integer(n)
+  if (length(n) != 1L || !is.finite(n) || n < 1L) {
+    stop("`n` must be a strictly positive integer.")
+  }
+
+  theta <- rotational_logitnormal_mixture2_validate_parameters(
+    mu = mu,
+    weight1 = weight1,
+    mean1 = mean1,
+    sd1 = sd1,
+    mean2 = mean2,
+    sd2 = sd2
+  )
+
+  component1 <- stats::runif(n) <= theta$weight1
+  t_values <- numeric(n)
+  n1 <- sum(component1)
+  n2 <- n - n1
+  if (n1 > 0L) {
+    t_values[component1] <- stats::rnorm(n1, mean = theta$mean1, sd = theta$sd1)
+  }
+  if (n2 > 0L) {
+    t_values[!component1] <- stats::rnorm(n2, mean = theta$mean2, sd = theta$sd2)
+  }
+
+  y <- stats::plogis(t_values)
+  z <- pmin(pmax(2 * y - 1, -1), 1)
+  phi <- stats::runif(n, min = 0, max = 2 * pi)
+  basis <- jp_orthonormal_complement(theta$mu)
+  tangent <- tcrossprod(cos(phi), basis[, 1L]) + tcrossprod(sin(phi), basis[, 2L])
+  radial <- sqrt(pmax(0, 1 - z^2))
+  x <- tcrossprod(z, theta$mu) + sweep(tangent, 1L, radial, FUN = "*")
+
+  if (isTRUE(check)) {
+    norms <- sqrt(rowSums(x^2))
+    if (any(!is.finite(norms)) || max(abs(norms - 1)) > 1e-8) {
+      stop("Logit-normal-mixture sampler returned non-unit vectors.")
+    }
+  }
+  x
 }
 
 #' Safe KS test wrapper that returns a result with NA p.value for invalid inputs
