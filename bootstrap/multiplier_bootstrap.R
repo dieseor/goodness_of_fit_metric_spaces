@@ -472,6 +472,12 @@ run_bootstrap_chunk <- function(weight_chunk,
         bootstrap_control$jp_mle_start_theta <- theta_start
         bootstrap_control$jp_mle_warm_start_only <- TRUE
         bootstrap_control$jp_mle_bootstrap_refit <- TRUE
+      } else if (!is.null(theta_start) && grepl("^rotational_beta_mixture2_", spec$name)) {
+        bootstrap_control$rotational_beta_mixture2_start_theta <- theta_start
+        bootstrap_control$rotational_beta_mixture2_warm_start_only <- TRUE
+      } else if (!is.null(theta_start) && grepl("^rotational_logitnormal_mixture2_", spec$name)) {
+        bootstrap_control$rotational_logitnormal_mixture2_start_theta <- theta_start
+        bootstrap_control$rotational_logitnormal_mixture2_warm_start_only <- TRUE
       } else if (!is.null(theta_start) && is.null(bootstrap_control$jp_mle_start_theta)) {
         bootstrap_control$jp_mle_start_theta <- theta_start
       }

@@ -464,13 +464,13 @@ run_comets_rotational_mixtures_short_long <- function(
   counter <- 0L
 
   control_beta <- list(
-    rotational_beta_mixture2_profile_method = "integral",
-    rotational_beta_mixture2_quad_n = 600L,
+    rotational_beta_mixture2_profile_method = "legendre",
+    rotational_beta_mixture2_quad_n = 400L,
     rotational_beta_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9)
   )
   control_logit <- list(
-    rotational_logitnormal_mixture2_profile_method = "integral",
-    rotational_logitnormal_mixture2_quad_n = 600L,
+    rotational_logitnormal_mixture2_profile_method = "legendre",
+    rotational_logitnormal_mixture2_quad_n = 400L,
     rotational_logitnormal_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9)
   )
 
