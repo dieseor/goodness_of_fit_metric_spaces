@@ -131,6 +131,100 @@ test_that("rotational beta-mixture Legendre and integral profiles agree", {
   expect_lt(max(abs(legendre - integral)), 5e-4)
 })
 
+test_that("rotational beta-mixture grid and CvM helpers match naive row-wise evaluation", {
+  theta <- rotational_beta_mixture2_normalize_theta(list(
+    mu = jp_normalize_unit_vector(c(0.2, -0.35, 0.915), arg_name = "mu", min_length = 3L),
+    weight1 = 0.4,
+    alpha1 = 2.5,
+    beta1 = 8,
+    alpha2 = 9,
+    beta2 = 2.5
+  ))
+  omega_grid <- rbind(
+    theta$mu,
+    -theta$mu,
+    jp_normalize_unit_vector(c(0.4, 0.2, 0.89), arg_name = "omega", min_length = 3L)
+  )
+  t_grid <- seq(0.1, pi - 0.1, length.out = 11)
+  x <- r_sph_rotational_beta_mixture2(
+    n = 6,
+    mu = theta$mu,
+    weight1 = theta$weight1,
+    alpha1 = theta$alpha1,
+    beta1 = theta$beta1,
+    alpha2 = theta$alpha2,
+    beta2 = theta$beta2
+  )
+  dot_products <- pmin(pmax(x %*% t(x), -1), 1)
+
+  for (method in c("legendre", "integral")) {
+    tol_match <- if (identical(method, "legendre")) 1e-8 else 1e-12
+    grid_naive <- t(vapply(seq_len(nrow(omega_grid)), function(i) {
+      distance_profile_rotational_beta_mixture2(
+        omega = omega_grid[i, ],
+        t_values = t_grid,
+        mu = theta$mu,
+        weight1 = theta$weight1,
+        alpha1 = theta$alpha1,
+        beta1 = theta$beta1,
+        alpha2 = theta$alpha2,
+        beta2 = theta$beta2,
+        method = method,
+        l_max = 80L,
+        quad_n = 250L,
+        tol = 1e-10
+      )
+    }, numeric(length(t_grid))))
+    grid_fast <- distance_profile_rotational_beta_mixture2_grid(
+      omega_grid = omega_grid,
+      mu = theta$mu,
+      weight1 = theta$weight1,
+      alpha1 = theta$alpha1,
+      beta1 = theta$beta1,
+      alpha2 = theta$alpha2,
+      beta2 = theta$beta2,
+      t_grid = t_grid,
+      method = method,
+      l_max = 80L,
+      quad_n = 250L,
+      tol = 1e-10
+    )
+    expect_equal(grid_fast, grid_naive, tolerance = tol_match)
+
+    cvm_naive <- t(vapply(seq_len(nrow(x)), function(i) {
+      distance_profile_rotational_beta_mixture2(
+        omega = x[i, ],
+        t_values = acos(dot_products[i, ]),
+        mu = theta$mu,
+        weight1 = theta$weight1,
+        alpha1 = theta$alpha1,
+        beta1 = theta$beta1,
+        alpha2 = theta$alpha2,
+        beta2 = theta$beta2,
+        distance_type = "geodesic",
+        method = method,
+        l_max = 80L,
+        quad_n = 250L,
+        tol = 1e-10
+      )
+    }, numeric(nrow(x))))
+    cvm_fast <- distance_profile_rotational_beta_mixture2_cvm_grid(
+      X = x,
+      mu = theta$mu,
+      weight1 = theta$weight1,
+      alpha1 = theta$alpha1,
+      beta1 = theta$beta1,
+      alpha2 = theta$alpha2,
+      beta2 = theta$beta2,
+      method = method,
+      l_max = 80L,
+      quad_n = 250L,
+      tol = 1e-10
+    )
+    expect_equal(cvm_fast, cvm_naive, tolerance = tol_match)
+  }
+})
+
 test_that("rotational beta-mixture sampler and weighted MLE behave coherently", {
   set.seed(20260601)
   theta <- rotational_beta_mixture2_normalize_theta(list(
@@ -184,6 +278,34 @@ test_that("rotational beta-mixture sampler and weighted MLE behave coherently", 
     beta2 = theta$beta2
   )
   expect_lt(max(abs(ecdf_y(grid) - fitted_cdf)), 0.12)
+})
+
+test_that("rotational beta-mixture density is numerically stable at y endpoints", {
+  log_density <- rotational_beta_mixture2_density_y(
+    y = c(0, 1),
+    weight1 = 0.4,
+    alpha1 = 0.4,
+    beta1 = 2.5,
+    alpha2 = 3.0,
+    beta2 = 0.3,
+    log = TRUE
+  )
+
+  expect_true(all(is.finite(log_density)))
+
+  x <- rbind(c(0, 0, 1), c(0, 0, -1))
+  log_s2 <- d_sph_rotational_beta_mixture2_s2(
+    x = x,
+    mu = c(0, 0, 1),
+    weight1 = 0.4,
+    alpha1 = 0.4,
+    beta1 = 2.5,
+    alpha2 = 3.0,
+    beta2 = 0.3,
+    log = TRUE
+  )
+
+  expect_true(all(is.finite(log_s2)))
 })
 
 test_that("rotational logit-normal-mixture coefficients and special profiles are correct", {
@@ -299,6 +421,104 @@ test_that("rotational logit-normal-mixture Legendre and integral profiles agree"
   expect_lt(max(abs(legendre - integral)), 5e-4)
 })
 
+test_that("rotational logit-normal-mixture grid and CvM helpers match naive row-wise evaluation", {
+  theta <- rotational_logitnormal_mixture2_normalize_theta(list(
+    mu = jp_normalize_unit_vector(c(-0.25, 0.3, 0.92), arg_name = "mu", min_length = 3L),
+    weight1 = 0.45,
+    mean1 = -1.0,
+    sd1 = 0.45,
+    mean2 = 1.15,
+    sd2 = 0.55
+  ))
+  omega_grid <- rbind(
+    theta$mu,
+    -theta$mu,
+    jp_normalize_unit_vector(c(-0.35, 0.15, 0.925), arg_name = "omega", min_length = 3L)
+  )
+  t_grid <- seq(0.1, pi - 0.1, length.out = 11)
+  x <- r_sph_rotational_logitnormal_mixture2(
+    n = 6,
+    mu = theta$mu,
+    weight1 = theta$weight1,
+    mean1 = theta$mean1,
+    sd1 = theta$sd1,
+    mean2 = theta$mean2,
+    sd2 = theta$sd2
+  )
+  dot_products <- pmin(pmax(x %*% t(x), -1), 1)
+
+  for (method in c("legendre", "integral")) {
+    tol_match <- if (identical(method, "legendre")) 1e-8 else 1e-12
+    grid_naive <- t(vapply(seq_len(nrow(omega_grid)), function(i) {
+      distance_profile_rotational_logitnormal_mixture2(
+        omega = omega_grid[i, ],
+        t_values = t_grid,
+        mu = theta$mu,
+        weight1 = theta$weight1,
+        mean1 = theta$mean1,
+        sd1 = theta$sd1,
+        mean2 = theta$mean2,
+        sd2 = theta$sd2,
+        method = method,
+        l_max = 80L,
+        quad_n = 250L,
+        tol = 1e-10,
+        eps = 1e-12
+      )
+    }, numeric(length(t_grid))))
+    grid_fast <- distance_profile_rotational_logitnormal_mixture2_grid(
+      omega_grid = omega_grid,
+      mu = theta$mu,
+      weight1 = theta$weight1,
+      mean1 = theta$mean1,
+      sd1 = theta$sd1,
+      mean2 = theta$mean2,
+      sd2 = theta$sd2,
+      t_grid = t_grid,
+      method = method,
+      l_max = 80L,
+      quad_n = 250L,
+      tol = 1e-10,
+      eps = 1e-12
+    )
+    expect_equal(grid_fast, grid_naive, tolerance = tol_match)
+
+    cvm_naive <- t(vapply(seq_len(nrow(x)), function(i) {
+      distance_profile_rotational_logitnormal_mixture2(
+        omega = x[i, ],
+        t_values = acos(dot_products[i, ]),
+        mu = theta$mu,
+        weight1 = theta$weight1,
+        mean1 = theta$mean1,
+        sd1 = theta$sd1,
+        mean2 = theta$mean2,
+        sd2 = theta$sd2,
+        distance_type = "geodesic",
+        method = method,
+        l_max = 80L,
+        quad_n = 250L,
+        tol = 1e-10,
+        eps = 1e-12
+      )
+    }, numeric(nrow(x))))
+    cvm_fast <- distance_profile_rotational_logitnormal_mixture2_cvm_grid(
+      X = x,
+      mu = theta$mu,
+      weight1 = theta$weight1,
+      mean1 = theta$mean1,
+      sd1 = theta$sd1,
+      mean2 = theta$mean2,
+      sd2 = theta$sd2,
+      method = method,
+      l_max = 80L,
+      quad_n = 250L,
+      tol = 1e-10,
+      eps = 1e-12
+    )
+    expect_equal(cvm_fast, cvm_naive, tolerance = tol_match)
+  }
+})
+
 test_that("rotational logit-normal-mixture sampler and weighted MLE behave coherently", {
   set.seed(20260602)
   theta <- rotational_logitnormal_mixture2_normalize_theta(list(
@@ -395,4 +615,35 @@ test_that("mixture canonicalization swaps labels correctly", {
   ))
   expect_lt(logit_theta$mean1, logit_theta$mean2)
   expect_equal(logit_theta$weight1, 0.3, tolerance = 1e-12)
+})
+
+test_that("logit-normal unpack leaves means unrestricted by default", {
+  theta <- rotational_logitnormal_mixture2_unpack_par(
+    par = c(stats::qlogis(0.2), 12, log(0.2), -11, log(0.4), 0, 0, 1),
+    control = list(
+      rotational_logitnormal_mixture2_mean_lower = -8,
+      rotational_logitnormal_mixture2_mean_upper = 8,
+      rotational_logitnormal_mixture2_sd_lower = 0.05,
+      rotational_logitnormal_mixture2_sd_upper = 5,
+      rotational_logitnormal_mixture2_weight_eps = 0.01
+    )
+  )
+
+  expect_equal(theta$mean1, -11, tolerance = 1e-12)
+  expect_equal(theta$mean2, 12, tolerance = 1e-12)
+
+  clipped <- rotational_logitnormal_mixture2_unpack_par(
+    par = c(stats::qlogis(0.2), 12, log(0.2), -11, log(0.4), 0, 0, 1),
+    control = list(
+      rotational_logitnormal_mixture2_clip_means = TRUE,
+      rotational_logitnormal_mixture2_mean_lower = -8,
+      rotational_logitnormal_mixture2_mean_upper = 8,
+      rotational_logitnormal_mixture2_sd_lower = 0.05,
+      rotational_logitnormal_mixture2_sd_upper = 5,
+      rotational_logitnormal_mixture2_weight_eps = 0.01
+    )
+  )
+
+  expect_equal(clipped$mean1, -8, tolerance = 1e-12)
+  expect_equal(clipped$mean2, 8, tolerance = 1e-12)
 })

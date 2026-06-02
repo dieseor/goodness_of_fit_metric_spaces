@@ -118,6 +118,76 @@ test_that("Small Circle Legendre and integral profiles agree across representati
   }
 })
 
+test_that("Small Circle grid and CvM helpers match naive row-wise evaluation", {
+  mu <- jp_normalize_unit_vector(c(0.2, -0.3, 0.93), arg_name = "mu", min_length = 3L)
+  kappa <- 12
+  nu <- 0.65
+  omega_grid <- rbind(
+    mu,
+    -mu,
+    jp_normalize_unit_vector(c(0.35, 0.4, 0.846), arg_name = "omega", min_length = 3L)
+  )
+  t_grid <- seq(0.1, pi - 0.1, length.out = 11)
+  x <- r_sph_small_circle(n = 6, mu = mu, kappa = kappa, nu = nu)
+  dot_products <- pmin(pmax(x %*% t(x), -1), 1)
+
+  for (method in c("legendre", "integral")) {
+    grid_naive <- t(vapply(seq_len(nrow(omega_grid)), function(i) {
+      distance_profile_small_circle(
+        omega = omega_grid[i, ],
+        t_values = t_grid,
+        mu = mu,
+        kappa = kappa,
+        nu = nu,
+        distance_type = "geodesic",
+        method = method,
+        l_max = 80L,
+        quad_n = 250L,
+        tol = 1e-10
+      )
+    }, numeric(length(t_grid))))
+    grid_fast <- distance_profile_small_circle_grid(
+      omega_grid = omega_grid,
+      mu = mu,
+      kappa = kappa,
+      nu = nu,
+      t_grid = t_grid,
+      distance_type = "geodesic",
+      method = method,
+      l_max = 80L,
+      quad_n = 250L,
+      tol = 1e-10
+    )
+    expect_equal(grid_fast, grid_naive, tolerance = 1e-12)
+
+    cvm_naive <- t(vapply(seq_len(nrow(x)), function(i) {
+      distance_profile_small_circle(
+        omega = x[i, ],
+        t_values = acos(dot_products[i, ]),
+        mu = mu,
+        kappa = kappa,
+        nu = nu,
+        distance_type = "geodesic",
+        method = method,
+        l_max = 80L,
+        quad_n = 250L,
+        tol = 1e-10
+      )
+    }, numeric(nrow(x))))
+    cvm_fast <- distance_profile_small_circle_cvm_grid(
+      X = x,
+      mu = mu,
+      kappa = kappa,
+      nu = nu,
+      method = method,
+      l_max = 80L,
+      quad_n = 250L,
+      tol = 1e-10
+    )
+    expect_equal(cvm_fast, cvm_naive, tolerance = 1e-12)
+  }
+})
+
 test_that("Small Circle sampler returns unit vectors and MLE respects weighted replication", {
   set.seed(20260531)
   mu <- jp_normalize_unit_vector(c(0.2, -0.3, 0.93), arg_name = "mu", min_length = 3L)
