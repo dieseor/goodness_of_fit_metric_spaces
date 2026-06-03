@@ -1,0 +1,15 @@
+List of 14
+ $ dataset_label           : chr "Short-period JP KS"
+ $ observed_method         : chr "standard_nelder_mead"
+ $ statistic               : chr "ks"
+ $ B                       : int 1000
+ $ M                       : int 1000
+ $ n                       : int 784
+ $ n_cores                 : int 12
+ $ seed                    : int 20260532
+ $ distance_type           : chr "geodesic"
+ $ ks_t_points             : int 250
+ $ observed_elapsed_seconds: num 0.14
+ $ total_elapsed_seconds   : num 86.6
+ $ bootstrap_failures      : int 0
+ $ completed_at            : POSIXct[1:1], format: "2026-05-30 02:36:09"

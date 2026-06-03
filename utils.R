@@ -4380,7 +4380,7 @@ small_circle_legendre_matrix <- function(x, l_max) {
 small_circle_legendre_coefficients <- function(kappa,
                                                nu,
                                                l_max = 150L,
-                                               quad_n = 400L,
+                                               quad_n = 1000L,
                                                tol = 1e-10) {
   params <- small_circle_validate_parameters(mu = c(0, 0, 1), kappa = kappa, nu = nu)
   l_max <- as.integer(l_max)
@@ -4518,7 +4518,7 @@ small_circle_distance_profile_integral <- function(omega,
                                                    kappa,
                                                    nu,
                                                    distance_type = c("geodesic", "chordal"),
-                                                   quad_n = 400L) {
+                                                    uso) {
   distance_type <- match.arg(distance_type)
   params <- small_circle_validate_parameters(mu = mu, kappa = kappa, nu = nu)
   omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
@@ -4669,7 +4669,7 @@ distance_profile_small_circle <- function(omega,
                                           distance_type = c("geodesic", "chordal"),
                                           method = c("legendre", "integral"),
                                           l_max = 150L,
-                                          quad_n = 400L,
+                                          quad_n = 1000L,
                                           tol = 1e-10,
                                           validate_against_integral = FALSE,
                                           validation_tol = 5e-6) {
@@ -4786,7 +4786,7 @@ distance_profile_small_circle_grid <- function(omega_grid,
                                                distance_type = c("geodesic", "chordal"),
                                                method = c("legendre", "integral"),
                                                l_max = 150L,
-                                               quad_n = 400L,
+                                               quad_n = 1000L,
                                                tol = 1e-10) {
   distance_type <- match.arg(distance_type)
   method <- match.arg(method)
@@ -4862,7 +4862,7 @@ distance_profile_small_circle_cvm_grid <- function(X,
                                                    nu,
                                                    method = c("legendre", "integral"),
                                                    l_max = 150L,
-                                                   quad_n = 400L,
+                                                   quad_n = 1000L,
                                                    tol = 1e-10) {
   method <- match.arg(method)
   X <- jp_normalize_unit_matrix(X, arg_name = "`X`", min_ncol = 3L)
@@ -5255,7 +5255,7 @@ small_circle_compare_profile_methods <- function(mu,
                                                  t_grid,
                                                  distance_type = c("geodesic", "chordal"),
                                                  l_max = 150L,
-                                                 quad_n = 400L,
+                                                 quad_n = 1000L,
                                                  tol = 1e-10) {
   distance_type <- match.arg(distance_type)
   comparison_rows <- lapply(seq_along(omega_list), function(i) {
@@ -5424,7 +5424,7 @@ rotational_legendre_matrix <- function(x, l_max) {
 
 rotational_legendre_coefficients <- function(density_h,
                                              Lmax,
-                                             quad_n = 400L,
+                                             quad_n = 1000L,
                                              tol = 1e-10) {
   if (!is.function(density_h)) {
     stop("`density_h` must be a function.")
@@ -5706,7 +5706,7 @@ rotational_distance_profile_integral <- function(omega,
                                                  mu,
                                                  density_gz,
                                                  distance_type = c("geodesic", "chordal"),
-                                                 quad_n = 400L) {
+                                                 quad_n = 1000L) {
   distance_type <- match.arg(distance_type)
   omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
   mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = length(omega))
@@ -5756,7 +5756,7 @@ rotational_sample_profile_matrix <- function(X,
   }, numeric(nrow(X))))
 }
 
-rotational_beta_mixture2_validate_parameters <- function(mu,
+beta_mixture2_validate_parameters <- function(mu,
                                                          weight1,
                                                          alpha1,
                                                          beta1,
@@ -5792,8 +5792,8 @@ rotational_beta_mixture2_validate_parameters <- function(mu,
   )
 }
 
-rotational_beta_mixture2_canonicalize_theta <- function(theta) {
-  params <- rotational_beta_mixture2_validate_parameters(
+beta_mixture2_canonicalize_theta <- function(theta) {
+  params <- beta_mixture2_validate_parameters(
     mu = theta$mu,
     weight1 = theta$weight1,
     alpha1 = theta$alpha1,
@@ -5819,20 +5819,20 @@ rotational_beta_mixture2_canonicalize_theta <- function(theta) {
   )
 }
 
-rotational_beta_mixture2_normalize_theta <- function(theta,
+beta_mixture2_normalize_theta <- function(theta,
                                                      ambient_dim = 3L) {
   if (!is.list(theta)) {
     stop("Beta-mixture theta must be a list.")
   }
 
-  params <- rotational_beta_mixture2_canonicalize_theta(theta)
+  params <- beta_mixture2_canonicalize_theta(theta)
   if (params$ambient_dim != ambient_dim) {
     stop("Beta-mixture theta has incompatible ambient dimension.")
   }
   params
 }
 
-rotational_beta_mixture2_density_y <- function(y,
+beta_mixture2_density_y <- function(y,
                                                weight1,
                                                alpha1,
                                                beta1,
@@ -5850,7 +5850,7 @@ rotational_beta_mixture2_density_y <- function(y,
   if (log) log_density else exp(log_density)
 }
 
-rotational_beta_mixture2_cdf_y <- function(y,
+beta_mixture2_cdf_y <- function(y,
                                            weight1,
                                            alpha1,
                                            beta1,
@@ -5870,7 +5870,7 @@ rotational_beta_mixture2_cdf_y <- function(y,
   pmin(pmax(out, 0), 1)
 }
 
-rotational_beta_mixture2_density_h <- function(z,
+beta_mixture2_density_h <- function(z,
                                                weight1,
                                                alpha1,
                                                beta1,
@@ -5885,7 +5885,7 @@ rotational_beta_mixture2_density_h <- function(z,
     return(out)
   }
 
-  out[valid] <- rotational_beta_mixture2_density_y(
+  out[valid] <- beta_mixture2_density_y(
     y = y[valid],
     weight1 = weight1,
     alpha1 = alpha1,
@@ -5898,13 +5898,13 @@ rotational_beta_mixture2_density_h <- function(z,
   out
 }
 
-rotational_beta_mixture2_density_gz <- function(z,
+beta_mixture2_density_gz <- function(z,
                                                 weight1,
                                                 alpha1,
                                                 beta1,
                                                 alpha2,
                                                 beta2) {
-  0.5 * rotational_beta_mixture2_density_h(
+  0.5 * beta_mixture2_density_h(
     z = z,
     weight1 = weight1,
     alpha1 = alpha1,
@@ -5914,7 +5914,7 @@ rotational_beta_mixture2_density_gz <- function(z,
   )
 }
 
-d_sph_rotational_beta_mixture2_s2 <- function(x,
+d_sph_beta_mixture2_s2 <- function(x,
                                               mu,
                                               weight1,
                                               alpha1,
@@ -5924,7 +5924,7 @@ d_sph_rotational_beta_mixture2_s2 <- function(x,
                                               log = FALSE,
                                               eps = 1e-12) {
   x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
-  params <- rotational_beta_mixture2_validate_parameters(
+  params <- beta_mixture2_validate_parameters(
     mu = mu,
     weight1 = weight1,
     alpha1 = alpha1,
@@ -5936,7 +5936,7 @@ d_sph_rotational_beta_mixture2_s2 <- function(x,
     (pmin(pmax(as.numeric(x %*% params$mu), -1), 1) + 1) / 2,
     eps = eps
   )
-  log_density <- -log(4 * pi) + rotational_beta_mixture2_density_y(
+  log_density <- -log(4 * pi) + beta_mixture2_density_y(
     y = y,
     weight1 = params$weight1,
     alpha1 = params$alpha1,
@@ -5949,7 +5949,7 @@ d_sph_rotational_beta_mixture2_s2 <- function(x,
   if (log) log_density else exp(log_density)
 }
 
-rotational_beta_mixture2_weighted_loglik_s2 <- function(mu,
+beta_mixture2_weighted_loglik_s2 <- function(mu,
                                                         weight1,
                                                         alpha1,
                                                         beta1,
@@ -5958,7 +5958,7 @@ rotational_beta_mixture2_weighted_loglik_s2 <- function(mu,
                                                         x,
                                                         prob_weights = NULL,
                                                         eps = 1e-12) {
-  params <- rotational_beta_mixture2_validate_parameters(
+  params <- beta_mixture2_validate_parameters(
     mu = mu,
     weight1 = weight1,
     alpha1 = alpha1,
@@ -5977,7 +5977,7 @@ rotational_beta_mixture2_weighted_loglik_s2 <- function(mu,
     (pmin(pmax(as.numeric(x %*% params$mu), -1), 1) + 1) / 2,
     eps = eps
   )
-  sum(prob_weights * rotational_beta_mixture2_density_y(
+  sum(prob_weights * beta_mixture2_density_y(
     y = y,
     weight1 = params$weight1,
     alpha1 = params$alpha1,
@@ -5989,7 +5989,7 @@ rotational_beta_mixture2_weighted_loglik_s2 <- function(mu,
   ))
 }
 
-rotational_beta_mixture2_moment_match <- function(y,
+beta_mixture2_moment_match <- function(y,
                                                   weights,
                                                   shape_floor = 1e-3,
                                                   shape_ceiling = 1e4) {
@@ -6007,7 +6007,7 @@ rotational_beta_mixture2_moment_match <- function(y,
   )
 }
 
-rotational_beta_mixture2_start_thetas_s2 <- function(x,
+beta_mixture2_start_thetas_s2 <- function(x,
                                                       weights = NULL,
                                                       control = list()) {
   x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
@@ -6017,15 +6017,15 @@ rotational_beta_mixture2_start_thetas_s2 <- function(x,
     jp_normalize_probability_weights(weights, nrow(x))
   }
 
-  warm_start <- control$rotational_beta_mixture2_start_theta %||%
+  warm_start <- control$beta_mixture2_start_theta %||%
     control$theta_start %||%
     control$jp_mle_start_theta %||%
     NULL
   out <- list()
   if (!is.null(warm_start)) {
-    warm_start <- rotational_beta_mixture2_normalize_theta(warm_start, ambient_dim = 3L)
+    warm_start <- beta_mixture2_normalize_theta(warm_start, ambient_dim = 3L)
     out[[length(out) + 1L]] <- warm_start
-    if (isTRUE(control$rotational_beta_mixture2_warm_start_only %||% FALSE)) {
+    if (isTRUE(control$beta_mixture2_warm_start_only %||% FALSE)) {
       return(list(warm_start))
     }
   }
@@ -6061,9 +6061,9 @@ rotational_beta_mixture2_start_thetas_s2 <- function(x,
         next
       }
 
-      comp1 <- rotational_beta_mixture2_moment_match(y[group1], w1 / sum(w1))
-      comp2 <- rotational_beta_mixture2_moment_match(y[!group1], w2 / sum(w2))
-      out[[length(out) + 1L]] <- rotational_beta_mixture2_canonicalize_theta(list(
+      comp1 <- beta_mixture2_moment_match(y[group1], w1 / sum(w1))
+      comp2 <- beta_mixture2_moment_match(y[!group1], w2 / sum(w2))
+      out[[length(out) + 1L]] <- beta_mixture2_canonicalize_theta(list(
         mu = mu0,
         weight1 = p1,
         alpha1 = comp1$alpha,
@@ -6075,7 +6075,7 @@ rotational_beta_mixture2_start_thetas_s2 <- function(x,
   }
 
   if (length(out) == 0L) {
-    out[[1L]] <- rotational_beta_mixture2_canonicalize_theta(list(
+    out[[1L]] <- beta_mixture2_canonicalize_theta(list(
       mu = c(0, 0, 1),
       weight1 = 0.5,
       alpha1 = 2,
@@ -6088,9 +6088,9 @@ rotational_beta_mixture2_start_thetas_s2 <- function(x,
   out
 }
 
-rotational_beta_mixture2_pack_par <- function(theta,
+beta_mixture2_pack_par <- function(theta,
                                               control = list()) {
-  theta <- rotational_beta_mixture2_normalize_theta(theta, ambient_dim = 3L)
+  theta <- beta_mixture2_normalize_theta(theta, ambient_dim = 3L)
   list(
     par = c(
       stats::qlogis(theta$weight1),
@@ -6104,15 +6104,15 @@ rotational_beta_mixture2_pack_par <- function(theta,
   )
 }
 
-rotational_beta_mixture2_unpack_par <- function(par,
+beta_mixture2_unpack_par <- function(par,
                                                 control = list()) {
-  shape_lower <- as.numeric(control$rotational_beta_mixture2_shape_lower %||% 0.05)
-  shape_upper <- as.numeric(control$rotational_beta_mixture2_shape_upper %||% 1e3)
-  weight_eps <- as.numeric(control$rotational_beta_mixture2_weight_eps %||% 0.01)
+  shape_lower <- as.numeric(control$beta_mixture2_shape_lower %||% 0.05)
+  shape_upper <- as.numeric(control$beta_mixture2_shape_upper %||% 1e3)
+  weight_eps <- as.numeric(control$beta_mixture2_weight_eps %||% 0.01)
 
   mu_raw <- par[6:8]
   mu_hat <- rotational_unit_vector_fallback(mu_raw)
-  rotational_beta_mixture2_canonicalize_theta(list(
+  beta_mixture2_canonicalize_theta(list(
     mu = mu_hat,
     weight1 = rotational_bounded_weight(par[[1L]], weight_eps = weight_eps),
     alpha1 = rotational_positive_parameter(par[[2L]], lower = shape_lower, upper = shape_upper),
@@ -6122,7 +6122,7 @@ rotational_beta_mixture2_unpack_par <- function(par,
   ))
 }
 
-rotational_beta_mixture2_mle_s2_weighted <- function(x,
+beta_mixture2_mle_s2_weighted <- function(x,
                                                       weights = NULL,
                                                       control = list()) {
   x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
@@ -6132,16 +6132,16 @@ rotational_beta_mixture2_mle_s2_weighted <- function(x,
     jp_normalize_probability_weights(weights, nrow(x))
   }
 
-  candidate_thetas <- rotational_beta_mixture2_start_thetas_s2(
+  candidate_thetas <- beta_mixture2_start_thetas_s2(
     x = x,
     weights = prob_weights,
     control = control
   )
-  candidate_thetas <- candidate_thetas[seq_len(min(length(candidate_thetas), as.integer(control$rotational_beta_mixture2_n_starts %||% 12L)))]
+  candidate_thetas <- candidate_thetas[seq_len(min(length(candidate_thetas), as.integer(control$beta_mixture2_n_starts %||% 12L)))]
 
   objective <- function(par) {
-    theta <- rotational_beta_mixture2_unpack_par(par, control = control)
-    value <- -rotational_beta_mixture2_weighted_loglik_s2(
+    theta <- beta_mixture2_unpack_par(par, control = control)
+    value <- -beta_mixture2_weighted_loglik_s2(
       mu = theta$mu,
       weight1 = theta$weight1,
       alpha1 = theta$alpha1,
@@ -6158,12 +6158,12 @@ rotational_beta_mixture2_mle_s2_weighted <- function(x,
     }
   }
 
-  optim_method <- control$rotational_beta_mixture2_optim_method %||% "BFGS"
-  optim_control <- control$rotational_beta_mixture2_optim_control %||% list(maxit = 400L, reltol = 1e-9)
+  optim_method <- control$beta_mixture2_optim_method %||% "BFGS"
+  optim_control <- control$beta_mixture2_optim_control %||% list(maxit = 400L, reltol = 1e-9)
 
   best <- NULL
   for (theta0 in candidate_thetas) {
-    par0 <- rotational_beta_mixture2_pack_par(theta0, control = control)$par
+    par0 <- beta_mixture2_pack_par(theta0, control = control)$par
     opt <- try(stats::optim(
       par = par0,
       fn = objective,
@@ -6174,17 +6174,17 @@ rotational_beta_mixture2_mle_s2_weighted <- function(x,
       next
     }
 
-    theta_hat <- rotational_beta_mixture2_unpack_par(opt$par, control = control)
+    theta_hat <- beta_mixture2_unpack_par(opt$par, control = control)
     if (is.null(best) || opt$value < best$opt$value) {
       best <- list(theta = theta_hat, opt = opt, start_theta = theta0)
     }
   }
 
   if ((is.null(best) || isTRUE(best$opt$convergence != 0L)) &&
-      isTRUE(control$rotational_beta_mixture2_warm_start_only %||% FALSE)) {
+      isTRUE(control$beta_mixture2_warm_start_only %||% FALSE)) {
     fallback_control <- control
-    fallback_control$rotational_beta_mixture2_warm_start_only <- FALSE
-    return(rotational_beta_mixture2_mle_s2_weighted(
+    fallback_control$beta_mixture2_warm_start_only <- FALSE
+    return(beta_mixture2_mle_s2_weighted(
       x = x,
       weights = prob_weights,
       control = fallback_control
@@ -6206,29 +6206,137 @@ rotational_beta_mixture2_mle_s2_weighted <- function(x,
   )
 }
 
-rotational_beta_mixture2_legendre_coefficients <- function(theta,
-                                                           l_max = 150L,
-                                                           quad_n = 400L,
-                                                           tol = 1e-10) {
-  theta <- rotational_beta_mixture2_normalize_theta(theta, ambient_dim = 3L)
-  rotational_legendre_coefficients(
-    density_h = function(z) {
-      rotational_beta_mixture2_density_h(
-        z = z,
-        weight1 = theta$weight1,
-        alpha1 = theta$alpha1,
-        beta1 = theta$beta1,
-        alpha2 = theta$alpha2,
-        beta2 = theta$beta2
-      )
-    },
-    Lmax = l_max,
-    quad_n = quad_n,
-    tol = tol
+beta_mixture2_gauss_jacobi <- function(n, alpha, beta) {
+  n <- as.integer(n)
+  alpha <- as.numeric(alpha)
+  beta <- as.numeric(beta)
+  if (length(n) != 1L || !is.finite(n) || n < 1L) {
+    stop("`n` must be a strictly positive integer.")
+  }
+  if (length(alpha) != 1L || !is.finite(alpha) || alpha <= -1 ||
+      length(beta) != 1L || !is.finite(beta) || beta <= -1) {
+    stop("Gauss-Jacobi parameters must be finite and greater than -1.")
+  }
+
+  ab <- alpha + beta
+  total_mass <- exp((ab + 1) * log(2) + lgamma(alpha + 1) +
+    lgamma(beta + 1) - lgamma(ab + 2))
+
+  diagonal <- numeric(n)
+  diagonal[[1L]] <- (beta - alpha) / (ab + 2)
+  if (n > 1L) {
+    k_diag <- seq_len(n - 1L)
+    diagonal[-1L] <- (beta^2 - alpha^2) /
+      ((2 * k_diag + ab) * (2 * k_diag + ab + 2))
+
+    k_off <- seq_len(n - 1L)
+    offdiag <- sqrt(
+      4 * k_off * (k_off + alpha) * (k_off + beta) * (k_off + ab) /
+        ((2 * k_off + ab)^2 * ((2 * k_off + ab)^2 - 1))
+    )
+  } else {
+    offdiag <- numeric(0L)
+  }
+
+  jacobi_matrix <- matrix(0, nrow = n, ncol = n)
+  diag(jacobi_matrix) <- diagonal
+  if (n > 1L) {
+    jacobi_matrix[cbind(seq_len(n - 1L), seq_len(n - 1L) + 1L)] <- offdiag
+    jacobi_matrix[cbind(seq_len(n - 1L) + 1L, seq_len(n - 1L))] <- offdiag
+  }
+
+  eig <- eigen(jacobi_matrix, symmetric = TRUE)
+  order_idx <- order(eig$values)
+  nodes <- eig$values[order_idx]
+  weights <- total_mass * eig$vectors[1L, order_idx]^2
+
+  list(nodes = nodes, weights = weights, total_mass = total_mass)
+}
+
+beta_mixture2_legendre_expectations_one_beta <- function(alpha, beta, l_max, quad_n) {
+  alpha <- as.numeric(alpha)
+  beta <- as.numeric(beta)
+  l_max <- as.integer(l_max)
+  quad_n <- as.integer(quad_n)
+  if (length(alpha) != 1L || !is.finite(alpha) || alpha <= 0 ||
+      length(beta) != 1L || !is.finite(beta) || beta <= 0) {
+    stop("Beta shape parameters must be finite and strictly positive.")
+  }
+  if (length(l_max) != 1L || !is.finite(l_max) || l_max < 0L) {
+    stop("`l_max` must be a nonnegative integer.")
+  }
+
+  n_nodes <- max(quad_n, as.integer(ceiling((l_max + 1L) / 2)))
+  jacobi <- beta_mixture2_gauss_jacobi(
+    n = n_nodes,
+    alpha = beta - 1,
+    beta = alpha - 1
+  )
+  normalized_weights <- jacobi$weights / jacobi$total_mass
+  legendre_matrix <- rotational_legendre_matrix(jacobi$nodes, l_max = l_max)
+  expectations <- as.numeric(crossprod(legendre_matrix, normalized_weights))
+
+  list(
+    expectations = expectations,
+    mass_error = abs(sum(normalized_weights) - 1),
+    n_nodes = n_nodes
   )
 }
 
-distance_profile_rotational_beta_mixture2 <- function(omega,
+beta_mixture2_legendre_coefficients <- function(theta,
+                                                l_max = 150L,
+                                                quad_n = 1000L,
+                                                tol = 1e-10) {
+  theta <- beta_mixture2_normalize_theta(theta, ambient_dim = 3L)
+  l_max <- as.integer(l_max)
+  quad_n <- as.integer(quad_n)
+  tol <- as.numeric(tol)
+
+  if (length(l_max) != 1L || !is.finite(l_max) || l_max < 0L) {
+    stop("`l_max` must be a nonnegative integer.")
+  }
+  if (length(quad_n) != 1L || !is.finite(quad_n) || quad_n < 1L) {
+    stop("`quad_n` must be a strictly positive integer.")
+  }
+
+  comp1 <- beta_mixture2_legendre_expectations_one_beta(
+    alpha = theta$alpha1,
+    beta = theta$beta1,
+    l_max = l_max,
+    quad_n = quad_n
+  )
+  comp2 <- beta_mixture2_legendre_expectations_one_beta(
+    alpha = theta$alpha2,
+    beta = theta$beta2,
+    l_max = l_max,
+    quad_n = quad_n
+  )
+
+  expectations <- theta$weight1 * comp1$expectations +
+    (1 - theta$weight1) * comp2$expectations
+  ell <- 0:l_max
+  coeffs <- (2 * ell + 1) * expectations
+  coeffs[[1L]] <- 1
+
+  if (any(!is.finite(coeffs))) {
+    stop("Beta-mixture Gauss-Jacobi Legendre coefficient computation produced nonfinite coefficients.")
+  }
+
+  a0_error <- abs(expectations[[1L]] - 1)
+  if (a0_error > tol) {
+    stop(sprintf("Beta-mixture Gauss-Jacobi coefficient check failed: |a0 - 1| = %.3e.", a0_error))
+  }
+
+  list(
+    coefficients = coeffs,
+    a0_error = a0_error,
+    mass_error = max(comp1$mass_error, comp2$mass_error),
+    method = "gauss_jacobi",
+    quad_n = max(comp1$n_nodes, comp2$n_nodes)
+  )
+}
+
+distance_profile_beta_mixture2 <- function(omega,
                                                       t_values,
                                                       mu,
                                                       weight1,
@@ -6239,13 +6347,13 @@ distance_profile_rotational_beta_mixture2 <- function(omega,
                                                       distance_type = c("geodesic", "chordal"),
                                                       method = c("legendre", "integral"),
                                                       l_max = 150L,
-                                                      quad_n = 400L,
+                                                      quad_n = 1000L,
                                                       tol = 1e-10,
                                                       validate_against_integral = FALSE,
                                                       validation_tol = 5e-6) {
   distance_type <- match.arg(distance_type)
   method <- match.arg(method)
-  theta <- rotational_beta_mixture2_validate_parameters(
+  theta <- beta_mixture2_validate_parameters(
     mu = mu,
     weight1 = weight1,
     alpha1 = alpha1,
@@ -6263,7 +6371,7 @@ distance_profile_rotational_beta_mixture2 <- function(omega,
       stop("When `omega` is a matrix, `t_values` must have length 1 or nrow(omega).")
     }
     return(vapply(seq_len(nrow(omega)), function(i) {
-      distance_profile_rotational_beta_mixture2(
+      distance_profile_beta_mixture2(
         omega = omega[i, ],
         t_values = t_values[i],
         mu = theta$mu,
@@ -6297,7 +6405,7 @@ distance_profile_rotational_beta_mixture2 <- function(omega,
   thresholds <- sphere_distance_to_dot_threshold(t_values[active], distance_type = distance_type)
   r_value <- sum(omega * theta$mu)
   if (abs(r_value - 1) <= 1e-12) {
-    out[active] <- 1 - rotational_beta_mixture2_cdf_y(
+    out[active] <- 1 - beta_mixture2_cdf_y(
       y = (thresholds + 1) / 2,
       weight1 = theta$weight1,
       alpha1 = theta$alpha1,
@@ -6308,7 +6416,7 @@ distance_profile_rotational_beta_mixture2 <- function(omega,
     return(small_circle_monotone_clip(t_values = t_values, values = out, upper_bound = upper_bound))
   }
   if (abs(r_value + 1) <= 1e-12) {
-    out[active] <- rotational_beta_mixture2_cdf_y(
+    out[active] <- beta_mixture2_cdf_y(
       y = (1 - thresholds) / 2,
       weight1 = theta$weight1,
       alpha1 = theta$alpha1,
@@ -6325,7 +6433,7 @@ distance_profile_rotational_beta_mixture2 <- function(omega,
       t_values = t_values,
       mu = theta$mu,
       density_gz = function(z) {
-        rotational_beta_mixture2_density_gz(
+        beta_mixture2_density_gz(
           z = z,
           weight1 = theta$weight1,
           alpha1 = theta$alpha1,
@@ -6339,7 +6447,7 @@ distance_profile_rotational_beta_mixture2 <- function(omega,
     ))
   }
 
-  coeffs <- rotational_beta_mixture2_legendre_coefficients(
+  coeffs <- beta_mixture2_legendre_coefficients(
     theta = theta,
     l_max = l_max,
     quad_n = quad_n,
@@ -6358,7 +6466,7 @@ distance_profile_rotational_beta_mixture2 <- function(omega,
       t_values = t_values,
       mu = theta$mu,
       density_gz = function(z) {
-        rotational_beta_mixture2_density_gz(
+        beta_mixture2_density_gz(
           z = z,
           weight1 = theta$weight1,
           alpha1 = theta$alpha1,
@@ -6383,7 +6491,7 @@ distance_profile_rotational_beta_mixture2 <- function(omega,
   out
 }
 
-distance_profile_rotational_beta_mixture2_grid <- function(omega_grid,
+distance_profile_beta_mixture2_grid <- function(omega_grid,
                                                            mu,
                                                            weight1,
                                                            alpha1,
@@ -6394,11 +6502,11 @@ distance_profile_rotational_beta_mixture2_grid <- function(omega_grid,
                                                            distance_type = c("geodesic", "chordal"),
                                                            method = c("legendre", "integral"),
                                                            l_max = 150L,
-                                                           quad_n = 400L,
+                                                           quad_n = 1000L,
                                                            tol = 1e-10) {
   distance_type <- match.arg(distance_type)
   method <- match.arg(method)
-  theta <- rotational_beta_mixture2_validate_parameters(
+  theta <- beta_mixture2_validate_parameters(
     mu = mu,
     weight1 = weight1,
     alpha1 = alpha1,
@@ -6410,7 +6518,7 @@ distance_profile_rotational_beta_mixture2_grid <- function(omega_grid,
   if (identical(method, "integral")) {
     omega_grid <- jp_normalize_unit_matrix(omega_grid, arg_name = "`omega_grid`", min_ncol = 3L)
     quad <- rotational_gauss_legendre(as.integer(quad_n))
-    weighted_density <- quad$weights * rotational_beta_mixture2_density_gz(
+    weighted_density <- quad$weights * beta_mixture2_density_gz(
       z = quad$nodes,
       weight1 = theta$weight1,
       alpha1 = theta$alpha1,
@@ -6426,40 +6534,17 @@ distance_profile_rotational_beta_mixture2_grid <- function(omega_grid,
       weighted_density = weighted_density,
       distance_type = distance_type
     )
-    thresholds <- sphere_distance_to_dot_threshold(t_grid, distance_type = distance_type)
-    r_values <- as.numeric(omega_grid %*% theta$mu)
-    pos_idx <- which(abs(r_values - 1) <= 1e-12)
-    if (length(pos_idx) > 0L) {
-      out[pos_idx, ] <- 1 - rotational_beta_mixture2_cdf_y(
-        y = (thresholds + 1) / 2,
-        weight1 = theta$weight1,
-        alpha1 = theta$alpha1,
-        beta1 = theta$beta1,
-        alpha2 = theta$alpha2,
-        beta2 = theta$beta2
-      )
-    }
-    neg_idx <- which(abs(r_values + 1) <= 1e-12)
-    if (length(neg_idx) > 0L) {
-      out[neg_idx, ] <- rotational_beta_mixture2_cdf_y(
-        y = (1 - thresholds) / 2,
-        weight1 = theta$weight1,
-        alpha1 = theta$alpha1,
-        beta1 = theta$beta1,
-        alpha2 = theta$alpha2,
-        beta2 = theta$beta2
-      )
-    }
     return(out)
   }
 
-  coeffs <- rotational_beta_mixture2_legendre_coefficients(
+  coeffs <- beta_mixture2_legendre_coefficients(
     theta = theta,
     l_max = l_max,
     quad_n = quad_n,
     tol = tol
   )$coefficients
-  rotational_profile_matrix_legendre(
+
+  out <- rotational_profile_matrix_legendre(
     t_grid = t_grid,
     omega_grid = omega_grid,
     mu = theta$mu,
@@ -6467,9 +6552,11 @@ distance_profile_rotational_beta_mixture2_grid <- function(omega_grid,
     Lmax = l_max,
     distance_type = distance_type
   )
+
+  out
 }
 
-distance_profile_rotational_beta_mixture2_cvm_grid <- function(X,
+distance_profile_beta_mixture2_cvm_grid <- function(X,
                                                                mu,
                                                                weight1,
                                                                alpha1,
@@ -6478,10 +6565,10 @@ distance_profile_rotational_beta_mixture2_cvm_grid <- function(X,
                                                                beta2,
                                                                method = c("legendre", "integral"),
                                                                l_max = 150L,
-                                                               quad_n = 400L,
+                                                               quad_n = 1000L,
                                                                tol = 1e-10) {
   method <- match.arg(method)
-  theta <- rotational_beta_mixture2_validate_parameters(
+  theta <- beta_mixture2_validate_parameters(
     mu = mu,
     weight1 = weight1,
     alpha1 = alpha1,
@@ -6495,7 +6582,7 @@ distance_profile_rotational_beta_mixture2_cvm_grid <- function(X,
 
   if (identical(method, "integral")) {
     quad <- rotational_gauss_legendre(as.integer(quad_n))
-    weighted_density <- quad$weights * rotational_beta_mixture2_density_gz(
+    weighted_density <- quad$weights * beta_mixture2_density_gz(
       z = quad$nodes,
       weight1 = theta$weight1,
       alpha1 = theta$alpha1,
@@ -6511,7 +6598,7 @@ distance_profile_rotational_beta_mixture2_cvm_grid <- function(X,
     ))
   }
 
-  coeffs <- rotational_beta_mixture2_legendre_coefficients(
+  coeffs <- beta_mixture2_legendre_coefficients(
     theta = theta,
     l_max = l_max,
     quad_n = quad_n,
@@ -6526,7 +6613,7 @@ distance_profile_rotational_beta_mixture2_cvm_grid <- function(X,
 
   pos_idx <- which(abs(r_values - 1) <= 1e-12)
   if (length(pos_idx) > 0L) {
-    out[pos_idx, ] <- 1 - rotational_beta_mixture2_cdf_y(
+    out[pos_idx, ] <- 1 - beta_mixture2_cdf_y(
       y = (dot_products[pos_idx, , drop = FALSE] + 1) / 2,
       weight1 = theta$weight1,
       alpha1 = theta$alpha1,
@@ -6538,7 +6625,7 @@ distance_profile_rotational_beta_mixture2_cvm_grid <- function(X,
 
   neg_idx <- which(abs(r_values + 1) <= 1e-12)
   if (length(neg_idx) > 0L) {
-    out[neg_idx, ] <- rotational_beta_mixture2_cdf_y(
+    out[neg_idx, ] <- beta_mixture2_cdf_y(
       y = (1 - dot_products[neg_idx, , drop = FALSE]) / 2,
       weight1 = theta$weight1,
       alpha1 = theta$alpha1,
@@ -6559,7 +6646,7 @@ distance_profile_rotational_beta_mixture2_cvm_grid <- function(X,
   out
 }
 
-r_sph_rotational_beta_mixture2 <- function(n,
+r_sph_beta_mixture2 <- function(n,
                                            mu,
                                            weight1,
                                            alpha1,
@@ -6572,7 +6659,7 @@ r_sph_rotational_beta_mixture2 <- function(n,
     stop("`n` must be a strictly positive integer.")
   }
 
-  theta <- rotational_beta_mixture2_validate_parameters(
+  theta <- beta_mixture2_validate_parameters(
     mu = mu,
     weight1 = weight1,
     alpha1 = alpha1,
@@ -6608,7 +6695,7 @@ r_sph_rotational_beta_mixture2 <- function(n,
   x
 }
 
-rotational_logitnormal_mixture2_validate_parameters <- function(mu,
+logitnormal_mixture2_validate_parameters <- function(mu,
                                                                 weight1,
                                                                 mean1,
                                                                 sd1,
@@ -6646,8 +6733,8 @@ rotational_logitnormal_mixture2_validate_parameters <- function(mu,
   )
 }
 
-rotational_logitnormal_mixture2_canonicalize_theta <- function(theta) {
-  params <- rotational_logitnormal_mixture2_validate_parameters(
+logitnormal_mixture2_canonicalize_theta <- function(theta) {
+  params <- logitnormal_mixture2_validate_parameters(
     mu = theta$mu,
     weight1 = theta$weight1,
     mean1 = theta$mean1,
@@ -6671,19 +6758,19 @@ rotational_logitnormal_mixture2_canonicalize_theta <- function(theta) {
   )
 }
 
-rotational_logitnormal_mixture2_normalize_theta <- function(theta,
+logitnormal_mixture2_normalize_theta <- function(theta,
                                                             ambient_dim = 3L) {
   if (!is.list(theta)) {
     stop("Logit-normal-mixture theta must be a list.")
   }
-  params <- rotational_logitnormal_mixture2_canonicalize_theta(theta)
+  params <- logitnormal_mixture2_canonicalize_theta(theta)
   if (params$ambient_dim != ambient_dim) {
     stop("Logit-normal-mixture theta has incompatible ambient dimension.")
   }
   params
 }
 
-rotational_logitnormal_mixture2_density_y <- function(y,
+logitnormal_mixture2_density_y <- function(y,
                                                       weight1,
                                                       mean1,
                                                       sd1,
@@ -6709,7 +6796,7 @@ rotational_logitnormal_mixture2_density_y <- function(y,
   out
 }
 
-rotational_logitnormal_mixture2_cdf_y <- function(y,
+logitnormal_mixture2_cdf_y <- function(y,
                                                   weight1,
                                                   mean1,
                                                   sd1,
@@ -6732,7 +6819,7 @@ rotational_logitnormal_mixture2_cdf_y <- function(y,
   pmin(pmax(out, 0), 1)
 }
 
-rotational_logitnormal_mixture2_density_h <- function(z,
+logitnormal_mixture2_density_h <- function(z,
                                                       weight1,
                                                       mean1,
                                                       sd1,
@@ -6747,7 +6834,7 @@ rotational_logitnormal_mixture2_density_h <- function(z,
     return(out)
   }
 
-  out[valid] <- rotational_logitnormal_mixture2_density_y(
+  out[valid] <- logitnormal_mixture2_density_y(
     y = y[valid],
     weight1 = weight1,
     mean1 = mean1,
@@ -6760,14 +6847,14 @@ rotational_logitnormal_mixture2_density_h <- function(z,
   out
 }
 
-rotational_logitnormal_mixture2_density_gz <- function(z,
+logitnormal_mixture2_density_gz <- function(z,
                                                        weight1,
                                                        mean1,
                                                        sd1,
                                                        mean2,
                                                        sd2,
                                                        eps = 1e-12) {
-  0.5 * rotational_logitnormal_mixture2_density_h(
+  0.5 * logitnormal_mixture2_density_h(
     z = z,
     weight1 = weight1,
     mean1 = mean1,
@@ -6778,7 +6865,7 @@ rotational_logitnormal_mixture2_density_gz <- function(z,
   )
 }
 
-d_sph_rotational_logitnormal_mixture2_s2 <- function(x,
+d_sph_logitnormal_mixture2_s2 <- function(x,
                                                      mu,
                                                      weight1,
                                                      mean1,
@@ -6788,7 +6875,7 @@ d_sph_rotational_logitnormal_mixture2_s2 <- function(x,
                                                      log = FALSE,
                                                      eps = 1e-12) {
   x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
-  params <- rotational_logitnormal_mixture2_validate_parameters(
+  params <- logitnormal_mixture2_validate_parameters(
     mu = mu,
     weight1 = weight1,
     mean1 = mean1,
@@ -6798,7 +6885,7 @@ d_sph_rotational_logitnormal_mixture2_s2 <- function(x,
   )
   z <- pmin(pmax(as.numeric(x %*% params$mu), -1 + eps, 1 - eps), 1 - eps)
   y <- (z + 1) / 2
-  log_density <- -log(4 * pi) + rotational_logitnormal_mixture2_density_y(
+  log_density <- -log(4 * pi) + logitnormal_mixture2_density_y(
     y = y,
     weight1 = params$weight1,
     mean1 = params$mean1,
@@ -6811,7 +6898,7 @@ d_sph_rotational_logitnormal_mixture2_s2 <- function(x,
   if (log) log_density else exp(log_density)
 }
 
-rotational_logitnormal_mixture2_weighted_loglik_s2 <- function(mu,
+logitnormal_mixture2_weighted_loglik_s2 <- function(mu,
                                                                weight1,
                                                                mean1,
                                                                sd1,
@@ -6820,7 +6907,7 @@ rotational_logitnormal_mixture2_weighted_loglik_s2 <- function(mu,
                                                                x,
                                                                prob_weights = NULL,
                                                                eps = 1e-12) {
-  params <- rotational_logitnormal_mixture2_validate_parameters(
+  params <- logitnormal_mixture2_validate_parameters(
     mu = mu,
     weight1 = weight1,
     mean1 = mean1,
@@ -6837,7 +6924,7 @@ rotational_logitnormal_mixture2_weighted_loglik_s2 <- function(mu,
 
   z <- pmin(pmax(as.numeric(x %*% params$mu), -1 + eps, 1 - eps), 1 - eps)
   y <- (z + 1) / 2
-  sum(prob_weights * rotational_logitnormal_mixture2_density_y(
+  sum(prob_weights * logitnormal_mixture2_density_y(
     y = y,
     weight1 = params$weight1,
     mean1 = params$mean1,
@@ -6849,7 +6936,7 @@ rotational_logitnormal_mixture2_weighted_loglik_s2 <- function(mu,
   ))
 }
 
-rotational_logitnormal_mixture2_start_thetas_s2 <- function(x,
+logitnormal_mixture2_start_thetas_s2 <- function(x,
                                                             weights = NULL,
                                                             control = list()) {
   x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
@@ -6859,15 +6946,15 @@ rotational_logitnormal_mixture2_start_thetas_s2 <- function(x,
     jp_normalize_probability_weights(weights, nrow(x))
   }
 
-  warm_start <- control$rotational_logitnormal_mixture2_start_theta %||%
+  warm_start <- control$logitnormal_mixture2_start_theta %||%
     control$theta_start %||%
     control$jp_mle_start_theta %||%
     NULL
   out <- list()
   if (!is.null(warm_start)) {
-    warm_start <- rotational_logitnormal_mixture2_normalize_theta(warm_start, ambient_dim = 3L)
+    warm_start <- logitnormal_mixture2_normalize_theta(warm_start, ambient_dim = 3L)
     out[[length(out) + 1L]] <- warm_start
-    if (isTRUE(control$rotational_logitnormal_mixture2_warm_start_only %||% FALSE)) {
+    if (isTRUE(control$logitnormal_mixture2_warm_start_only %||% FALSE)) {
       return(list(warm_start))
     }
   }
@@ -6908,7 +6995,7 @@ rotational_logitnormal_mixture2_start_thetas_s2 <- function(x,
       mean2 <- rotational_weighted_mean(x_logit[!group1], w2 / sum(w2))
       sd1 <- sqrt(max(rotational_weighted_variance(x_logit[group1], w1 / sum(w1), center = mean1), 0.05^2))
       sd2 <- sqrt(max(rotational_weighted_variance(x_logit[!group1], w2 / sum(w2), center = mean2), 0.05^2))
-      out[[length(out) + 1L]] <- rotational_logitnormal_mixture2_canonicalize_theta(list(
+      out[[length(out) + 1L]] <- logitnormal_mixture2_canonicalize_theta(list(
         mu = mu0,
         weight1 = p1,
         mean1 = mean1,
@@ -6920,7 +7007,7 @@ rotational_logitnormal_mixture2_start_thetas_s2 <- function(x,
   }
 
   if (length(out) == 0L) {
-    out[[1L]] <- rotational_logitnormal_mixture2_canonicalize_theta(list(
+    out[[1L]] <- logitnormal_mixture2_canonicalize_theta(list(
       mu = c(0, 0, 1),
       weight1 = 0.5,
       mean1 = -1,
@@ -6933,9 +7020,9 @@ rotational_logitnormal_mixture2_start_thetas_s2 <- function(x,
   out
 }
 
-rotational_logitnormal_mixture2_pack_par <- function(theta,
+logitnormal_mixture2_pack_par <- function(theta,
                                                      control = list()) {
-  theta <- rotational_logitnormal_mixture2_normalize_theta(theta, ambient_dim = 3L)
+  theta <- logitnormal_mixture2_normalize_theta(theta, ambient_dim = 3L)
   list(
     par = c(
       stats::qlogis(theta$weight1),
@@ -6949,14 +7036,14 @@ rotational_logitnormal_mixture2_pack_par <- function(theta,
   )
 }
 
-rotational_logitnormal_mixture2_unpack_par <- function(par,
+logitnormal_mixture2_unpack_par <- function(par,
                                                        control = list()) {
-  clip_means <- isTRUE(control$rotational_logitnormal_mixture2_clip_means %||% FALSE)
-  mean_lower <- as.numeric(control$rotational_logitnormal_mixture2_mean_lower %||% -8)
-  mean_upper <- as.numeric(control$rotational_logitnormal_mixture2_mean_upper %||% 8)
-  sd_lower <- as.numeric(control$rotational_logitnormal_mixture2_sd_lower %||% 0.05)
-  sd_upper <- as.numeric(control$rotational_logitnormal_mixture2_sd_upper %||% 5)
-  weight_eps <- as.numeric(control$rotational_logitnormal_mixture2_weight_eps %||% 0.01)
+  clip_means <- isTRUE(control$logitnormal_mixture2_clip_means %||% FALSE)
+  mean_lower <- as.numeric(control$logitnormal_mixture2_mean_lower %||% -8)
+  mean_upper <- as.numeric(control$logitnormal_mixture2_mean_upper %||% 8)
+  sd_lower <- as.numeric(control$logitnormal_mixture2_sd_lower %||% 0.05)
+  sd_upper <- as.numeric(control$logitnormal_mixture2_sd_upper %||% 5)
+  weight_eps <- as.numeric(control$logitnormal_mixture2_weight_eps %||% 0.01)
 
   mu_raw <- par[6:8]
   mu_hat <- rotational_unit_vector_fallback(mu_raw)
@@ -6966,7 +7053,7 @@ rotational_logitnormal_mixture2_unpack_par <- function(par,
     mean1_hat <- pmin(pmax(mean1_hat, mean_lower), mean_upper)
     mean2_hat <- pmin(pmax(mean2_hat, mean_lower), mean_upper)
   }
-  rotational_logitnormal_mixture2_canonicalize_theta(list(
+  logitnormal_mixture2_canonicalize_theta(list(
     mu = mu_hat,
     weight1 = rotational_bounded_weight(par[[1L]], weight_eps = weight_eps),
     mean1 = mean1_hat,
@@ -6976,7 +7063,7 @@ rotational_logitnormal_mixture2_unpack_par <- function(par,
   ))
 }
 
-rotational_logitnormal_mixture2_mle_s2_weighted <- function(x,
+logitnormal_mixture2_mle_s2_weighted <- function(x,
                                                             weights = NULL,
                                                             control = list()) {
   x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
@@ -6986,16 +7073,16 @@ rotational_logitnormal_mixture2_mle_s2_weighted <- function(x,
     jp_normalize_probability_weights(weights, nrow(x))
   }
 
-  candidate_thetas <- rotational_logitnormal_mixture2_start_thetas_s2(
+  candidate_thetas <- logitnormal_mixture2_start_thetas_s2(
     x = x,
     weights = prob_weights,
     control = control
   )
-  candidate_thetas <- candidate_thetas[seq_len(min(length(candidate_thetas), as.integer(control$rotational_logitnormal_mixture2_n_starts %||% 12L)))]
+  candidate_thetas <- candidate_thetas[seq_len(min(length(candidate_thetas), as.integer(control$logitnormal_mixture2_n_starts %||% 12L)))]
 
   objective <- function(par) {
-    theta <- rotational_logitnormal_mixture2_unpack_par(par, control = control)
-    value <- -rotational_logitnormal_mixture2_weighted_loglik_s2(
+    theta <- logitnormal_mixture2_unpack_par(par, control = control)
+    value <- -logitnormal_mixture2_weighted_loglik_s2(
       mu = theta$mu,
       weight1 = theta$weight1,
       mean1 = theta$mean1,
@@ -7004,7 +7091,7 @@ rotational_logitnormal_mixture2_mle_s2_weighted <- function(x,
       sd2 = theta$sd2,
       x = x,
       prob_weights = prob_weights,
-      eps = as.numeric(control$rotational_logitnormal_mixture2_eps %||% 1e-12)
+      eps = as.numeric(control$logitnormal_mixture2_eps %||% 1e-12)
     )
     if (!is.finite(value)) {
       .Machine$double.xmax / 100
@@ -7013,12 +7100,12 @@ rotational_logitnormal_mixture2_mle_s2_weighted <- function(x,
     }
   }
 
-  optim_method <- control$rotational_logitnormal_mixture2_optim_method %||% "BFGS"
-  optim_control <- control$rotational_logitnormal_mixture2_optim_control %||% list(maxit = 400L, reltol = 1e-9)
+  optim_method <- control$logitnormal_mixture2_optim_method %||% "BFGS"
+  optim_control <- control$logitnormal_mixture2_optim_control %||% list(maxit = 400L, reltol = 1e-9)
 
   best <- NULL
   for (theta0 in candidate_thetas) {
-    par0 <- rotational_logitnormal_mixture2_pack_par(theta0, control = control)$par
+    par0 <- logitnormal_mixture2_pack_par(theta0, control = control)$par
     opt <- try(stats::optim(
       par = par0,
       fn = objective,
@@ -7029,17 +7116,17 @@ rotational_logitnormal_mixture2_mle_s2_weighted <- function(x,
       next
     }
 
-    theta_hat <- rotational_logitnormal_mixture2_unpack_par(opt$par, control = control)
+    theta_hat <- logitnormal_mixture2_unpack_par(opt$par, control = control)
     if (is.null(best) || opt$value < best$opt$value) {
       best <- list(theta = theta_hat, opt = opt, start_theta = theta0)
     }
   }
 
   if ((is.null(best) || isTRUE(best$opt$convergence != 0L)) &&
-      isTRUE(control$rotational_logitnormal_mixture2_warm_start_only %||% FALSE)) {
+      isTRUE(control$logitnormal_mixture2_warm_start_only %||% FALSE)) {
     fallback_control <- control
-    fallback_control$rotational_logitnormal_mixture2_warm_start_only <- FALSE
-    return(rotational_logitnormal_mixture2_mle_s2_weighted(
+    fallback_control$logitnormal_mixture2_warm_start_only <- FALSE
+    return(logitnormal_mixture2_mle_s2_weighted(
       x = x,
       weights = prob_weights,
       control = fallback_control
@@ -7061,12 +7148,12 @@ rotational_logitnormal_mixture2_mle_s2_weighted <- function(x,
   )
 }
 
-rotational_logitnormal_mixture2_legendre_coefficients <- function(theta,
+logitnormal_mixture2_legendre_coefficients <- function(theta,
                                                                   l_max = 150L,
-                                                                  quad_n = 400L,
+                                                                  quad_n = 1000L,
                                                                   tol = 1e-10,
                                                                   eps = 1e-12) {
-  theta <- rotational_logitnormal_mixture2_normalize_theta(theta, ambient_dim = 3L)
+  theta <- logitnormal_mixture2_normalize_theta(theta, ambient_dim = 3L)
   l_max <- as.integer(l_max)
   quad_n <- as.integer(quad_n)
   tol <- as.numeric(tol)
@@ -7101,7 +7188,7 @@ rotational_logitnormal_mixture2_legendre_coefficients <- function(theta,
   )
 }
 
-distance_profile_rotational_logitnormal_mixture2 <- function(omega,
+distance_profile_logitnormal_mixture2 <- function(omega,
                                                              t_values,
                                                              mu,
                                                              weight1,
@@ -7112,14 +7199,14 @@ distance_profile_rotational_logitnormal_mixture2 <- function(omega,
                                                              distance_type = c("geodesic", "chordal"),
                                                              method = c("legendre", "integral"),
                                                              l_max = 150L,
-                                                             quad_n = 400L,
+                                                             quad_n = 1000L,
                                                              tol = 1e-10,
                                                              eps = 1e-12,
                                                              validate_against_integral = FALSE,
                                                              validation_tol = 5e-6) {
   distance_type <- match.arg(distance_type)
   method <- match.arg(method)
-  theta <- rotational_logitnormal_mixture2_validate_parameters(
+  theta <- logitnormal_mixture2_validate_parameters(
     mu = mu,
     weight1 = weight1,
     mean1 = mean1,
@@ -7137,7 +7224,7 @@ distance_profile_rotational_logitnormal_mixture2 <- function(omega,
       stop("When `omega` is a matrix, `t_values` must have length 1 or nrow(omega).")
     }
     return(vapply(seq_len(nrow(omega)), function(i) {
-      distance_profile_rotational_logitnormal_mixture2(
+      distance_profile_logitnormal_mixture2(
         omega = omega[i, ],
         t_values = t_values[i],
         mu = theta$mu,
@@ -7172,7 +7259,7 @@ distance_profile_rotational_logitnormal_mixture2 <- function(omega,
   thresholds <- sphere_distance_to_dot_threshold(t_values[active], distance_type = distance_type)
   r_value <- sum(omega * theta$mu)
   if (abs(r_value - 1) <= 1e-12) {
-    out[active] <- 1 - rotational_logitnormal_mixture2_cdf_y(
+    out[active] <- 1 - logitnormal_mixture2_cdf_y(
       y = (thresholds + 1) / 2,
       weight1 = theta$weight1,
       mean1 = theta$mean1,
@@ -7184,7 +7271,7 @@ distance_profile_rotational_logitnormal_mixture2 <- function(omega,
     return(small_circle_monotone_clip(t_values = t_values, values = out, upper_bound = upper_bound))
   }
   if (abs(r_value + 1) <= 1e-12) {
-    out[active] <- rotational_logitnormal_mixture2_cdf_y(
+    out[active] <- logitnormal_mixture2_cdf_y(
       y = (1 - thresholds) / 2,
       weight1 = theta$weight1,
       mean1 = theta$mean1,
@@ -7202,7 +7289,7 @@ distance_profile_rotational_logitnormal_mixture2 <- function(omega,
       t_values = t_values,
       mu = theta$mu,
       density_gz = function(z) {
-        rotational_logitnormal_mixture2_density_gz(
+        logitnormal_mixture2_density_gz(
           z = z,
           weight1 = theta$weight1,
           mean1 = theta$mean1,
@@ -7217,7 +7304,7 @@ distance_profile_rotational_logitnormal_mixture2 <- function(omega,
     ))
   }
 
-  coeffs <- rotational_logitnormal_mixture2_legendre_coefficients(
+  coeffs <- logitnormal_mixture2_legendre_coefficients(
     theta = theta,
     l_max = l_max,
     quad_n = quad_n,
@@ -7237,7 +7324,7 @@ distance_profile_rotational_logitnormal_mixture2 <- function(omega,
       t_values = t_values,
       mu = theta$mu,
       density_gz = function(z) {
-        rotational_logitnormal_mixture2_density_gz(
+        logitnormal_mixture2_density_gz(
           z = z,
           weight1 = theta$weight1,
           mean1 = theta$mean1,
@@ -7263,7 +7350,7 @@ distance_profile_rotational_logitnormal_mixture2 <- function(omega,
   out
 }
 
-distance_profile_rotational_logitnormal_mixture2_grid <- function(omega_grid,
+distance_profile_logitnormal_mixture2_grid <- function(omega_grid,
                                                                   mu,
                                                                   weight1,
                                                                   mean1,
@@ -7274,12 +7361,12 @@ distance_profile_rotational_logitnormal_mixture2_grid <- function(omega_grid,
                                                                   distance_type = c("geodesic", "chordal"),
                                                                   method = c("legendre", "integral"),
                                                                   l_max = 150L,
-                                                                  quad_n = 400L,
+                                                                  quad_n = 1000L,
                                                                   tol = 1e-10,
                                                                   eps = 1e-12) {
   distance_type <- match.arg(distance_type)
   method <- match.arg(method)
-  theta <- rotational_logitnormal_mixture2_validate_parameters(
+  theta <- logitnormal_mixture2_validate_parameters(
     mu = mu,
     weight1 = weight1,
     mean1 = mean1,
@@ -7291,7 +7378,7 @@ distance_profile_rotational_logitnormal_mixture2_grid <- function(omega_grid,
   if (identical(method, "integral")) {
     omega_grid <- jp_normalize_unit_matrix(omega_grid, arg_name = "`omega_grid`", min_ncol = 3L)
     quad <- rotational_gauss_legendre(as.integer(quad_n))
-    weighted_density <- quad$weights * rotational_logitnormal_mixture2_density_gz(
+    weighted_density <- quad$weights * logitnormal_mixture2_density_gz(
       z = quad$nodes,
       weight1 = theta$weight1,
       mean1 = theta$mean1,
@@ -7312,7 +7399,7 @@ distance_profile_rotational_logitnormal_mixture2_grid <- function(omega_grid,
     r_values <- as.numeric(omega_grid %*% theta$mu)
     pos_idx <- which(abs(r_values - 1) <= 1e-12)
     if (length(pos_idx) > 0L) {
-      out[pos_idx, ] <- 1 - rotational_logitnormal_mixture2_cdf_y(
+      out[pos_idx, ] <- 1 - logitnormal_mixture2_cdf_y(
         y = (thresholds + 1) / 2,
         weight1 = theta$weight1,
         mean1 = theta$mean1,
@@ -7324,7 +7411,7 @@ distance_profile_rotational_logitnormal_mixture2_grid <- function(omega_grid,
     }
     neg_idx <- which(abs(r_values + 1) <= 1e-12)
     if (length(neg_idx) > 0L) {
-      out[neg_idx, ] <- rotational_logitnormal_mixture2_cdf_y(
+      out[neg_idx, ] <- logitnormal_mixture2_cdf_y(
         y = (1 - thresholds) / 2,
         weight1 = theta$weight1,
         mean1 = theta$mean1,
@@ -7337,7 +7424,7 @@ distance_profile_rotational_logitnormal_mixture2_grid <- function(omega_grid,
     return(out)
   }
 
-  coeffs <- rotational_logitnormal_mixture2_legendre_coefficients(
+  coeffs <- logitnormal_mixture2_legendre_coefficients(
     theta = theta,
     l_max = l_max,
     quad_n = quad_n,
@@ -7354,7 +7441,7 @@ distance_profile_rotational_logitnormal_mixture2_grid <- function(omega_grid,
   )
 }
 
-distance_profile_rotational_logitnormal_mixture2_cvm_grid <- function(X,
+distance_profile_logitnormal_mixture2_cvm_grid <- function(X,
                                                                       mu,
                                                                       weight1,
                                                                       mean1,
@@ -7363,11 +7450,11 @@ distance_profile_rotational_logitnormal_mixture2_cvm_grid <- function(X,
                                                                       sd2,
                                                                       method = c("legendre", "integral"),
                                                                       l_max = 150L,
-                                                                      quad_n = 400L,
+                                                                      quad_n = 1000L,
                                                                       tol = 1e-10,
                                                                       eps = 1e-12) {
   method <- match.arg(method)
-  theta <- rotational_logitnormal_mixture2_validate_parameters(
+  theta <- logitnormal_mixture2_validate_parameters(
     mu = mu,
     weight1 = weight1,
     mean1 = mean1,
@@ -7381,7 +7468,7 @@ distance_profile_rotational_logitnormal_mixture2_cvm_grid <- function(X,
 
   if (identical(method, "integral")) {
     quad <- rotational_gauss_legendre(as.integer(quad_n))
-    weighted_density <- quad$weights * rotational_logitnormal_mixture2_density_gz(
+    weighted_density <- quad$weights * logitnormal_mixture2_density_gz(
       z = quad$nodes,
       weight1 = theta$weight1,
       mean1 = theta$mean1,
@@ -7398,7 +7485,7 @@ distance_profile_rotational_logitnormal_mixture2_cvm_grid <- function(X,
     ))
   }
 
-  coeffs <- rotational_logitnormal_mixture2_legendre_coefficients(
+  coeffs <- logitnormal_mixture2_legendre_coefficients(
     theta = theta,
     l_max = l_max,
     quad_n = quad_n,
@@ -7414,7 +7501,7 @@ distance_profile_rotational_logitnormal_mixture2_cvm_grid <- function(X,
 
   pos_idx <- which(abs(r_values - 1) <= 1e-12)
   if (length(pos_idx) > 0L) {
-    out[pos_idx, ] <- 1 - rotational_logitnormal_mixture2_cdf_y(
+    out[pos_idx, ] <- 1 - logitnormal_mixture2_cdf_y(
       y = (dot_products[pos_idx, , drop = FALSE] + 1) / 2,
       weight1 = theta$weight1,
       mean1 = theta$mean1,
@@ -7427,7 +7514,7 @@ distance_profile_rotational_logitnormal_mixture2_cvm_grid <- function(X,
 
   neg_idx <- which(abs(r_values + 1) <= 1e-12)
   if (length(neg_idx) > 0L) {
-    out[neg_idx, ] <- rotational_logitnormal_mixture2_cdf_y(
+    out[neg_idx, ] <- logitnormal_mixture2_cdf_y(
       y = (1 - dot_products[neg_idx, , drop = FALSE]) / 2,
       weight1 = theta$weight1,
       mean1 = theta$mean1,
@@ -7449,7 +7536,7 @@ distance_profile_rotational_logitnormal_mixture2_cvm_grid <- function(X,
   out
 }
 
-r_sph_rotational_logitnormal_mixture2 <- function(n,
+r_sph_logitnormal_mixture2 <- function(n,
                                                   mu,
                                                   weight1,
                                                   mean1,
@@ -7462,7 +7549,7 @@ r_sph_rotational_logitnormal_mixture2 <- function(n,
     stop("`n` must be a strictly positive integer.")
   }
 
-  theta <- rotational_logitnormal_mixture2_validate_parameters(
+  theta <- logitnormal_mixture2_validate_parameters(
     mu = mu,
     weight1 = weight1,
     mean1 = mean1,

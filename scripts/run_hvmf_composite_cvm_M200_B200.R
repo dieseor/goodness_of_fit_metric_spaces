@@ -1,6 +1,6 @@
 source("bootstrap/calibration_study.R")
 
-output_dir <- file.path("output", "bootstrap_calibration", "hvmf_composite_cvm_full")
+output_dir <- file.path("output", "calibration", "bootstrap", "hvmf_composite_cvm_full")
 
 res <- run_full_hvmf_composite_cvm_calibration_study(
   output_dir = output_dir,

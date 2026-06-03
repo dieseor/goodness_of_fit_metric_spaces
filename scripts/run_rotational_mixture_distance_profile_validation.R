@@ -24,7 +24,7 @@ parse_named_args_rotmix_dp <- function(args) {
 if (sys.nframe() == 0L) {
   args <- parse_named_args_rotmix_dp(commandArgs(trailingOnly = TRUE))
 
-  model_name <- if (!is.null(args$model_name)) args$model_name else "rotational_beta_mixture2"
+  model_name <- if (!is.null(args$model_name)) args$model_name else "beta_mixture2"
   distance_type <- if (!is.null(args$distance_type)) args$distance_type else "geodesic"
   sample_sizes <- if (!is.null(args$sample_sizes)) {
     as.integer(strsplit(args$sample_sizes, ",", fixed = TRUE)[[1L]])

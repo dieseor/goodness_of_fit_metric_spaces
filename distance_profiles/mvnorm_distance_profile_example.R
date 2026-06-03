@@ -132,7 +132,7 @@ run_mvnorm_distance_profile_analysis <- function() {
     n_simulations = 10,
     t_max = 18,  # Reasonable range for this example
     save_plots = TRUE,
-    output_dir = "output/mvnorm",
+    output_dir = "output/distance_profiles/normal_multivariate",
     file_prefix = "mvnorm_dp"
   )
   

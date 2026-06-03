@@ -148,10 +148,10 @@ rotmix_consolidate_sequential_outputs <- function(run_rows,
 
 default_rotational_mixture_selected_scenarios <- function() {
   list(
-    default_rotational_beta_mixture2_simple_calibration_scenarios()[[1L]],
-    default_rotational_logitnormal_mixture2_simple_calibration_scenarios()[[1L]],
-    default_rotational_beta_mixture2_composite_calibration_scenarios()[[1L]],
-    default_rotational_logitnormal_mixture2_composite_calibration_scenarios()[[1L]]
+    default_beta_mixture2_simple_calibration_scenarios()[[1L]],
+    default_logitnormal_mixture2_simple_calibration_scenarios()[[1L]],
+    default_beta_mixture2_composite_calibration_scenarios()[[1L]],
+    default_logitnormal_mixture2_composite_calibration_scenarios()[[1L]]
   )
 }
 

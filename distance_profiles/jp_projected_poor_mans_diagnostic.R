@@ -389,7 +389,7 @@ plot_jp_projected_diagnostic <- function(z,
 
 run_jp_projected_poor_mans_diagnostic <- function(data,
                                                   psi_grid = c(-1, -0.5, -0.25, 0, 0.25, 0.5, 1),
-                                                  output_dir = file.path("output", "jp_projected_poor_mans_diagnostic"),
+                                                  output_dir = file.path("output", "distance_profiles", "jp", "projected_poor_mans"),
                                                   sample_label = "sample",
                                                   resultant_tol = 1e-8,
                                                   fallback = c(0, 0, 1),
@@ -564,7 +564,7 @@ run_jp_projected_poor_mans_diagnostic <- function(data,
 run_jp_projected_poor_mans_diagnostic_h0 <- function(H0,
                                                      n_values,
                                                      psi_grid = c(-1, -0.5, -0.25, 0, 0.25, 0.5, 1),
-                                                     output_dir = file.path("output", "jp_projected_poor_mans_diagnostic_h0"),
+                                                     output_dir = file.path("output", "distance_profiles", "jp", "projected_poor_mans", "h0"),
                                                      n_cores = 1L,
                                                      n_cores_inner = 1L,
                                                      seed = NULL,
@@ -598,11 +598,10 @@ run_jp_projected_poor_mans_diagnostic_h0 <- function(H0,
   results <- vector("list", length(n_values))
   result_list <- jp_parallel_lapply(n_values, function(n_i) {
     sample_i <- H0(n_i)
-    sample_dir <- file.path(output_dir, paste0("n_", n_i))
     run_jp_projected_poor_mans_diagnostic(
       data = sample_i,
       psi_grid = psi_grid,
-      output_dir = sample_dir,
+      output_dir = output_dir,
       sample_label = paste0("n_", n_i),
       n_cores = n_cores_inner,
       ...

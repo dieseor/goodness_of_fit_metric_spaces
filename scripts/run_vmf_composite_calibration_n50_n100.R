@@ -94,7 +94,7 @@ if (sys.nframe() == 0L) {
   output_root <- if (!is.null(args$output_root)) {
     args$output_root
   } else {
-    file.path("output", "bootstrap_calibration", "vmf_composite_M1000_B1000_n50_100")
+    file.path("output", "calibration", "bootstrap", "vmf_composite_M1000_B1000_n50_100")
   }
 
   n_values <- if (!is.null(args$n_values)) {

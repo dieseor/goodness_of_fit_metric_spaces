@@ -44,12 +44,12 @@ compute_rotmix_distances <- function(omega, data, distance_type = c("geodesic", 
   apply(data, 1, function(x) sphere_distance(omega, x, distance_type = distance_type))
 }
 
-rotmix_default_theta <- function(model_name = c("rotational_beta_mixture2", "rotational_logitnormal_mixture2"),
+rotmix_default_theta <- function(model_name = c("beta_mixture2", "logitnormal_mixture2"),
                                  mu = c(0, 0, 1)) {
   model_name <- match.arg(model_name)
   mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
 
-  if (identical(model_name, "rotational_beta_mixture2")) {
+  if (identical(model_name, "beta_mixture2")) {
     return(list(
       mu = mu,
       weight1 = 0.4,
@@ -71,7 +71,7 @@ rotmix_default_theta <- function(model_name = c("rotational_beta_mixture2", "rot
 }
 
 rotmix_model_tag <- function(model_name, theta) {
-  if (identical(model_name, "rotational_beta_mixture2")) {
+  if (identical(model_name, "beta_mixture2")) {
     return(sprintf(
       "w%s_a1_%s_b1_%s_a2_%s_b2_%s",
       format_rotmix_value_tag(theta$weight1),
@@ -93,9 +93,9 @@ rotmix_model_tag <- function(model_name, theta) {
 }
 
 rotmix_sample_generator <- function(model_name, theta) {
-  if (identical(model_name, "rotational_beta_mixture2")) {
+  if (identical(model_name, "beta_mixture2")) {
     return(function(n) {
-      r_sph_rotational_beta_mixture2(
+      r_sph_beta_mixture2(
         n = n,
         mu = theta$mu,
         weight1 = theta$weight1,
@@ -108,7 +108,7 @@ rotmix_sample_generator <- function(model_name, theta) {
   }
 
   function(n) {
-    r_sph_rotational_logitnormal_mixture2(
+    r_sph_logitnormal_mixture2(
       n = n,
       mu = theta$mu,
       weight1 = theta$weight1,
@@ -123,9 +123,9 @@ rotmix_sample_generator <- function(model_name, theta) {
 rotmix_theoretical_profile <- function(model_name, theta, distance_type = c("geodesic", "chordal")) {
   distance_type <- match.arg(distance_type)
 
-  if (identical(model_name, "rotational_beta_mixture2")) {
+  if (identical(model_name, "beta_mixture2")) {
     return(function(omega, t_values) {
-      distance_profile_rotational_beta_mixture2(
+      distance_profile_beta_mixture2(
         omega = omega,
         t_values = t_values,
         mu = theta$mu,
@@ -141,7 +141,7 @@ rotmix_theoretical_profile <- function(model_name, theta, distance_type = c("geo
   }
 
   function(omega, t_values) {
-    distance_profile_rotational_logitnormal_mixture2(
+    distance_profile_logitnormal_mixture2(
       omega = omega,
       t_values = t_values,
       mu = theta$mu,
@@ -194,7 +194,7 @@ rotmix_distance_profile_validation_summary <- function(sample,
   do.call(rbind, summary_rows)
 }
 
-run_rotational_mixture_distance_profile_analysis <- function(model_name = c("rotational_beta_mixture2", "rotational_logitnormal_mixture2"),
+run_rotational_mixture_distance_profile_analysis <- function(model_name = c("beta_mixture2", "logitnormal_mixture2"),
                                                              theta = NULL,
                                                              distance_type = c("geodesic", "chordal"),
                                                              output_dir = NULL,
@@ -273,7 +273,7 @@ run_rotational_mixture_distance_profile_suite <- function(distance_types = c("ge
                                                           validation_n = 5000L,
                                                           n_points = 200L,
                                                           save_plots = TRUE) {
-  models <- c("rotational_beta_mixture2", "rotational_logitnormal_mixture2")
+  models <- c("beta_mixture2", "logitnormal_mixture2")
   results <- list()
   counter <- 1L
 

@@ -46,7 +46,7 @@ main <- function() {
     args = c(
       "scripts/run_comets_distance_profile_spherical_cauchy_benchmark.R",
       "--dataset=short",
-      "--output_root=output/comets_distance_profile_spherical_cauchy/queued_short_ks_benchmark",
+      "--output_root=output/real_data/comets/spherical_cauchy/queued_short_ks_benchmark",
       "--statistic=ks",
       "--n_cores=12",
       "--B_values=10,30,50,100,200,500,1000"
@@ -60,7 +60,7 @@ main <- function() {
     command = "Rscript",
     args = c(
       "scripts/run_comets_distance_profile_jp_long_benchmark.R",
-      "--output_root=output/comets_distance_profile_jp/queued_long_ks_benchmark",
+      "--output_root=output/real_data/comets/jp/queued_long_ks_benchmark",
       "--statistic=ks",
       "--n_cores=12",
       "--B_values=10,30,50,100,200,500,1000"
@@ -75,7 +75,7 @@ main <- function() {
     args = c(
       "scripts/run_comets_distance_profile_spherical_cauchy_benchmark.R",
       "--dataset=long",
-      "--output_root=output/comets_distance_profile_spherical_cauchy/queued_long_ks_benchmark",
+      "--output_root=output/real_data/comets/spherical_cauchy/queued_long_ks_benchmark",
       "--statistic=ks",
       "--n_cores=12",
       "--B_values=10,30,50,100,200,500,1000"
@@ -89,7 +89,7 @@ main <- function() {
     command = "Rscript",
     args = c(
       "scripts/run_vmf_composite_calibration_n50_n100.R",
-      "--output_root=output/bootstrap_calibration/vmf_composite_M1000_B1000_n50_100_queue",
+      "--output_root=output/calibration/bootstrap/vmf_composite_M1000_B1000_n50_100_queue",
       "--n_values=50,100",
       "--M_outer=1000",
       "--B=1000",

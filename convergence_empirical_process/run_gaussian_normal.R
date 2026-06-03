@@ -66,7 +66,7 @@ DENSITY_ADJUST <- 1.5
 
 run_simple_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, omega_grid = NULL, t_grid = NULL) {
   if (is.null(output_dir)) {
-    output_dir <- "output/gaussian_process_normal"
+    output_dir <- "output/convergence/gaussian_process/normal"
   }
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   if (is.null(scenarios)) {
@@ -120,7 +120,7 @@ run_simple_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULAT
 
 run_composite_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, unknown_param = c('mu','sigma','both'), omega_grid = NULL, t_grid = NULL) {
   if (is.null(output_dir)) {
-    output_dir <- "output/gaussian_process_normal"
+    output_dir <- "output/convergence/gaussian_process/normal"
   }
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   if (is.null(scenarios)) scenarios <- list(
@@ -232,7 +232,7 @@ run_simple_variants <- function(mu_values = c(0, -1, 1), sigma_values = c(1, 2, 
     }
   }
   # Write summary CSV if output_dir provided
-  if (is.null(output_dir)) output_dir <- "output/gaussian_process_normal"
+  if (is.null(output_dir)) output_dir <- "output/convergence/gaussian_process/normal"
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   if (length(summary_rows) > 0) {
     summary_df <- do.call(rbind, lapply(summary_rows, as.data.frame, stringsAsFactors = FALSE))
@@ -293,7 +293,7 @@ run_composite_variants <- function(mu_values = c(0, -1, 1), sigma_values = c(1, 
     }
   }
   # Write summary CSV if output_dir provided
-  if (is.null(output_dir)) output_dir <- "output/gaussian_process_normal"
+  if (is.null(output_dir)) output_dir <- "output/convergence/gaussian_process/normal"
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   if (length(summary_rows) > 0) {
   summary_df <- do.call(rbind, lapply(summary_rows, as.data.frame, stringsAsFactors = FALSE))
