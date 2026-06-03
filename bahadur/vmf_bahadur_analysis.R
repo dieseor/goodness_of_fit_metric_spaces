@@ -157,7 +157,7 @@ build_bahadur_loglog_limits <- function(pointwise_summary, theoretical_data, y_m
 run_bahadur_analysis <- function(mu_true, kappa_true = 1, n_trajectories = 500,
                                  n_cores = 10, min_n = 50, max_n = 100000,
                                  plot_suffix = "", seed = 123,
-                                 output_dir = "output/bahadur_vmf",
+                                 output_dir = "output/bahadur/vmf",
                                  force_recompute = FALSE) {
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   cache_dir <- file.path(output_dir, "cache")
@@ -441,7 +441,7 @@ build_bahadur_single_loglog_plot <- function(combined_results, mu_index, y_max =
 }
 
 #' Generate all requested plot variants from precomputed combined results
-generate_bahadur_plot_variants <- function(combined_results, output_dir = "output/bahadur_vmf") {
+generate_bahadur_plot_variants <- function(combined_results, output_dir = "output/bahadur/vmf") {
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   combined_results <- enrich_bahadur_results_metadata(combined_results)
 
@@ -495,7 +495,7 @@ generate_bahadur_plot_variants <- function(combined_results, output_dir = "outpu
 }
 
 #' Regenerate plot variants from cached combined results (fast path, no simulation)
-regenerate_bahadur_plots_from_cache <- function(output_dir = "output/bahadur_vmf") {
+regenerate_bahadur_plots_from_cache <- function(output_dir = "output/bahadur/vmf") {
   combined_cache <- file.path(output_dir, "cache", "vmf_bahadur_comparison_results.rds")
   if (!file.exists(combined_cache)) {
     stop(sprintf("Cache file not found: %s", combined_cache))
@@ -516,7 +516,7 @@ run_bahadur_comparison <- function(mu_list = list(
                                   n_cores = 10,
                                   min_n = 50,
                                   max_n = 100000,
-                                  output_dir = "output/bahadur_vmf",
+                                  output_dir = "output/bahadur/vmf",
                                   force_recompute = FALSE) {
   cat("=== Bahadur Analysis Comparison for Multiple mu Values ===\n\n")
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)

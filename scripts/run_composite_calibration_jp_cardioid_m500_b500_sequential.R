@@ -183,7 +183,7 @@ consolidate_sequential_outputs <- function(run_rows,
 }
 
 run_jp_cardioid_composite_calibration_sequential <- function(
-  output_root = file.path("output", "bootstrap_calibration", "jp_cardioid_composite_M500_B500_NM_bootlocal"),
+  output_root = file.path("output", "calibration", "bootstrap", "jp_cardioid_composite_M500_B500_NM_bootlocal"),
   n_values = c(50L, 100L, 200L),
   M_outer = 500L,
   B = 500L,
@@ -224,7 +224,7 @@ run_jp_cardioid_composite_calibration_sequential <- function(
   })
 
   # Execution order is explicit to guarantee at-least-one scenario is saved
-  # even if the full overnight sequence is interrupted.
+  # even if the full sequence is interrupted.
   ordered_scenarios <- c(jp_scenarios, cardioid_scenarios)
 
   run_rows <- list()

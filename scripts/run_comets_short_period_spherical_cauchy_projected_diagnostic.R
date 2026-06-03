@@ -72,7 +72,7 @@ parse_numeric_csv <- function(text, default) {
 }
 
 run_comets_short_period_spherical_cauchy_projected_diagnostic <- function(
-    output_dir = file.path("output", "comets_distance_profile_spherical_cauchy", "short_period_projected_diagnostic"),
+    output_dir = file.path("output", "real_data", "comets", "spherical_cauchy", "short_period_projected_diagnostic"),
     sample_label = "short_period_comets_sc",
     rho_grid = c(0, 0.2, 0.4, 0.6, 0.8, 0.9, 0.95),
     n_cores = 1L,
@@ -99,7 +99,7 @@ if (identical(environment(), globalenv())) {
   output_dir <- if (!is.null(args$output_dir) && nzchar(args$output_dir)) {
     args$output_dir
   } else {
-    file.path("output", "comets_distance_profile_spherical_cauchy", "short_period_projected_diagnostic")
+    file.path("output", "real_data", "comets", "spherical_cauchy", "short_period_projected_diagnostic")
   }
 
   sample_label <- if (!is.null(args$sample_label) && nzchar(args$sample_label)) {

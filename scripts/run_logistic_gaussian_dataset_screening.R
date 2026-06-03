@@ -89,7 +89,7 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
   ridge <- parse_numeric_arg(args$ridge, 1e-8)
   bootstrap_mode <- as.character(args$bootstrap_mode %||% "composite_multiplier")
   n_cores <- parse_integer_arg(args$n_cores, 1L)
-  output_dir <- as.character(args$output_dir %||% file.path("output", "logistic_gaussian_composite"))
+  output_dir <- as.character(args$output_dir %||% file.path("output", "calibration", "bootstrap", "logistic_gaussian", "composite"))
   make_plots <- parse_flag(args$make_plots, default = TRUE)
   run_seed_sensitivity <- parse_flag(args$run_seed_sensitivity, default = FALSE)
 

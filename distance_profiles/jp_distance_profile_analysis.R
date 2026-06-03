@@ -198,7 +198,7 @@ run_jp_distance_profile_analysis <- function(kappa,
   mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
   scenario_tag <- jp_scenario_tag(kappa = kappa, psi = psi)
   if (is.null(output_dir)) {
-    output_dir <- file.path("output", "jp_geodesic", scenario_tag)
+    output_dir <- file.path("output", "distance_profiles", "jp", "geodesic", scenario_tag)
   }
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -322,7 +322,7 @@ run_jp_distance_profile_analysis <- function(kappa,
   )
 }
 
-run_jp_distance_profile_suite <- function(output_root = file.path("output", "jp_geodesic"),
+run_jp_distance_profile_suite <- function(output_root = file.path("output", "distance_profiles", "jp", "geodesic"),
                                           scenarios = default_jp_validation_scenarios(),
                                           mu = c(0, 0, 1),
                                           sample_sizes = c(50, 200),

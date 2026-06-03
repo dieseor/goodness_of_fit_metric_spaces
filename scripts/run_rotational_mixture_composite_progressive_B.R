@@ -39,8 +39,8 @@ parse_named_args_rotmix_progressive <- function(args) {
 
 default_rotmix_composite_progressive_scenarios <- function() {
   list(
-    default_rotational_beta_mixture2_composite_calibration_scenarios()[[1L]],
-    default_rotational_logitnormal_mixture2_composite_calibration_scenarios()[[1L]]
+    default_beta_mixture2_composite_calibration_scenarios()[[1L]],
+    default_logitnormal_mixture2_composite_calibration_scenarios()[[1L]]
   )
 }
 

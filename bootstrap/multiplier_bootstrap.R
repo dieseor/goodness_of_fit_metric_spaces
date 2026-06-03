@@ -472,12 +472,15 @@ run_bootstrap_chunk <- function(weight_chunk,
         bootstrap_control$jp_mle_start_theta <- theta_start
         bootstrap_control$jp_mle_warm_start_only <- TRUE
         bootstrap_control$jp_mle_bootstrap_refit <- TRUE
-      } else if (!is.null(theta_start) && grepl("^rotational_beta_mixture2_", spec$name)) {
-        bootstrap_control$rotational_beta_mixture2_start_theta <- theta_start
-        bootstrap_control$rotational_beta_mixture2_warm_start_only <- TRUE
-      } else if (!is.null(theta_start) && grepl("^rotational_logitnormal_mixture2_", spec$name)) {
-        bootstrap_control$rotational_logitnormal_mixture2_start_theta <- theta_start
-        bootstrap_control$rotational_logitnormal_mixture2_warm_start_only <- TRUE
+      } else if (!is.null(theta_start) && grepl("^beta_mixture2_", spec$name)) {
+        bootstrap_control$beta_mixture2_start_theta <- theta_start
+        bootstrap_control$beta_mixture2_warm_start_only <- TRUE
+        bootstrap_control$beta_mixture2_n_starts <- bootstrap_control$beta_mixture2_bootstrap_n_starts %||% 1L
+        bootstrap_control$beta_mixture2_optim_control <- bootstrap_control$beta_mixture2_bootstrap_optim_control %||%
+          list(maxit = 80L, reltol = 1e-6)
+      } else if (!is.null(theta_start) && grepl("^logitnormal_mixture2_", spec$name)) {
+        bootstrap_control$logitnormal_mixture2_start_theta <- theta_start
+        bootstrap_control$logitnormal_mixture2_warm_start_only <- TRUE
       } else if (!is.null(theta_start) && is.null(bootstrap_control$jp_mle_start_theta)) {
         bootstrap_control$jp_mle_start_theta <- theta_start
       }
@@ -1034,7 +1037,7 @@ multiplier_bootstrap_logistic_gaussian <- function(data,
   )
 }
 
-multiplier_bootstrap_rotational_beta_mixture2 <- function(data,
+multiplier_bootstrap_beta_mixture2 <- function(data,
                                                           null,
                                                           statistics = c("ks", "cvm"),
                                                           ks_grid = NULL,
@@ -1051,7 +1054,7 @@ multiplier_bootstrap_rotational_beta_mixture2 <- function(data,
                                                           control = list(),
                                                           distance_type = c("chordal", "geodesic")) {
   distance_type <- match.arg(distance_type)
-  spec <- make_rotational_beta_mixture2_spec(distance_type = distance_type)
+  spec <- make_beta_mixture2_spec(distance_type = distance_type)
 
   multiplier_bootstrap_gof(
     data = data,
@@ -1069,7 +1072,7 @@ multiplier_bootstrap_rotational_beta_mixture2 <- function(data,
   )
 }
 
-multiplier_bootstrap_rotational_logitnormal_mixture2 <- function(data,
+multiplier_bootstrap_logitnormal_mixture2 <- function(data,
                                                                  null,
                                                                  statistics = c("ks", "cvm"),
                                                                  ks_grid = NULL,
@@ -1086,7 +1089,7 @@ multiplier_bootstrap_rotational_logitnormal_mixture2 <- function(data,
                                                                  control = list(),
                                                                  distance_type = c("chordal", "geodesic")) {
   distance_type <- match.arg(distance_type)
-  spec <- make_rotational_logitnormal_mixture2_spec(distance_type = distance_type)
+  spec <- make_logitnormal_mixture2_spec(distance_type = distance_type)
 
   multiplier_bootstrap_gof(
     data = data,

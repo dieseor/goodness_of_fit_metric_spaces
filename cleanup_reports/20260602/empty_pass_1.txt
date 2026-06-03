@@ -1,1 +1,0 @@
-./output/bootstrap_calibration/jp_cardioid_composite_M500_B500_NM_bootlocal

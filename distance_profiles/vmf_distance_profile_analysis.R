@@ -194,9 +194,9 @@ run_complete_distance_profile_comparison <- function() {
   cat("ALL ANALYSES COMPLETE!\n")
   cat("========================================\n")
   cat("Check the following directories for results:\n")
-  cat("- output/mvnorm/ (Multivariate Normal)\n")
-  cat("- output/vmf_chordal/ (vMF Chordal Distance)\n")  
-  cat("- output/vmf_geodesic/ (vMF Geodesic Distance)\n")
+  cat("- output/distance_profiles/normal_multivariate/ (Multivariate Normal)\n")
+  cat("- output/distance_profiles/vmf/chordal/ (vMF Chordal Distance)\n")  
+  cat("- output/distance_profiles/vmf/geodesic/ (vMF Geodesic Distance)\n")
   cat("- output/hvmf_geodesic/ (HvMF Geodesic Distance)\n")
   
   return(list(

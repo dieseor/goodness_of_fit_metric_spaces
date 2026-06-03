@@ -18,12 +18,12 @@ model_specs_script_path_rotmix_comets <- resolve_rotmix_comets_path("bootstrap",
 multiplier_bootstrap_script_path_rotmix_comets <- resolve_rotmix_comets_path("bootstrap", "multiplier_bootstrap.R")
 utils_script_path_rotmix_comets <- resolve_rotmix_comets_path("utils.R")
 
+source(utils_script_path_rotmix_comets)
 source(model_specs_script_path_rotmix_comets)
 source(multiplier_bootstrap_script_path_rotmix_comets)
-source(utils_script_path_rotmix_comets)
 
-make_rotational_beta_mixture2_spec <- get("make_rotational_beta_mixture2_spec", mode = "function")
-make_rotational_logitnormal_mixture2_spec <- get("make_rotational_logitnormal_mixture2_spec", mode = "function")
+make_beta_mixture2_spec <- get("make_beta_mixture2_spec", mode = "function")
+make_logitnormal_mixture2_spec <- get("make_logitnormal_mixture2_spec", mode = "function")
 generate_canonical_lattice <- get("generate_canonical_lattice", mode = "function")
 multiplier_bootstrap_gof <- get("multiplier_bootstrap_gof", mode = "function")
 
@@ -79,15 +79,15 @@ load_comets_distance_profile_data_rotmix <- function() {
 }
 
 rotmix_model_n_parameters <- function(model_name) {
-  if (!model_name %in% c("rotational_beta_mixture2", "rotational_logitnormal_mixture2")) {
+  if (!model_name %in% c("beta_mixture2", "logitnormal_mixture2")) {
     stop(sprintf("Unsupported model name: %s", model_name))
   }
   6L
 }
 
 rotmix_model_density_log <- function(model_name, data_matrix, theta) {
-  if (identical(model_name, "rotational_beta_mixture2")) {
-    return(d_sph_rotational_beta_mixture2_s2(
+  if (identical(model_name, "beta_mixture2")) {
+    return(d_sph_beta_mixture2_s2(
       x = data_matrix,
       mu = theta$mu,
       weight1 = theta$weight1,
@@ -99,8 +99,8 @@ rotmix_model_density_log <- function(model_name, data_matrix, theta) {
     ))
   }
 
-  if (identical(model_name, "rotational_logitnormal_mixture2")) {
-    return(d_sph_rotational_logitnormal_mixture2_s2(
+  if (identical(model_name, "logitnormal_mixture2")) {
+    return(d_sph_logitnormal_mixture2_s2(
       x = data_matrix,
       mu = theta$mu,
       weight1 = theta$weight1,
@@ -116,8 +116,8 @@ rotmix_model_density_log <- function(model_name, data_matrix, theta) {
 }
 
 rotmix_projected_density_z <- function(model_name, z, theta) {
-  if (identical(model_name, "rotational_beta_mixture2")) {
-    return(rotational_beta_mixture2_density_gz(
+  if (identical(model_name, "beta_mixture2")) {
+    return(beta_mixture2_density_gz(
       z = z,
       weight1 = theta$weight1,
       alpha1 = theta$alpha1,
@@ -127,8 +127,8 @@ rotmix_projected_density_z <- function(model_name, z, theta) {
     ))
   }
 
-  if (identical(model_name, "rotational_logitnormal_mixture2")) {
-    return(rotational_logitnormal_mixture2_density_gz(
+  if (identical(model_name, "logitnormal_mixture2")) {
+    return(logitnormal_mixture2_density_gz(
       z = z,
       weight1 = theta$weight1,
       mean1 = theta$mean1,
@@ -144,8 +144,8 @@ rotmix_projected_density_z <- function(model_name, z, theta) {
 rotmix_projected_cdf_z <- function(model_name, z, theta) {
   y <- (as.numeric(z) + 1) / 2
 
-  if (identical(model_name, "rotational_beta_mixture2")) {
-    return(rotational_beta_mixture2_cdf_y(
+  if (identical(model_name, "beta_mixture2")) {
+    return(beta_mixture2_cdf_y(
       y = y,
       weight1 = theta$weight1,
       alpha1 = theta$alpha1,
@@ -155,8 +155,8 @@ rotmix_projected_cdf_z <- function(model_name, z, theta) {
     ))
   }
 
-  if (identical(model_name, "rotational_logitnormal_mixture2")) {
-    return(rotational_logitnormal_mixture2_cdf_y(
+  if (identical(model_name, "logitnormal_mixture2")) {
+    return(logitnormal_mixture2_cdf_y(
       y = y,
       weight1 = theta$weight1,
       mean1 = theta$mean1,
@@ -170,16 +170,16 @@ rotmix_projected_cdf_z <- function(model_name, z, theta) {
 }
 
 rotmix_fit_model_theta <- function(model_name, data_matrix, control = list()) {
-  if (identical(model_name, "rotational_beta_mixture2")) {
-    return(fit_rotational_beta_mixture2_theta(
+  if (identical(model_name, "beta_mixture2")) {
+    return(fit_beta_mixture2_theta(
       data = data_matrix,
       null = list(type = "composite"),
       control = control
     ))
   }
 
-  if (identical(model_name, "rotational_logitnormal_mixture2")) {
-    return(fit_rotational_logitnormal_mixture2_theta(
+  if (identical(model_name, "logitnormal_mixture2")) {
+    return(fit_logitnormal_mixture2_theta(
       data = data_matrix,
       null = list(type = "composite"),
       control = control
@@ -191,12 +191,12 @@ rotmix_fit_model_theta <- function(model_name, data_matrix, control = list()) {
 
 rotmix_make_spec <- function(model_name,
                              distance_type = "geodesic") {
-  if (identical(model_name, "rotational_beta_mixture2")) {
-    return(make_rotational_beta_mixture2_spec(distance_type = distance_type))
+  if (identical(model_name, "beta_mixture2")) {
+    return(make_beta_mixture2_spec(distance_type = distance_type))
   }
 
-  if (identical(model_name, "rotational_logitnormal_mixture2")) {
-    return(make_rotational_logitnormal_mixture2_spec(distance_type = distance_type))
+  if (identical(model_name, "logitnormal_mixture2")) {
+    return(make_logitnormal_mixture2_spec(distance_type = distance_type))
   }
 
   stop(sprintf("Unsupported model name: %s", model_name))
@@ -276,7 +276,7 @@ plot_rotmix_projected_diagnostics <- function(z,
 }
 
 rotmix_theta_summary_row <- function(model_name, theta) {
-  if (identical(model_name, "rotational_beta_mixture2")) {
+  if (identical(model_name, "beta_mixture2")) {
     return(data.frame(
       model = model_name,
       mu_1 = theta$mu[[1L]],
@@ -311,7 +311,7 @@ run_single_rotmix_comet_fit <- function(data_matrix,
                                         output_dir,
                                         B = 500L,
                                         statistics = c("ks", "cvm"),
-                                        n_cores = 12L,
+                                        n_cores = 6L,
                                         seed = 20260601L,
                                         M_value = 60L,
                                         ks_t_points = 200L,
@@ -356,24 +356,89 @@ run_single_rotmix_comet_fit <- function(data_matrix,
     t_grid = seq(1e-8, pi - 1e-8, length.out = as.integer(ks_t_points))
   )
 
-  gof_result <- multiplier_bootstrap_gof(
-    data = data_matrix,
-    spec = spec,
-    null = list(type = "composite"),
-    statistics = statistics,
-    ks_grid = ks_grid,
-    B = as.integer(B),
-    alpha = 0.05,
-    n_cores = as.integer(n_cores),
-    seed = as.integer(seed),
-    keep = list(
-      observed_process = TRUE,
-      bootstrap_statistics = TRUE,
-      bootstrap_thetas = TRUE
+  run_one_statistic <- function(statistic_name, statistic_seed) {
+    gc(verbose = FALSE)
+    multiplier_bootstrap_gof(
+      data = data_matrix,
+      spec = spec,
+      null = list(type = "composite"),
+      statistics = statistic_name,
+      ks_grid = if (identical(statistic_name, "ks")) ks_grid else NULL,
+      B = as.integer(B),
+      alpha = 0.05,
+      n_cores = as.integer(n_cores),
+      seed = as.integer(statistic_seed),
+      keep = list(
+        observed_process = FALSE,
+        bootstrap_statistics = FALSE,
+        bootstrap_thetas = FALSE
+      ),
+      control = control,
+      observed_theta_hat = theta_hat
+    )
+  }
+
+  statistics <- intersect(as.character(statistics), c("ks", "cvm"))
+  if (length(statistics) == 0L) {
+    stop("`statistics` must contain at least one of 'ks' or 'cvm'.")
+  }
+
+  gof_parts <- lapply(seq_along(statistics), function(j) {
+    run_one_statistic(statistics[[j]], as.integer(seed) + 1000L * j)
+  })
+  names(gof_parts) <- statistics
+
+  extract_stat_inference <- function(part, statistic_name) {
+    inference <- part$inference
+    if (is.list(inference) && !is.null(inference[[statistic_name]])) {
+      return(inference[[statistic_name]])
+    }
+    inference
+  }
+
+  gof_result <- list(
+    inference = stats::setNames(
+      lapply(seq_along(statistics), function(j) {
+        extract_stat_inference(gof_parts[[j]], statistics[[j]])
+      }),
+      statistics
     ),
-    control = control,
-    observed_theta_hat = theta_hat
+    diagnostics = list(
+      elapsed_seconds = sum(vapply(
+        gof_parts,
+        function(part) as.numeric(part$diagnostics$elapsed_seconds %||% NA_real_),
+        numeric(1)
+      ), na.rm = TRUE),
+      split_statistics = TRUE,
+      statistics = statistics,
+      per_statistic_elapsed_seconds = vapply(
+        gof_parts,
+        function(part) as.numeric(part$diagnostics$elapsed_seconds %||% NA_real_),
+        numeric(1)
+      )
+    )
   )
+  rm(gof_parts)
+  gc(verbose = FALSE)
+
+  get_gof_inference_value <- function(statistic_name, candidate_names) {
+    inference <- gof_result$inference[[statistic_name]]
+    if (is.null(inference)) {
+      return(NA_real_)
+    }
+    for (candidate_name in candidate_names) {
+      value <- NULL
+      if (is.list(inference) && !is.null(inference[[candidate_name]])) {
+        value <- inference[[candidate_name]]
+      } else if (is.data.frame(inference) && candidate_name %in% names(inference)) {
+        value <- inference[[candidate_name]][[1L]]
+      }
+      if (!is.null(value) && length(value) >= 1L && is.finite(as.numeric(value[[1L]]))) {
+        return(as.numeric(value[[1L]]))
+      }
+    }
+    NA_real_
+  }
 
   theta_df <- rotmix_theta_summary_row(model_name, theta_hat)
   summary_df <- data.frame(
@@ -385,10 +450,10 @@ run_single_rotmix_comet_fit <- function(data_matrix,
     BIC = bic,
     projected_ks = projected_fit$ks,
     projected_cvm = projected_fit$cvm,
-    gof_ks_observed = if ("ks" %in% names(gof_result$inference)) gof_result$inference$ks$observed else NA_real_,
-    gof_ks_p_value = if ("ks" %in% names(gof_result$inference)) gof_result$inference$ks$p_value else NA_real_,
-    gof_cvm_observed = if ("cvm" %in% names(gof_result$inference)) gof_result$inference$cvm$observed else NA_real_,
-    gof_cvm_p_value = if ("cvm" %in% names(gof_result$inference)) gof_result$inference$cvm$p_value else NA_real_,
+    gof_ks_observed = get_gof_inference_value("ks", c("observed", "observed_statistic", "statistic", "Tn")),
+    gof_ks_p_value = get_gof_inference_value("ks", c("p_value", "p.value", "pvalue", "p")),
+    gof_cvm_observed = get_gof_inference_value("cvm", c("observed", "observed_statistic", "statistic", "Tn")),
+    gof_cvm_p_value = get_gof_inference_value("cvm", c("p_value", "p.value", "pvalue", "p")),
     B = as.integer(B),
     M = as.integer(M_value),
     n_cores = as.integer(n_cores),
@@ -402,7 +467,6 @@ run_single_rotmix_comet_fit <- function(data_matrix,
   utils::write.csv(density_grid_df, file = file.path(output_dir, "projected_density_grid.csv"), row.names = FALSE)
   utils::write.csv(cdf_grid_df, file = file.path(output_dir, "projected_cdf_grid.csv"), row.names = FALSE)
   utils::write.csv(data.frame(z = z), file = file.path(output_dir, "projected_data.csv"), row.names = FALSE)
-  saveRDS(gof_result, file = file.path(output_dir, "gof_result.rds"))
 
   plot_paths <- plot_rotmix_projected_diagnostics(
     z = z,
@@ -412,42 +476,23 @@ run_single_rotmix_comet_fit <- function(data_matrix,
     dataset_label = dataset_label,
     model_label = model_name
   )
-
-  saveRDS(
-    list(
-      summary = summary_df,
-      theta_hat = theta_hat,
-      gof_result = gof_result,
-      projected_fit = projected_fit,
-      plot_paths = plot_paths,
-      config = list(
-        dataset_label = dataset_label,
-        model_name = model_name,
-        B = as.integer(B),
-        n_cores = as.integer(n_cores),
-        seed = as.integer(seed),
-        M = as.integer(M_value),
-        ks_t_points = as.integer(ks_t_points),
-        distance_type = distance_type
-      )
-    ),
-    file = file.path(output_dir, "result_bundle.rds")
-  )
+  rm(gof_result, projected_fit, density_grid_df, cdf_grid_df, z)
+  gc(verbose = FALSE)
 
   summary_df
 }
 
-run_comets_rotational_mixtures_short_long <- function(
+run_comets_mixtures_short_long <- function(
   output_root = file.path(
     "output",
     "comets",
     paste0("rotational_mixtures_", timestamp_tag_rotmix_comets())
   ),
   datasets = c("short", "long"),
-  models = c("rotational_beta_mixture2", "rotational_logitnormal_mixture2"),
+  models = c("beta_mixture2", "logitnormal_mixture2"),
   B = 500L,
   statistics = c("ks", "cvm"),
-  n_cores = 12L,
+  n_cores = 6L,
   seed = 20260601L,
   M_value = 60L,
   ks_t_points = 200L,
@@ -464,14 +509,14 @@ run_comets_rotational_mixtures_short_long <- function(
   counter <- 0L
 
   control_beta <- list(
-    rotational_beta_mixture2_profile_method = "legendre",
-    rotational_beta_mixture2_quad_n = 400L,
-    rotational_beta_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9)
+    beta_mixture2_profile_method = "legendre",
+    beta_mixture2_quad_n = 100L,
+    beta_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9)
   )
   control_logit <- list(
-    rotational_logitnormal_mixture2_profile_method = "legendre",
-    rotational_logitnormal_mixture2_quad_n = 400L,
-    rotational_logitnormal_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9)
+    logitnormal_mixture2_profile_method = "legendre",
+    logitnormal_mixture2_quad_n = 400L,
+    logitnormal_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9)
   )
 
   for (dataset_name in datasets) {
@@ -485,7 +530,7 @@ run_comets_rotational_mixtures_short_long <- function(
     for (model_name in models) {
       counter <- counter + 1L
       model_output_dir <- file.path(output_root, sprintf("%02d_%s_%s", counter, dataset_label, model_name))
-      control <- if (identical(model_name, "rotational_beta_mixture2")) control_beta else control_logit
+      control <- if (identical(model_name, "beta_mixture2")) control_beta else control_logit
 
       message(sprintf(
         "[Comets] %s / %s with B = %d, n_cores = %d",
@@ -514,7 +559,6 @@ run_comets_rotational_mixtures_short_long <- function(
 
   summary_all <- do.call(rbind, summary_rows)
   utils::write.csv(summary_all, file = file.path(output_root, "comets_rotational_mixtures_summary.csv"), row.names = FALSE)
-  saveRDS(summary_all, file = file.path(output_root, "comets_rotational_mixtures_summary.rds"))
 
   list(
     output_root = output_root,
@@ -546,7 +590,7 @@ parse_named_args_rotmix_comets <- function(args) {
 if (sys.nframe() == 0L) {
   args <- parse_named_args_rotmix_comets(commandArgs(trailingOnly = TRUE))
 
-  result <- run_comets_rotational_mixtures_short_long(
+  result <- run_comets_mixtures_short_long(
     output_root = args$output_root %||% file.path(
       "output",
       "comets",
@@ -560,7 +604,7 @@ if (sys.nframe() == 0L) {
     models = if (!is.null(args$models)) {
       strsplit(tolower(args$models), ",", fixed = TRUE)[[1L]]
     } else {
-      c("rotational_beta_mixture2", "rotational_logitnormal_mixture2")
+      c("beta_mixture2", "logitnormal_mixture2")
     },
     B = if (!is.null(args$B)) as.integer(args$B) else 500L,
     statistics = if (!is.null(args$statistics)) {
@@ -568,7 +612,7 @@ if (sys.nframe() == 0L) {
     } else {
       c("ks", "cvm")
     },
-    n_cores = if (!is.null(args$n_cores)) as.integer(args$n_cores) else 12L,
+    n_cores = if (!is.null(args$n_cores)) as.integer(args$n_cores) else 6L,
     seed = if (!is.null(args$seed)) as.integer(args$seed) else 20260601L,
     M_value = if (!is.null(args$M)) as.integer(args$M) else 60L,
     ks_t_points = if (!is.null(args$ks_t_points)) as.integer(args$ks_t_points) else 200L,

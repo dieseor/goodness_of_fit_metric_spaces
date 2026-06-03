@@ -84,7 +84,7 @@ run_all_vmf <- function(output_dir = NULL, M = M_SIMULATIONS, omega_points = OME
 run_composite_variants_vmf <- function(mu_values = list(c(1,0,0), 
 c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values = c(0.5, 
 1, 5), unknown_params = c('xi'), output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_mc_samples = N_MC_COVARIANCE, n_cores = N_CORES, distance_type = 'geodesic', density_adjust = DENSITY_ADJUST, n50_multiplier_overrides = NULL) {
-  if (is.null(output_dir)) output_dir <- 'output/gaussian_process_vmf'
+  if (is.null(output_dir)) output_dir <- 'output/convergence/gaussian_process/vmf'
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   scenarios <- list()
   for (mu_val in mu_values) {
@@ -137,7 +137,7 @@ run_simple_variants_vmf <- function(mu_values = list(c(1,0,0),
 c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values = c(0.5, 
 1, 5), output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_mc_samples = N_MC_COVARIANCE, n_cores = N_CORES, distance_type = 'geodesic', density_adjust = DENSITY_ADJUST, cov_method = c("mc", "exact_s1_simple", "integral_s2_simple")) {
   cov_method <- match.arg(cov_method)
-  if (is.null(output_dir)) output_dir <- 'output/gaussian_process_vmf'
+  if (is.null(output_dir)) output_dir <- 'output/convergence/gaussian_process/vmf'
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   scenarios <- list()
   for (mu_val in mu_values) {
@@ -170,7 +170,7 @@ c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values 
 # ---------------------------------------------------------------------------
 run_simple_vmf <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_mc_samples = N_MC_COVARIANCE, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, distance_type = 'geodesic', cov_method = c("mc", "exact_s1_simple", "integral_s2_simple")) {
   cov_method <- match.arg(cov_method)
-  if (is.null(output_dir)) output_dir <- 'output/gaussian_process_vmf'
+  if (is.null(output_dir)) output_dir <- 'output/convergence/gaussian_process/vmf'
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   if (is.null(scenarios)) {
     mu_label <- paste0('mu', paste0(sapply(MU_VMF, function(x) gsub("\\.", 'p', sprintf('%.1f', x))), collapse = '_'))
@@ -241,7 +241,7 @@ run_simple_variants_integral_vmf <- function(mu_values = list(c(1,0,0),
 }
 
 run_composite_vmf <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_mc_samples = N_MC_COVARIANCE, n_cores = N_CORES, distance_type = 'geodesic', unknown_param = c('xi')) {
-  if (is.null(output_dir)) output_dir <- 'output/gaussian_process_vmf'
+  if (is.null(output_dir)) output_dir <- 'output/convergence/gaussian_process/vmf'
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   if (is.null(scenarios)) {
     mu_label <- paste0('mu', paste0(sapply(MU_VMF, function(x) gsub("\\.", 'p', sprintf('%.2f', x))), collapse = '_'))

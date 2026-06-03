@@ -1,5 +1,0 @@
-output/overnight_beta_20260602
-output/queued_runs
-output/rotational_mixture_simple_full_20260601.nohup.log
-output/rotmix_unattended_sequence_20260601.nohup.log
-output/.DS_Store

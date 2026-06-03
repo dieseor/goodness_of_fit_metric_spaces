@@ -8,14 +8,24 @@ Current supported directional families in the bootstrap pipeline include vMF, Hv
 
 ```
 goodness_of_fit_metric_spaces/
-├── .Rprofile                 # R startup configuration
-├── README.md                 # This file
-├── main.R                    # Main analysis script
-├── R/                        # R functions and modules
-├── data/                     # Data files
-├── output/                   # Generated outputs (plots, tables, etc.)
-└── tests/                    # Test scripts
+├── bootstrap/                # Model specs and bootstrap engines
+├── distance_profiles/        # Distance-profile analyses and diagnostics
+├── output/
+│   ├── bahadur/              # Bahadur analyses by distribution
+│   ├── calibration/          # Bootstrap calibration outputs
+│   ├── catalog/              # Inventory and migration reports
+│   ├── convergence/          # Empirical process convergence outputs
+│   ├── diagnostics/          # Model diagnostics and quality checks
+│   ├── distance_profiles/    # Distance-profile outputs by distribution
+│   └── real_data/            # Outputs from real datasets (including comets)
+├── scripts/                  # One-off runners and batch entry points
+├── tests/                    # Test scripts
+├── utils.R                   # Shared utilities and model helpers
+└── wind/                     # Wind-related pipelines and outputs
 ```
+
+Output aliases and the intermediate `output/structured/` layer have been removed.
+The project now uses a single direct output tree under `output/`.
 
 ## Dependencies
 

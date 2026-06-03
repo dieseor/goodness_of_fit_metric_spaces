@@ -1672,7 +1672,7 @@ make_spherical_cauchy_spec <- function(distance_type = c("chordal", "geodesic"))
   )
 }
 
-normalize_rotational_beta_mixture2_data <- function(data, control = list()) {
+normalize_beta_mixture2_data <- function(data, control = list()) {
   x <- jp_normalize_unit_matrix(data, arg_name = "`data`", min_ncol = 3L)
   if (ncol(x) != 3L) {
     stop("Rotational beta-mixture data must be a non-empty S^2 sample with three columns.")
@@ -1680,44 +1680,44 @@ normalize_rotational_beta_mixture2_data <- function(data, control = list()) {
   x
 }
 
-normalize_rotational_beta_mixture2_theta <- function(theta, ambient_dim = 3L) {
-  rotational_beta_mixture2_normalize_theta(theta, ambient_dim = ambient_dim)
+normalize_beta_mixture2_theta <- function(theta, ambient_dim = 3L) {
+  beta_mixture2_normalize_theta(theta, ambient_dim = ambient_dim)
 }
 
-fit_rotational_beta_mixture2_theta <- function(data,
+fit_beta_mixture2_theta <- function(data,
                                                weights = NULL,
                                                null,
                                                control = list()) {
-  x <- normalize_rotational_beta_mixture2_data(data, control)
+  x <- normalize_beta_mixture2_data(data, control)
 
   if (!is.list(null) || is.null(null$type)) {
     stop("`null` must be a list containing at least the field `type`.")
   }
 
   if (identical(null$type, "simple")) {
-    return(normalize_rotational_beta_mixture2_theta(null$theta, ambient_dim = ncol(x)))
+    return(normalize_beta_mixture2_theta(null$theta, ambient_dim = ncol(x)))
   }
 
   if (!identical(null$type, "composite")) {
     stop("`null$type` must be either `simple` or `composite`.")
   }
 
-  fit <- rotational_beta_mixture2_mle_s2_weighted(
+  fit <- beta_mixture2_mle_s2_weighted(
     x = x,
     weights = weights,
     control = control
   )
 
-  normalize_rotational_beta_mixture2_theta(fit, ambient_dim = ncol(x))
+  normalize_beta_mixture2_theta(fit, ambient_dim = ncol(x))
 }
 
-make_rotational_beta_mixture2_spec <- function(distance_type = c("chordal", "geodesic")) {
+make_beta_mixture2_spec <- function(distance_type = c("chordal", "geodesic")) {
   distance_type <- match.arg(distance_type)
 
   new_model_spec(
-    name = sprintf("rotational_beta_mixture2_%s", distance_type),
+    name = sprintf("beta_mixture2_%s", distance_type),
     fit_theta = function(data, weights = NULL, null, control = list()) {
-      fit_rotational_beta_mixture2_theta(
+      fit_beta_mixture2_theta(
         data = data,
         weights = weights,
         null = null,
@@ -1725,8 +1725,8 @@ make_rotational_beta_mixture2_spec <- function(distance_type = c("chordal", "geo
       )
     },
     distance_matrix = function(data, omega, control = list()) {
-      x <- normalize_rotational_beta_mixture2_data(data, control)
-      omega_matrix <- normalize_rotational_beta_mixture2_data(omega, control)
+      x <- normalize_beta_mixture2_data(data, control)
+      omega_matrix <- normalize_beta_mixture2_data(omega, control)
 
       if (ncol(x) != ncol(omega_matrix)) {
         stop("`data` and `omega` have incompatible ambient dimensions.")
@@ -1740,8 +1740,8 @@ make_rotational_beta_mixture2_spec <- function(distance_type = c("chordal", "geo
       }
     },
     profile_eval = function(omega, t, theta, control = list()) {
-      theta <- normalize_rotational_beta_mixture2_theta(theta)
-      distance_profile_rotational_beta_mixture2(
+      theta <- normalize_beta_mixture2_theta(theta)
+      distance_profile_beta_mixture2(
         omega = omega,
         t_values = as.numeric(t),
         mu = theta$mu,
@@ -1751,25 +1751,25 @@ make_rotational_beta_mixture2_spec <- function(distance_type = c("chordal", "geo
         alpha2 = theta$alpha2,
         beta2 = theta$beta2,
         distance_type = distance_type,
-        method = control$rotational_beta_mixture2_profile_method %||% "integral",
-        l_max = as.integer(control$rotational_beta_mixture2_L_max %||% 150L),
-        quad_n = as.integer(control$rotational_beta_mixture2_quad_n %||% 400L),
-        tol = as.numeric(control$rotational_beta_mixture2_tol %||% 1e-6),
-        validate_against_integral = isTRUE(control$rotational_beta_mixture2_validate_against_integral),
-        validation_tol = as.numeric(control$rotational_beta_mixture2_validation_tol %||% 5e-6)
+        method = control$beta_mixture2_profile_method %||% "legendre",
+        l_max = as.integer(control$beta_mixture2_L_max %||% 150L),
+        quad_n = as.integer(control$beta_mixture2_quad_n %||% 1000L),
+        tol = as.numeric(control$beta_mixture2_tol %||% 1e-6),
+        validate_against_integral = isTRUE(control$beta_mixture2_validate_against_integral),
+        validation_tol = as.numeric(control$beta_mixture2_validation_tol %||% 5e-6)
       )
     },
-    normalize_data = normalize_rotational_beta_mixture2_data,
+    normalize_data = normalize_beta_mixture2_data,
     n_obs = function(data, control = list()) {
-      nrow(normalize_rotational_beta_mixture2_data(data, control))
+      nrow(normalize_beta_mixture2_data(data, control))
     },
     observation_at = function(data, idx, control = list()) {
-      normalize_rotational_beta_mixture2_data(data, control)[idx, , drop = TRUE]
+      normalize_beta_mixture2_data(data, control)[idx, , drop = TRUE]
     },
     extras = list(
       profile_matrix_eval = function(omega_grid, t_grid, theta, control = list()) {
-        theta <- normalize_rotational_beta_mixture2_theta(theta)
-        distance_profile_rotational_beta_mixture2_grid(
+        theta <- normalize_beta_mixture2_theta(theta)
+        distance_profile_beta_mixture2_grid(
           omega_grid = omega_grid,
           mu = theta$mu,
           weight1 = theta$weight1,
@@ -1779,10 +1779,10 @@ make_rotational_beta_mixture2_spec <- function(distance_type = c("chordal", "geo
           beta2 = theta$beta2,
           t_grid = t_grid,
           distance_type = distance_type,
-          method = control$rotational_beta_mixture2_profile_method %||% "integral",
-          l_max = as.integer(control$rotational_beta_mixture2_L_max %||% 150L),
-          quad_n = as.integer(control$rotational_beta_mixture2_quad_n %||% 400L),
-          tol = as.numeric(control$rotational_beta_mixture2_tol %||% 1e-6)
+          method = control$beta_mixture2_profile_method %||% "legendre",
+          l_max = as.integer(control$beta_mixture2_L_max %||% 150L),
+          quad_n = as.integer(control$beta_mixture2_quad_n %||% 1000L),
+          tol = as.numeric(control$beta_mixture2_tol %||% 1e-6)
         )
       },
       sample_profile_matrix_eval = function(data, distance_matrix, theta, control = list()) {
@@ -1790,8 +1790,8 @@ make_rotational_beta_mixture2_spec <- function(distance_type = c("chordal", "geo
           return(NULL)
         }
 
-        theta <- normalize_rotational_beta_mixture2_theta(theta)
-        distance_profile_rotational_beta_mixture2_cvm_grid(
+        theta <- normalize_beta_mixture2_theta(theta)
+        distance_profile_beta_mixture2_cvm_grid(
           X = data,
           mu = theta$mu,
           weight1 = theta$weight1,
@@ -1799,10 +1799,10 @@ make_rotational_beta_mixture2_spec <- function(distance_type = c("chordal", "geo
           beta1 = theta$beta1,
           alpha2 = theta$alpha2,
           beta2 = theta$beta2,
-          method = control$rotational_beta_mixture2_profile_method %||% "integral",
-          l_max = as.integer(control$rotational_beta_mixture2_L_max %||% 150L),
-          quad_n = as.integer(control$rotational_beta_mixture2_quad_n %||% 400L),
-          tol = as.numeric(control$rotational_beta_mixture2_tol %||% 1e-6)
+          method = control$beta_mixture2_profile_method %||% "legendre",
+          l_max = as.integer(control$beta_mixture2_L_max %||% 150L),
+          quad_n = as.integer(control$beta_mixture2_quad_n %||% 1000L),
+          tol = as.numeric(control$beta_mixture2_tol %||% 1e-6)
         )
       },
       distance_type = distance_type,
@@ -1812,7 +1812,7 @@ make_rotational_beta_mixture2_spec <- function(distance_type = c("chordal", "geo
   )
 }
 
-normalize_rotational_logitnormal_mixture2_data <- function(data, control = list()) {
+normalize_logitnormal_mixture2_data <- function(data, control = list()) {
   x <- jp_normalize_unit_matrix(data, arg_name = "`data`", min_ncol = 3L)
   if (ncol(x) != 3L) {
     stop("Rotational logit-normal-mixture data must be a non-empty S^2 sample with three columns.")
@@ -1820,44 +1820,44 @@ normalize_rotational_logitnormal_mixture2_data <- function(data, control = list(
   x
 }
 
-normalize_rotational_logitnormal_mixture2_theta <- function(theta, ambient_dim = 3L) {
-  rotational_logitnormal_mixture2_normalize_theta(theta, ambient_dim = ambient_dim)
+normalize_logitnormal_mixture2_theta <- function(theta, ambient_dim = 3L) {
+  logitnormal_mixture2_normalize_theta(theta, ambient_dim = ambient_dim)
 }
 
-fit_rotational_logitnormal_mixture2_theta <- function(data,
+fit_logitnormal_mixture2_theta <- function(data,
                                                       weights = NULL,
                                                       null,
                                                       control = list()) {
-  x <- normalize_rotational_logitnormal_mixture2_data(data, control)
+  x <- normalize_logitnormal_mixture2_data(data, control)
 
   if (!is.list(null) || is.null(null$type)) {
     stop("`null` must be a list containing at least the field `type`.")
   }
 
   if (identical(null$type, "simple")) {
-    return(normalize_rotational_logitnormal_mixture2_theta(null$theta, ambient_dim = ncol(x)))
+    return(normalize_logitnormal_mixture2_theta(null$theta, ambient_dim = ncol(x)))
   }
 
   if (!identical(null$type, "composite")) {
     stop("`null$type` must be either `simple` or `composite`.")
   }
 
-  fit <- rotational_logitnormal_mixture2_mle_s2_weighted(
+  fit <- logitnormal_mixture2_mle_s2_weighted(
     x = x,
     weights = weights,
     control = control
   )
 
-  normalize_rotational_logitnormal_mixture2_theta(fit, ambient_dim = ncol(x))
+  normalize_logitnormal_mixture2_theta(fit, ambient_dim = ncol(x))
 }
 
-make_rotational_logitnormal_mixture2_spec <- function(distance_type = c("chordal", "geodesic")) {
+make_logitnormal_mixture2_spec <- function(distance_type = c("chordal", "geodesic")) {
   distance_type <- match.arg(distance_type)
 
   new_model_spec(
-    name = sprintf("rotational_logitnormal_mixture2_%s", distance_type),
+    name = sprintf("logitnormal_mixture2_%s", distance_type),
     fit_theta = function(data, weights = NULL, null, control = list()) {
-      fit_rotational_logitnormal_mixture2_theta(
+      fit_logitnormal_mixture2_theta(
         data = data,
         weights = weights,
         null = null,
@@ -1865,8 +1865,8 @@ make_rotational_logitnormal_mixture2_spec <- function(distance_type = c("chordal
       )
     },
     distance_matrix = function(data, omega, control = list()) {
-      x <- normalize_rotational_logitnormal_mixture2_data(data, control)
-      omega_matrix <- normalize_rotational_logitnormal_mixture2_data(omega, control)
+      x <- normalize_logitnormal_mixture2_data(data, control)
+      omega_matrix <- normalize_logitnormal_mixture2_data(omega, control)
 
       if (ncol(x) != ncol(omega_matrix)) {
         stop("`data` and `omega` have incompatible ambient dimensions.")
@@ -1880,8 +1880,8 @@ make_rotational_logitnormal_mixture2_spec <- function(distance_type = c("chordal
       }
     },
     profile_eval = function(omega, t, theta, control = list()) {
-      theta <- normalize_rotational_logitnormal_mixture2_theta(theta)
-      distance_profile_rotational_logitnormal_mixture2(
+      theta <- normalize_logitnormal_mixture2_theta(theta)
+      distance_profile_logitnormal_mixture2(
         omega = omega,
         t_values = as.numeric(t),
         mu = theta$mu,
@@ -1891,26 +1891,26 @@ make_rotational_logitnormal_mixture2_spec <- function(distance_type = c("chordal
         mean2 = theta$mean2,
         sd2 = theta$sd2,
         distance_type = distance_type,
-        method = control$rotational_logitnormal_mixture2_profile_method %||% "integral",
-        l_max = as.integer(control$rotational_logitnormal_mixture2_L_max %||% 150L),
-        quad_n = as.integer(control$rotational_logitnormal_mixture2_quad_n %||% 400L),
-        tol = as.numeric(control$rotational_logitnormal_mixture2_tol %||% 1e-6),
-        eps = as.numeric(control$rotational_logitnormal_mixture2_eps %||% 1e-12),
-        validate_against_integral = isTRUE(control$rotational_logitnormal_mixture2_validate_against_integral),
-        validation_tol = as.numeric(control$rotational_logitnormal_mixture2_validation_tol %||% 5e-6)
+        method = control$logitnormal_mixture2_profile_method %||% "integral",
+        l_max = as.integer(control$logitnormal_mixture2_L_max %||% 150L),
+        quad_n = as.integer(control$logitnormal_mixture2_quad_n %||% 1000L),
+        tol = as.numeric(control$logitnormal_mixture2_tol %||% 1e-6),
+        eps = as.numeric(control$logitnormal_mixture2_eps %||% 1e-12),
+        validate_against_integral = isTRUE(control$logitnormal_mixture2_validate_against_integral),
+        validation_tol = as.numeric(control$logitnormal_mixture2_validation_tol %||% 5e-6)
       )
     },
-    normalize_data = normalize_rotational_logitnormal_mixture2_data,
+    normalize_data = normalize_logitnormal_mixture2_data,
     n_obs = function(data, control = list()) {
-      nrow(normalize_rotational_logitnormal_mixture2_data(data, control))
+      nrow(normalize_logitnormal_mixture2_data(data, control))
     },
     observation_at = function(data, idx, control = list()) {
-      normalize_rotational_logitnormal_mixture2_data(data, control)[idx, , drop = TRUE]
+      normalize_logitnormal_mixture2_data(data, control)[idx, , drop = TRUE]
     },
     extras = list(
       profile_matrix_eval = function(omega_grid, t_grid, theta, control = list()) {
-        theta <- normalize_rotational_logitnormal_mixture2_theta(theta)
-        distance_profile_rotational_logitnormal_mixture2_grid(
+        theta <- normalize_logitnormal_mixture2_theta(theta)
+        distance_profile_logitnormal_mixture2_grid(
           omega_grid = omega_grid,
           mu = theta$mu,
           weight1 = theta$weight1,
@@ -1920,11 +1920,11 @@ make_rotational_logitnormal_mixture2_spec <- function(distance_type = c("chordal
           sd2 = theta$sd2,
           t_grid = t_grid,
           distance_type = distance_type,
-          method = control$rotational_logitnormal_mixture2_profile_method %||% "integral",
-          l_max = as.integer(control$rotational_logitnormal_mixture2_L_max %||% 150L),
-          quad_n = as.integer(control$rotational_logitnormal_mixture2_quad_n %||% 400L),
-          tol = as.numeric(control$rotational_logitnormal_mixture2_tol %||% 1e-6),
-          eps = as.numeric(control$rotational_logitnormal_mixture2_eps %||% 1e-12)
+          method = control$logitnormal_mixture2_profile_method %||% "integral",
+          l_max = as.integer(control$logitnormal_mixture2_L_max %||% 150L),
+          quad_n = as.integer(control$logitnormal_mixture2_quad_n %||% 400L),
+          tol = as.numeric(control$logitnormal_mixture2_tol %||% 1e-6),
+          eps = as.numeric(control$logitnormal_mixture2_eps %||% 1e-12)
         )
       },
       sample_profile_matrix_eval = function(data, distance_matrix, theta, control = list()) {
@@ -1932,8 +1932,8 @@ make_rotational_logitnormal_mixture2_spec <- function(distance_type = c("chordal
           return(NULL)
         }
 
-        theta <- normalize_rotational_logitnormal_mixture2_theta(theta)
-        distance_profile_rotational_logitnormal_mixture2_cvm_grid(
+        theta <- normalize_logitnormal_mixture2_theta(theta)
+        distance_profile_logitnormal_mixture2_cvm_grid(
           X = data,
           mu = theta$mu,
           weight1 = theta$weight1,
@@ -1941,11 +1941,11 @@ make_rotational_logitnormal_mixture2_spec <- function(distance_type = c("chordal
           sd1 = theta$sd1,
           mean2 = theta$mean2,
           sd2 = theta$sd2,
-          method = control$rotational_logitnormal_mixture2_profile_method %||% "integral",
-          l_max = as.integer(control$rotational_logitnormal_mixture2_L_max %||% 150L),
-          quad_n = as.integer(control$rotational_logitnormal_mixture2_quad_n %||% 400L),
-          tol = as.numeric(control$rotational_logitnormal_mixture2_tol %||% 1e-6),
-          eps = as.numeric(control$rotational_logitnormal_mixture2_eps %||% 1e-12)
+          method = control$logitnormal_mixture2_profile_method %||% "integral",
+          l_max = as.integer(control$logitnormal_mixture2_L_max %||% 150L),
+          quad_n = as.integer(control$logitnormal_mixture2_quad_n %||% 400L),
+          tol = as.numeric(control$logitnormal_mixture2_tol %||% 1e-6),
+          eps = as.numeric(control$logitnormal_mixture2_eps %||% 1e-12)
         )
       },
       distance_type = distance_type,

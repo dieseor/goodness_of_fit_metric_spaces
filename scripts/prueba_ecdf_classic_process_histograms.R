@@ -1,7 +1,7 @@
 source("utils.R")
 suppressPackageStartupMessages(library(ggplot2))
 
-dir.create("output/gaussian_process_normal", recursive = TRUE, showWarnings = FALSE)
+dir.create("output/convergence/gaussian_process/normal", recursive = TRUE, showWarnings = FALSE)
 
 simulate_empirical_supremum <- function(n, M, t_grid, r_sampler, p_cdf) {
   out <- numeric(M)
@@ -80,7 +80,7 @@ M <- 10000
 
 # 1) Uniform(0,1)
 t_grid_uniform <- seq(1e-4, 1 - 1e-4, length.out = 250)
-out_uniform <- "output/gaussian_process_normal/prueba_ecdf_uniform_0_1_n10_M10000_hist.png"
+out_uniform <- "output/convergence/gaussian_process/normal/prueba_ecdf_uniform_0_1_n10_M10000_hist.png"
 
 run_case(
   case_name = "Uniform(0,1)",
@@ -98,7 +98,7 @@ mu <- 3
 sd <- 0.1
 u_grid <- seq(1e-4, 1 - 1e-4, length.out = 250)
 t_grid_normal <- qnorm(u_grid, mean = mu, sd = sd)
-out_normal <- "output/gaussian_process_normal/prueba_ecdf_normal_mu3_var001_n10_M10000_hist.png"
+out_normal <- "output/convergence/gaussian_process/normal/prueba_ecdf_normal_mu3_var001_n10_M10000_hist.png"
 
 run_case(
   case_name = "Normal(mu=3, var=0.01)",

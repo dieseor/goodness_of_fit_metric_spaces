@@ -15,7 +15,7 @@ test_that("rotational beta-mixture bootstrap supports simple and composite nulls
     alpha2 = 8,
     beta2 = 2
   )
-  x <- r_sph_rotational_beta_mixture2(
+  x <- r_sph_beta_mixture2(
     n = 24,
     mu = theta$mu,
     weight1 = theta$weight1,
@@ -29,7 +29,7 @@ test_that("rotational beta-mixture bootstrap supports simple and composite nulls
     t_grid = seq(1e-8, pi - 1e-8, length.out = 5)
   )
 
-  result_1 <- multiplier_bootstrap_rotational_beta_mixture2(
+  result_1 <- multiplier_bootstrap_beta_mixture2(
     data = x,
     null = list(type = "simple", theta = theta),
     statistics = c("ks", "cvm"),
@@ -38,7 +38,7 @@ test_that("rotational beta-mixture bootstrap supports simple and composite nulls
     seed = 42,
     n_cores = 1
   )
-  result_2 <- multiplier_bootstrap_rotational_beta_mixture2(
+  result_2 <- multiplier_bootstrap_beta_mixture2(
     data = x,
     null = list(type = "simple", theta = theta),
     statistics = c("ks", "cvm"),
@@ -54,7 +54,7 @@ test_that("rotational beta-mixture bootstrap supports simple and composite nulls
   expect_true(result_1$inference$cvm$p_value >= 0 && result_1$inference$cvm$p_value <= 1)
   expect_true(isTRUE(result_1$diagnostics$weighted_mle))
 
-  composite_result <- multiplier_bootstrap_rotational_beta_mixture2(
+  composite_result <- multiplier_bootstrap_beta_mixture2(
     data = x,
     null = list(type = "composite"),
     statistics = c("ks", "cvm"),
@@ -68,7 +68,7 @@ test_that("rotational beta-mixture bootstrap supports simple and composite nulls
       bootstrap_thetas = TRUE
     ),
     control = list(
-      rotational_beta_mixture2_optim_control = list(maxit = 250L, reltol = 1e-9)
+      beta_mixture2_optim_control = list(maxit = 250L, reltol = 1e-9)
     )
   )
 
@@ -87,7 +87,7 @@ test_that("rotational logit-normal-mixture bootstrap supports simple and composi
     mean2 = 1.0,
     sd2 = 0.55
   )
-  x <- r_sph_rotational_logitnormal_mixture2(
+  x <- r_sph_logitnormal_mixture2(
     n = 24,
     mu = theta$mu,
     weight1 = theta$weight1,
@@ -101,7 +101,7 @@ test_that("rotational logit-normal-mixture bootstrap supports simple and composi
     t_grid = seq(1e-8, pi - 1e-8, length.out = 5)
   )
 
-  result_1 <- multiplier_bootstrap_rotational_logitnormal_mixture2(
+  result_1 <- multiplier_bootstrap_logitnormal_mixture2(
     data = x,
     null = list(type = "simple", theta = theta),
     statistics = c("ks", "cvm"),
@@ -110,7 +110,7 @@ test_that("rotational logit-normal-mixture bootstrap supports simple and composi
     seed = 24,
     n_cores = 1
   )
-  result_2 <- multiplier_bootstrap_rotational_logitnormal_mixture2(
+  result_2 <- multiplier_bootstrap_logitnormal_mixture2(
     data = x,
     null = list(type = "simple", theta = theta),
     statistics = c("ks", "cvm"),
@@ -126,7 +126,7 @@ test_that("rotational logit-normal-mixture bootstrap supports simple and composi
   expect_true(result_1$inference$cvm$p_value >= 0 && result_1$inference$cvm$p_value <= 1)
   expect_true(isTRUE(result_1$diagnostics$weighted_mle))
 
-  composite_result <- multiplier_bootstrap_rotational_logitnormal_mixture2(
+  composite_result <- multiplier_bootstrap_logitnormal_mixture2(
     data = x,
     null = list(type = "composite"),
     statistics = c("ks", "cvm"),
@@ -140,7 +140,7 @@ test_that("rotational logit-normal-mixture bootstrap supports simple and composi
       bootstrap_thetas = TRUE
     ),
     control = list(
-      rotational_logitnormal_mixture2_optim_control = list(maxit = 250L, reltol = 1e-9)
+      logitnormal_mixture2_optim_control = list(maxit = 250L, reltol = 1e-9)
     )
   )
 
@@ -150,10 +150,10 @@ test_that("rotational logit-normal-mixture bootstrap supports simple and composi
 })
 
 test_that("rotational beta-mixture calibration scenarios run in smoke size", {
-  output_dir <- file.path(tempdir(), "rotational_beta_mixture2_bootstrap_calibration_smoke")
+  output_dir <- file.path(tempdir(), "beta_mixture2_bootstrap_calibration_smoke")
 
   result <- run_bootstrap_calibration_study(
-    scenarios = default_rotational_beta_mixture2_simple_calibration_scenarios()[1],
+    scenarios = default_beta_mixture2_simple_calibration_scenarios()[1],
     n_values = 24,
     M_outer = 2,
     B = 4,
@@ -167,17 +167,17 @@ test_that("rotational beta-mixture calibration scenarios run in smoke size", {
     verbose = FALSE
   )
 
-  expect_equal(unique(result$raw_results$model), "rotational_beta_mixture2")
+  expect_equal(unique(result$raw_results$model), "beta_mixture2")
   expect_equal(nrow(result$raw_results), 4)
   expect_true(file.exists(file.path(output_dir, "bootstrap_calibration_raw.csv")))
   expect_true(file.exists(file.path(output_dir, "bootstrap_calibration_summary.csv")))
 })
 
 test_that("rotational logit-normal-mixture calibration scenarios run in smoke size", {
-  output_dir <- file.path(tempdir(), "rotational_logitnormal_mixture2_bootstrap_calibration_smoke")
+  output_dir <- file.path(tempdir(), "logitnormal_mixture2_bootstrap_calibration_smoke")
 
   result <- run_bootstrap_calibration_study(
-    scenarios = default_rotational_logitnormal_mixture2_composite_calibration_scenarios()[1],
+    scenarios = default_logitnormal_mixture2_composite_calibration_scenarios()[1],
     n_values = 24,
     M_outer = 2,
     B = 4,
@@ -191,7 +191,7 @@ test_that("rotational logit-normal-mixture calibration scenarios run in smoke si
     verbose = FALSE
   )
 
-  expect_equal(unique(result$raw_results$model), "rotational_logitnormal_mixture2")
+  expect_equal(unique(result$raw_results$model), "logitnormal_mixture2")
   expect_equal(nrow(result$raw_results), 4)
   expect_true(file.exists(file.path(output_dir, "bootstrap_calibration_raw.csv")))
   expect_true(file.exists(file.path(output_dir, "bootstrap_calibration_summary.csv")))

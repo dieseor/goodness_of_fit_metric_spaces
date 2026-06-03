@@ -7,7 +7,7 @@ resolve_jp_profile_refine_path <- function(...) {
 
   for (candidate in candidates) {
     if (file.exists(candidate) || dir.exists(candidate)) {    run_comets_distance_profile_jp_short_observed_method_benchmark(
-      output_root = "output/comets_distance_profile_jp/run_20260530_short_ks_bfgs_obs_bootlocal_B1000_12cores",
+      output_root = "output/real_data/comets/jp/run_20260530_short_ks_bfgs_obs_bootlocal_B1000_12cores",
       observed_methods = "standard_bfgs",
       B_values = 1000L,
       statistic = "ks",
