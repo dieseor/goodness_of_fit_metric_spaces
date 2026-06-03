@@ -47,3 +47,6 @@ renv/cache/
 
 # Ignore large debug files
 debug_*.csv
+
+# Ignore big dataset
+real_data/wind/risoe_m_all.nc
