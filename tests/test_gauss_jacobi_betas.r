@@ -269,6 +269,169 @@ validate_profile_vs_integral <- function(theta,
   invisible(out)
 }
 
+# ---- Direct Gauss--Jacobi profile reference and validation ----
+beta_component_profile_direct_gauss_jacobi <- function(theta,
+                                                       alpha,
+                                                       beta,
+                                                       omega,
+                                                       t_grid,
+                                                       quad_n = 160L) {
+  omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
+  mu <- jp_normalize_unit_vector(theta$mu, arg_name = "`theta$mu`", min_length = 3L)
+  t_grid <- as.numeric(t_grid)
+
+  upper_bound <- pi
+  out <- numeric(length(t_grid))
+  out[t_grid <= 0] <- 0
+  out[t_grid >= upper_bound] <- 1
+  active <- which(is.finite(t_grid) & t_grid > 0 & t_grid < upper_bound)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  thresholds <- sphere_distance_to_dot_threshold(t_grid[active], distance_type = "geodesic")
+  r_value <- sum(omega * mu)
+
+  if (abs(r_value - 1) <= 1e-12) {
+    out[active] <- 1 - stats::pbeta((thresholds + 1) / 2, shape1 = alpha, shape2 = beta)
+    return(pmin(pmax(out, 0), 1))
+  }
+  if (abs(r_value + 1) <= 1e-12) {
+    out[active] <- stats::pbeta((1 - thresholds) / 2, shape1 = alpha, shape2 = beta)
+    return(pmin(pmax(out, 0), 1))
+  }
+
+  jacobi <- beta_mixture2_gauss_jacobi(
+    n = as.integer(quad_n),
+    alpha = beta - 1,
+    beta = alpha - 1
+  )
+  z_nodes <- jacobi$nodes
+  normalized_weights <- jacobi$weights / jacobi$total_mass
+  kernel <- small_circle_projection_kernel(
+    c_thresholds = thresholds,
+    z_nodes = z_nodes,
+    r = r_value
+  )
+  out[active] <- as.numeric(kernel %*% normalized_weights)
+  pmin(pmax(out, 0), 1)
+}
+
+beta_mixture2_profile_direct_gauss_jacobi <- function(theta,
+                                                      omega,
+                                                      t_grid,
+                                                      quad_n = 160L) {
+  theta <- beta_mixture2_normalize_theta(theta, ambient_dim = 3L)
+  comp1 <- beta_component_profile_direct_gauss_jacobi(
+    theta = theta,
+    alpha = theta$alpha1,
+    beta = theta$beta1,
+    omega = omega,
+    t_grid = t_grid,
+    quad_n = quad_n
+  )
+  comp2 <- beta_component_profile_direct_gauss_jacobi(
+    theta = theta,
+    alpha = theta$alpha2,
+    beta = theta$beta2,
+    omega = omega,
+    t_grid = t_grid,
+    quad_n = quad_n
+  )
+  theta$weight1 * comp1 + (1 - theta$weight1) * comp2
+}
+
+validate_profile_against_direct_gauss_jacobi <- function(theta,
+                                                         l_max = 150L,
+                                                         quad_n_coeff = 100L,
+                                                         quad_n_integral = 1500L,
+                                                         quad_n_direct = 240L,
+                                                         tolerance_legendre = 2e-4,
+                                                         tolerance_integral = 5e-4) {
+  cat("\n--- Legendre/integral vs direct Gauss--Jacobi profile reference ---\n")
+
+  omega_list <- list(
+    orthogonal = orthogonal_unit(theta$mu),
+    random1 = random_unit(),
+    random2 = random_unit()
+  )
+  t_grid <- seq(0, pi, length.out = 81)
+
+  rows <- lapply(names(omega_list), function(nm) {
+    omega <- omega_list[[nm]]
+    direct <- beta_mixture2_profile_direct_gauss_jacobi(
+      theta = theta,
+      omega = omega,
+      t_grid = t_grid,
+      quad_n = quad_n_direct
+    )
+    leg <- distance_profile_beta_mixture2(
+      omega = omega,
+      t_values = t_grid,
+      mu = theta$mu,
+      weight1 = theta$weight1,
+      alpha1 = theta$alpha1,
+      beta1 = theta$beta1,
+      alpha2 = theta$alpha2,
+      beta2 = theta$beta2,
+      distance_type = "geodesic",
+      method = "legendre",
+      l_max = l_max,
+      quad_n = quad_n_coeff
+    )
+    integ <- distance_profile_beta_mixture2(
+      omega = omega,
+      t_values = t_grid,
+      mu = theta$mu,
+      weight1 = theta$weight1,
+      alpha1 = theta$alpha1,
+      beta1 = theta$beta1,
+      alpha2 = theta$alpha2,
+      beta2 = theta$beta2,
+      distance_type = "geodesic",
+      method = "integral",
+      quad_n = quad_n_integral
+    )
+
+    data.frame(
+      omega = nm,
+      max_abs_legendre_vs_direct = max_abs(leg - direct),
+      max_abs_integral_vs_direct = max_abs(integ - direct),
+      mean_abs_legendre_vs_direct = mean(abs(leg - direct)),
+      mean_abs_integral_vs_direct = mean(abs(integ - direct)),
+      stringsAsFactors = FALSE
+    )
+  })
+
+  out <- do.call(rbind, rows)
+  print(out)
+  cat("Note: the direct Gauss--Jacobi profile integrates the cap-probability kernel,\n")
+  cat("which is not a polynomial in the axial variable. Hence this is a numerical\n")
+  cat("reference for the profile, not an exact Gauss--Jacobi identity like a0.\n")
+
+  max_leg <- max(out$max_abs_legendre_vs_direct)
+  max_int <- max(out$max_abs_integral_vs_direct)
+
+  cat(sprintf("max Legendre vs direct discrepancy: %.3e\n", max_leg))
+  cat(sprintf("max Integral vs direct discrepancy: %.3e\n", max_int))
+
+  if (max_leg > tolerance_legendre) {
+    cat(sprintf(
+      "Diagnostic note: Legendre vs direct Gauss-Jacobi discrepancy %.3e exceeds threshold %.3e.\n",
+      max_leg, tolerance_legendre
+    ))
+  }
+
+  if (max_int > tolerance_integral) {
+    cat(sprintf(
+      "Diagnostic note: Integral vs direct Gauss-Jacobi discrepancy %.3e exceeds threshold %.3e.\n",
+      max_int, tolerance_integral
+    ))
+  }
+
+  invisible(out)
+}
+
 validate_grid_vs_scalar <- function(theta, l_max = 120L, quad_n = 100L) {
   cat("\n--- Grid evaluator vs scalar evaluator ---\n")
 
@@ -391,6 +554,7 @@ run_validation_scenario <- function(nm) {
     validate_coefficients(theta, l_max = 150L, quad_n = 100L, tol = 1e-10)
     validate_special_cases(theta, l_max = 150L, quad_n = 100L)
     validate_profile_vs_integral(theta, l_max = 150L, quad_n_coeff = 100L, quad_n_integral = 1500L)
+    validate_profile_against_direct_gauss_jacobi(theta, l_max = 150L, quad_n_coeff = 100L, quad_n_integral = 1500L, quad_n_direct = 240L)
     validate_grid_vs_scalar(theta, l_max = 150L, quad_n = 100L)
     validate_cvm_grid_vs_naive(theta, n = 20L, l_max = 150L, quad_n = 100L)
 
@@ -402,7 +566,7 @@ run_validation_scenario <- function(nm) {
 }
 
 scenario_names <- names(theta_list)
-n_cores_used <- n_cores
+n_cores_used <- min(n_cores, length(scenario_names))
 cat("Running", length(scenario_names), "validation scenarios with", n_cores_used, "cores.\n")
 
 if (.Platform$OS.type == "unix" && n_cores_used > 1L) {

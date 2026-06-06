@@ -160,6 +160,40 @@ spec_sample_profile_matrix_eval <- function(spec,
   spec$sample_profile_matrix_eval(data, distance_matrix, theta, control)
 }
 
+spec_cvm_prepare <- function(spec,
+                             data,
+                             theta_hat,
+                             control = list()) {
+  if (!is.function(spec$cvm_prepare)) {
+    return(NULL)
+  }
+
+  spec$cvm_prepare(data, theta_hat, control)
+}
+
+spec_cvm_bootstrap_stat <- function(spec,
+                                    data,
+                                    normalized_weights,
+                                    theta_star,
+                                    cvm_prep,
+                                    null,
+                                    control = list(),
+                                    scale_factor = 1) {
+  if (!is.function(spec$cvm_bootstrap_stat)) {
+    return(NULL)
+  }
+
+  spec$cvm_bootstrap_stat(
+    data = data,
+    normalized_weights = normalized_weights,
+    theta_star = theta_star,
+    cvm_prep = cvm_prep,
+    null = null,
+    control = control,
+    scale_factor = scale_factor
+  )
+}
+
 normalize_probability_weights <- function(weights, n_expected = NULL) {
   weights <- as.numeric(weights)
 
@@ -1958,4 +1992,10 @@ make_logitnormal_mixture2_spec <- function(distance_type = c("chordal", "geodesi
 small_circle_model_spec_path <- resolve_bootstrap_path("bootstrap", "small_circle_model_spec.R")
 if (!exists("make_small_circle_spec", mode = "function") && file.exists(small_circle_model_spec_path)) {
   source(small_circle_model_spec_path)
+}
+
+small_circle_symmetric_mixture2_model_spec_path <- resolve_bootstrap_path("bootstrap", "small_circle_symmetric_mixture2_model_spec.R")
+if (!exists("make_small_circle_symmetric_mixture2_spec", mode = "function") &&
+    file.exists(small_circle_symmetric_mixture2_model_spec_path)) {
+  source(small_circle_symmetric_mixture2_model_spec_path)
 }

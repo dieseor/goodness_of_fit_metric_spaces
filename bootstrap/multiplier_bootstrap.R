@@ -31,6 +31,18 @@ if (!exists("make_small_circle_spec", mode = "function") && file.exists(small_ci
   source(small_circle_model_spec_path)
 }
 
+small_circle_symmetric_mixture2_model_spec_path <- resolve_multiplier_bootstrap_path("bootstrap", "small_circle_symmetric_mixture2_model_spec.R")
+if (!exists("make_small_circle_symmetric_mixture2_spec", mode = "function") &&
+    file.exists(small_circle_symmetric_mixture2_model_spec_path)) {
+  source(small_circle_symmetric_mixture2_model_spec_path)
+}
+
+small_circle_weighted_mixture2_model_spec_path <- resolve_multiplier_bootstrap_path("bootstrap", "small_circle_weighted_mixture2_model_spec.R")
+if (!exists("make_small_circle_weighted_mixture2_spec", mode = "function") &&
+    file.exists(small_circle_weighted_mixture2_model_spec_path)) {
+  source(small_circle_weighted_mixture2_model_spec_path)
+}
+
 normalize_requested_statistics <- function(statistics) {
   statistics <- unique(tolower(as.character(statistics)))
   valid_statistics <- c("ks", "cvm")
@@ -332,6 +344,11 @@ compute_theoretical_sample_profile_matrix <- function(spec,
                                                      distance_matrix,
                                                      theta,
                                                      control = list()) {
+  debug_memory_log(
+    control,
+    sprintf("compute_theoretical_sample_profile_matrix: enter spec=%s", spec$name),
+    list(distance_matrix = distance_matrix)
+  )
   fast_output <- spec_sample_profile_matrix_eval(
     spec = spec,
     data = data,
@@ -341,6 +358,7 @@ compute_theoretical_sample_profile_matrix <- function(spec,
   )
   if (!is.null(fast_output)) {
     n <- nrow(distance_matrix)
+    debug_memory_log(control, "compute_theoretical_sample_profile_matrix: fast_output", list(fast_output = fast_output))
     return(ensure_profile_matrix(fast_output, n_rows = n, n_cols = n))
   }
 
@@ -357,12 +375,20 @@ compute_theoretical_sample_profile_matrix <- function(spec,
 }
 
 prepare_cvm_observed_data <- function(data, spec, theta_hat, control = list()) {
+  fast_prep <- spec_cvm_prepare(spec, data = data, theta_hat = theta_hat, control = control)
+  if (!is.null(fast_prep)) {
+    return(fast_prep)
+  }
+
+  debug_memory_log(control, "prepare_cvm_observed_data: before distance_matrix")
   distance_matrix <- spec$distance_matrix(data, data, control)
+  debug_memory_log(control, "prepare_cvm_observed_data: after distance_matrix", list(distance_matrix = distance_matrix))
   n <- nrow(distance_matrix)
 
   rank_matrix <- t(vapply(seq_len(n), function(i) {
     as.integer(rank(distance_matrix[i, ], ties.method = "max"))
   }, integer(n)))
+  debug_memory_log(control, "prepare_cvm_observed_data: after rank_matrix", list(rank_matrix = rank_matrix))
 
   order_list <- lapply(seq_len(n), function(i) {
     order(distance_matrix[i, ])
@@ -372,8 +398,17 @@ prepare_cvm_observed_data <- function(data, spec, theta_hat, control = list()) {
   }, integer(n)))
   row_index_matrix <- matrix(rep.int(seq_len(n), n), nrow = n, ncol = n)
   rank_linear_index <- row_index_matrix + (rank_matrix - 1L) * n
+  debug_memory_log(
+    control,
+    "prepare_cvm_observed_data: after ordering structures",
+    list(
+      order_matrix = order_matrix,
+      rank_linear_index = rank_linear_index
+    )
+  )
 
   empirical_profile <- rank_matrix / n
+  debug_memory_log(control, "prepare_cvm_observed_data: after empirical_profile", list(empirical_profile = empirical_profile))
   theoretical_profile <- compute_theoretical_sample_profile_matrix(
     spec = spec,
     data = data,
@@ -381,8 +416,10 @@ prepare_cvm_observed_data <- function(data, spec, theta_hat, control = list()) {
     theta = theta_hat,
     control = control
   )
+  debug_memory_log(control, "prepare_cvm_observed_data: after theoretical_profile", list(theoretical_profile = theoretical_profile))
 
   process_matrix <- sqrt(n) * (empirical_profile - theoretical_profile)
+  debug_memory_log(control, "prepare_cvm_observed_data: after process_matrix", list(process_matrix = process_matrix))
 
   list(
     distance_matrix = distance_matrix,
@@ -446,7 +483,8 @@ run_bootstrap_chunk <- function(weight_chunk,
                                 want_ks = FALSE,
                                 want_cvm = FALSE,
                                 keep_bootstrap_thetas = FALSE,
-                                theta_start = NULL) {
+                                theta_start = NULL,
+                                replicate_indices = NULL) {
   n_reps <- nrow(weight_chunk)
   ks_values <- if (want_ks) numeric(n_reps) else NULL
   cvm_values <- if (want_cvm) numeric(n_reps) else NULL
@@ -459,8 +497,20 @@ run_bootstrap_chunk <- function(weight_chunk,
 
   for (b in seq_len(n_reps)) {
     normalized_weights <- weight_chunk[b, ]
+    replicate_index <- if (is.null(replicate_indices)) b else as.integer(replicate_indices[[b]])
+    debug_memory_log(
+      control,
+      sprintf("run_bootstrap_chunk: start replicate %d/%d", replicate_index, n_reps),
+      list(
+        weight_chunk = weight_chunk,
+        normalized_weights = normalized_weights
+      )
+    )
 
     theta_star <- NULL
+    bootstrap_fit_warnings <- character()
+    theta_star_loglik <- NA_real_
+    theta_star_convergence <- NA_integer_
     if (identical(null$type, "composite")) {
       bootstrap_control <- control
       if (!is.null(theta_start) && grepl("^jp_", spec$name)) {
@@ -478,18 +528,62 @@ run_bootstrap_chunk <- function(weight_chunk,
         bootstrap_control$beta_mixture2_n_starts <- bootstrap_control$beta_mixture2_bootstrap_n_starts %||% 1L
         bootstrap_control$beta_mixture2_optim_control <- bootstrap_control$beta_mixture2_bootstrap_optim_control %||%
           list(maxit = 80L, reltol = 1e-6)
+      } else if (!is.null(theta_start) && grepl("^small_circle_symmetric_mixture2_", spec$name)) {
+        bootstrap_control$small_circle_symmetric_mixture2_start_theta <- theta_start
+        bootstrap_control$small_circle_symmetric_mixture2_warm_start_only <- TRUE
+        bootstrap_control$small_circle_symmetric_mixture2_n_starts <-
+          bootstrap_control$small_circle_symmetric_mixture2_bootstrap_n_starts %||% 1L
+        bootstrap_control$small_circle_symmetric_mixture2_optim_control <-
+          bootstrap_control$small_circle_symmetric_mixture2_bootstrap_optim_control %||%
+          list(maxit = 80L, reltol = 1e-6)
+      } else if (!is.null(theta_start) && grepl("^small_circle_weighted_mixture2_", spec$name)) {
+        bootstrap_control$small_circle_weighted_mixture2_start_theta <- theta_start
+        bootstrap_control$small_circle_weighted_mixture2_warm_start_only <- TRUE
+        bootstrap_control$small_circle_weighted_mixture2_n_starts <-
+          bootstrap_control$small_circle_weighted_mixture2_bootstrap_n_starts %||% 1L
+        bootstrap_control$small_circle_weighted_mixture2_optim_control <-
+          bootstrap_control$small_circle_weighted_mixture2_bootstrap_optim_control %||%
+          list(maxit = 80L, reltol = 1e-6)
       } else if (!is.null(theta_start) && grepl("^logitnormal_mixture2_", spec$name)) {
         bootstrap_control$logitnormal_mixture2_start_theta <- theta_start
         bootstrap_control$logitnormal_mixture2_warm_start_only <- TRUE
       } else if (!is.null(theta_start) && is.null(bootstrap_control$jp_mle_start_theta)) {
         bootstrap_control$jp_mle_start_theta <- theta_start
       }
-      theta_star <- spec$fit_theta(
-        data = data,
-        weights = normalized_weights,
-        null = null,
-        control = bootstrap_control
+      theta_star <- tryCatch(
+        withCallingHandlers(
+          spec$fit_theta(
+            data = data,
+            weights = normalized_weights,
+            null = null,
+            control = bootstrap_control
+          ),
+          warning = function(w) {
+            bootstrap_fit_warnings <<- c(bootstrap_fit_warnings, conditionMessage(w))
+            invokeRestart("muffleWarning")
+          }
+        ),
+        error = function(e) {
+          bootstrap_fit_warnings <<- c(
+            bootstrap_fit_warnings,
+            paste0("Bootstrap MLE error: ", conditionMessage(e))
+          )
+          NULL
+        }
       )
+      theta_star_loglik <- as.numeric(theta_star$loglik %||% NA_real_)
+      theta_star_convergence <- as.integer(theta_star$opt$convergence %||% NA_integer_)
+      if (grepl("^small_circle_symmetric_mixture2_", spec$name) &&
+          (is.null(theta_star) ||
+             any(!is.finite(as.numeric(c(theta_star$mu, theta_star$kappa, theta_star$nu)))))) {
+        bootstrap_fit_warnings <- c(
+          bootstrap_fit_warnings,
+          "Bootstrap MLE returned non-finite theta_star; falling back to observed theta_hat."
+        )
+        theta_star <- theta_start
+        theta_star_loglik <- as.numeric(theta_start$loglik %||% NA_real_)
+        theta_star_convergence <- as.integer(theta_start$opt$convergence %||% NA_integer_)
+      }
       if (!is.null(theta_values)) {
         theta_values[[b]] <- theta_star
       }
@@ -525,29 +619,63 @@ run_bootstrap_chunk <- function(weight_chunk,
     }
 
     if (want_cvm) {
-      f_star_sample <- compute_weighted_sample_profile_matrix(
-        order_matrix = cvm_prep$order_matrix,
-        rank_linear_index = cvm_prep$rank_linear_index,
-        normalized_weights = normalized_weights
+      cvm_control <- utils::modifyList(
+        control,
+        list(
+          small_circle_symmetric_mixture2_bootstrap_replicate_index = replicate_index,
+          small_circle_symmetric_mixture2_bootstrap_warnings = bootstrap_fit_warnings,
+          small_circle_symmetric_mixture2_bootstrap_loglik = theta_star_loglik,
+          small_circle_symmetric_mixture2_bootstrap_convergence = theta_star_convergence
+        )
       )
-
-      if (identical(null$type, "simple")) {
-        process_star_sample <- scale_factor * sqrt(n) * (f_star_sample - cvm_prep$empirical_profile)
+      cvm_stat_fast <- spec_cvm_bootstrap_stat(
+        spec = spec,
+        data = data,
+        normalized_weights = normalized_weights,
+        theta_star = theta_star,
+        cvm_prep = cvm_prep,
+        null = null,
+        control = cvm_control,
+        scale_factor = scale_factor
+      )
+      if (!is.null(cvm_stat_fast)) {
+        cvm_values[b] <- cvm_stat_fast
       } else {
-        f_theta_star_sample <- compute_theoretical_sample_profile_matrix(
-          spec = spec,
-          data = data,
-          distance_matrix = cvm_prep$distance_matrix,
-          theta = theta_star,
-          control = control
+        f_star_sample <- compute_weighted_sample_profile_matrix(
+          order_matrix = cvm_prep$order_matrix,
+          rank_linear_index = cvm_prep$rank_linear_index,
+          normalized_weights = normalized_weights
         )
-        process_star_sample <- scale_factor * sqrt(n) * (
-          (f_star_sample - f_theta_star_sample) -
-            (cvm_prep$empirical_profile - cvm_prep$theoretical_profile)
-        )
-      }
+        debug_memory_log(control, sprintf("run_bootstrap_chunk: replicate %d after f_star_sample", b), list(f_star_sample = f_star_sample))
 
-      cvm_values[b] <- mean(process_star_sample^2)
+        if (identical(null$type, "simple")) {
+          process_star_sample <- scale_factor * sqrt(n) * (f_star_sample - cvm_prep$empirical_profile)
+        } else {
+          f_theta_star_sample <- compute_theoretical_sample_profile_matrix(
+            spec = spec,
+            data = data,
+            distance_matrix = cvm_prep$distance_matrix,
+            theta = theta_star,
+            control = cvm_control
+          )
+          debug_memory_log(
+            control,
+            sprintf("run_bootstrap_chunk: replicate %d after f_theta_star_sample", b),
+            list(f_theta_star_sample = f_theta_star_sample)
+          )
+          process_star_sample <- scale_factor * sqrt(n) * (
+            (f_star_sample - f_theta_star_sample) -
+              (cvm_prep$empirical_profile - cvm_prep$theoretical_profile)
+          )
+        }
+        debug_memory_log(
+          control,
+          sprintf("run_bootstrap_chunk: replicate %d after process_star_sample", b),
+          list(process_star_sample = process_star_sample)
+        )
+
+        cvm_values[b] <- mean(process_star_sample^2)
+      }
     }
   }
 
@@ -594,7 +722,7 @@ build_observed_output <- function(theta_hat, ks_prep, cvm_prep, keep_options) {
 
   if (!is.null(cvm_prep)) {
     output$cvm <- list(statistic = cvm_prep$statistic)
-    if (keep_options$observed_process) {
+    if (keep_options$observed_process && !is.null(cvm_prep$process_matrix)) {
       output$cvm$process_matrix <- cvm_prep$process_matrix
       output$cvm$distance_matrix <- cvm_prep$distance_matrix
       output$cvm$empirical_profile <- cvm_prep$empirical_profile
@@ -701,33 +829,49 @@ multiplier_bootstrap_gof <- function(data,
   weight_chunks <- lapply(chunk_ids, function(indices) {
     normalized_multiplier_matrix[indices, , drop = FALSE]
   })
+  replicate_index_chunks <- unname(chunk_ids)
 
   if (n_cores_effective == 1L) {
-    chunk_results <- lapply(weight_chunks, run_bootstrap_chunk,
-      spec = spec,
-      data = data_normalized,
-      null = null,
-      control = control,
-      scale_factor = scale_factor,
-      ks_prep = ks_prep,
-      cvm_prep = cvm_prep,
-      want_ks = want_ks,
-      want_cvm = want_cvm,
-      keep_bootstrap_thetas = keep$bootstrap_thetas,
-      theta_start = theta_hat
-    )
+    chunk_results <- lapply(seq_along(weight_chunks), function(i) {
+      run_bootstrap_chunk(
+        weight_chunk = weight_chunks[[i]],
+        spec = spec,
+        data = data_normalized,
+        null = null,
+        control = control,
+        scale_factor = scale_factor,
+        ks_prep = ks_prep,
+        cvm_prep = cvm_prep,
+        want_ks = want_ks,
+        want_cvm = want_cvm,
+        keep_bootstrap_thetas = keep$bootstrap_thetas,
+        theta_start = theta_hat,
+        replicate_indices = replicate_index_chunks[[i]]
+      )
+    })
   } else {
     utils_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("utils.R"), winslash = "/", mustWork = TRUE)
     model_specs_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "model_specs.R"), winslash = "/", mustWork = TRUE)
     cardioid_model_spec_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "cardioid_model_spec.R"), winslash = "/", mustWork = TRUE)
     small_circle_model_spec_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "small_circle_model_spec.R"), winslash = "/", mustWork = TRUE)
+    small_circle_symmetric_mixture2_model_spec_path_worker <-
+      normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "small_circle_symmetric_mixture2_model_spec.R"), winslash = "/", mustWork = TRUE)
+    small_circle_weighted_mixture2_model_spec_path_worker <-
+      normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "small_circle_weighted_mixture2_model_spec.R"), winslash = "/", mustWork = TRUE)
 
     cl <- parallel::makeCluster(n_cores_effective)
     on.exit(parallel::stopCluster(cl), add = TRUE)
 
     parallel::clusterExport(
       cl,
-      c("utils_path_worker", "model_specs_path_worker", "cardioid_model_spec_path_worker", "small_circle_model_spec_path_worker"),
+      c(
+        "utils_path_worker",
+        "model_specs_path_worker",
+        "cardioid_model_spec_path_worker",
+        "small_circle_model_spec_path_worker",
+        "small_circle_symmetric_mixture2_model_spec_path_worker",
+        "small_circle_weighted_mixture2_model_spec_path_worker"
+      ),
       envir = environment()
     )
     parallel::clusterEvalQ(cl, {
@@ -735,6 +879,8 @@ multiplier_bootstrap_gof <- function(data,
       source(model_specs_path_worker)
       source(cardioid_model_spec_path_worker)
       source(small_circle_model_spec_path_worker)
+      source(small_circle_symmetric_mixture2_model_spec_path_worker)
+      source(small_circle_weighted_mixture2_model_spec_path_worker)
       NULL
     })
 
@@ -771,14 +917,24 @@ multiplier_bootstrap_gof <- function(data,
       "normalize_small_circle_data",
       "normalize_small_circle_theta",
       "fit_small_circle_theta",
-      "make_small_circle_spec"
+      "make_small_circle_spec",
+      "normalize_small_circle_symmetric_mixture2_data",
+      "normalize_small_circle_symmetric_mixture2_theta",
+      "fit_small_circle_symmetric_mixture2_theta",
+      "make_small_circle_symmetric_mixture2_spec",
+      "normalize_small_circle_weighted_mixture2_data",
+      "normalize_small_circle_weighted_mixture2_theta",
+      "fit_small_circle_weighted_mixture2_theta",
+      "make_small_circle_weighted_mixture2_spec"
     )
 
     parallel::clusterExport(cl, worker_symbols, envir = environment())
 
-    chunk_results <- parallel::parLapply(cl, weight_chunks, function(chunk) {
+    parallel::clusterExport(cl, c("replicate_index_chunks"), envir = environment())
+
+    chunk_results <- parallel::parLapply(cl, seq_along(weight_chunks), function(i) {
       run_bootstrap_chunk(
-        weight_chunk = chunk,
+        weight_chunk = weight_chunks[[i]],
         spec = spec,
         data = data_normalized,
         null = null,
@@ -789,7 +945,8 @@ multiplier_bootstrap_gof <- function(data,
         want_ks = want_ks,
         want_cvm = want_cvm,
         keep_bootstrap_thetas = keep$bootstrap_thetas,
-        theta_start = theta_hat
+        theta_start = theta_hat,
+        replicate_indices = replicate_index_chunks[[i]]
       )
     })
   }
@@ -1201,6 +1358,76 @@ multiplier_bootstrap_small_circle <- function(data,
                                               distance_type = c("chordal", "geodesic")) {
   distance_type <- match.arg(distance_type)
   spec <- make_small_circle_spec(distance_type = distance_type)
+
+  multiplier_bootstrap_gof(
+    data = data,
+    spec = spec,
+    null = null,
+    statistics = statistics,
+    ks_grid = ks_grid,
+    B = B,
+    alpha = alpha,
+    multipliers = multipliers,
+    n_cores = n_cores,
+    seed = seed,
+    keep = keep,
+    control = control
+  )
+}
+
+multiplier_bootstrap_small_circle_symmetric_mixture2 <- function(data,
+                                                                 null,
+                                                                 statistics = c("ks", "cvm"),
+                                                                 ks_grid = NULL,
+                                                                 B = 999,
+                                                                 alpha = 0.05,
+                                                                 multipliers = NULL,
+                                                                 n_cores = 1,
+                                                                 seed = NULL,
+                                                                 keep = list(
+                                                                   observed_process = TRUE,
+                                                                   bootstrap_statistics = TRUE,
+                                                                   bootstrap_thetas = FALSE
+                                                                 ),
+                                                                 control = list(),
+                                                                 distance_type = c("chordal", "geodesic")) {
+  distance_type <- match.arg(distance_type)
+  spec <- make_small_circle_symmetric_mixture2_spec(distance_type = distance_type)
+
+  multiplier_bootstrap_gof(
+    data = data,
+    spec = spec,
+    null = null,
+    statistics = statistics,
+    ks_grid = ks_grid,
+    B = B,
+    alpha = alpha,
+    multipliers = multipliers,
+    n_cores = n_cores,
+    seed = seed,
+    keep = keep,
+    control = control
+  )
+}
+
+multiplier_bootstrap_small_circle_weighted_mixture2 <- function(data,
+                                                                null,
+                                                                statistics = c("ks", "cvm"),
+                                                                ks_grid = NULL,
+                                                                B = 999,
+                                                                alpha = 0.05,
+                                                                multipliers = NULL,
+                                                                n_cores = 1,
+                                                                seed = NULL,
+                                                                keep = list(
+                                                                  observed_process = TRUE,
+                                                                  bootstrap_statistics = TRUE,
+                                                                  bootstrap_thetas = FALSE
+                                                                ),
+                                                                control = list(),
+                                                                distance_type = c("chordal", "geodesic")) {
+  distance_type <- match.arg(distance_type)
+  spec <- make_small_circle_weighted_mixture2_spec(distance_type = distance_type)
 
   multiplier_bootstrap_gof(
     data = data,

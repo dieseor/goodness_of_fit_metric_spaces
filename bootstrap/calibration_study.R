@@ -608,6 +608,70 @@ make_logitnormal_mixture2_composite_calibration_scenario <- function(weight1 = 0
   )
 }
 
+make_small_circle_symmetric_mixture2_simple_calibration_scenario <- function(kappa = 12,
+                                                                             nu = 0.6) {
+  mu <- c(0, 0, 1)
+  list(
+    id = sprintf(
+      "small_circle_symmetric_mixture2_simple_s2_geodesic_w50_50_kappa_%s_nu_%s",
+      format_calibration_number_tag(kappa),
+      format_calibration_number_tag(nu)
+    ),
+    model = "small_circle_symmetric_mixture2",
+    label = sprintf(
+      "Symmetric two-small-circles simple S^2 geodesic: w=(0.5,0.5), kappa=%s, nu=%s",
+      kappa,
+      nu
+    ),
+    null = list(type = "simple", theta = list(mu = mu, kappa = kappa, nu = nu)),
+    sample_params = list(mu = mu, kappa = kappa, nu = nu),
+    distance_type = "geodesic",
+    unknown_param = "theta",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    ),
+    control = list(
+      small_circle_symmetric_mixture2_L_max = 150L,
+      small_circle_symmetric_mixture2_quad_n = 400L,
+      small_circle_symmetric_mixture2_tol = 1e-10,
+      small_circle_symmetric_mixture2_optim_control = list(maxit = 300L, reltol = 1e-9)
+    )
+  )
+}
+
+make_small_circle_symmetric_mixture2_composite_calibration_scenario <- function(kappa = 12,
+                                                                                nu = 0.6) {
+  mu <- c(0, 0, 1)
+  list(
+    id = sprintf(
+      "small_circle_symmetric_mixture2_composite_s2_geodesic_w50_50_kappa_%s_nu_%s",
+      format_calibration_number_tag(kappa),
+      format_calibration_number_tag(nu)
+    ),
+    model = "small_circle_symmetric_mixture2",
+    label = sprintf(
+      "Symmetric two-small-circles composite S^2 geodesic: w=(0.5,0.5), kappa=%s, nu=%s",
+      kappa,
+      nu
+    ),
+    null = list(type = "composite"),
+    sample_params = list(mu = mu, kappa = kappa, nu = nu),
+    distance_type = "geodesic",
+    unknown_param = "theta",
+    ks_grid = list(
+      omega_grid = generate_canonical_lattice(10, dim = 3),
+      t_grid = seq(1e-8, pi - 1e-8, length.out = 10)
+    ),
+    control = list(
+      small_circle_symmetric_mixture2_L_max = 150L,
+      small_circle_symmetric_mixture2_quad_n = 400L,
+      small_circle_symmetric_mixture2_tol = 1e-10,
+      small_circle_symmetric_mixture2_optim_control = list(maxit = 300L, reltol = 1e-9)
+    )
+  )
+}
+
 make_small_circle_simple_calibration_scenario <- function(kappa,
                                                           nu) {
   mu <- c(0, 0, 1)
@@ -754,6 +818,38 @@ default_logitnormal_mixture2_composite_calibration_scenarios <- function() {
       sd2 = 0.45
     )
   )
+}
+
+default_small_circle_symmetric_mixture2_simple_calibration_scenarios <- function(kappa_values = c(12, 20),
+                                                                                 nu_values = c(0.35, 0.6)) {
+  grid <- expand.grid(
+    kappa = as.numeric(kappa_values),
+    nu = as.numeric(nu_values),
+    KEEP.OUT.ATTRS = FALSE,
+    stringsAsFactors = FALSE
+  )
+  lapply(seq_len(nrow(grid)), function(i) {
+    make_small_circle_symmetric_mixture2_simple_calibration_scenario(
+      kappa = grid$kappa[[i]],
+      nu = grid$nu[[i]]
+    )
+  })
+}
+
+default_small_circle_symmetric_mixture2_composite_calibration_scenarios <- function(kappa_values = c(12, 20),
+                                                                                    nu_values = c(0.35, 0.6)) {
+  grid <- expand.grid(
+    kappa = as.numeric(kappa_values),
+    nu = as.numeric(nu_values),
+    KEEP.OUT.ATTRS = FALSE,
+    stringsAsFactors = FALSE
+  )
+  lapply(seq_len(nrow(grid)), function(i) {
+    make_small_circle_symmetric_mixture2_composite_calibration_scenario(
+      kappa = grid$kappa[[i]],
+      nu = grid$nu[[i]]
+    )
+  })
 }
 
 default_small_circle_simple_calibration_scenarios <- function(kappa_values = c(5, 20),
@@ -1041,6 +1137,15 @@ simulate_h0_sample <- function(scenario, n, replicate_id = NULL) {
     ))
   }
 
+  if (identical(scenario$model, "small_circle_symmetric_mixture2")) {
+    return(r_sph_small_circle_symmetric_mixture2(
+      n = n,
+      mu = scenario$sample_params$mu,
+      kappa = scenario$sample_params$kappa,
+      nu = scenario$sample_params$nu
+    ))
+  }
+
   stop(sprintf("Unsupported scenario model: %s", scenario$model))
 }
 
@@ -1226,6 +1331,26 @@ run_bootstrap_for_scenario <- function(data,
 
   if (identical(scenario$model, "small_circle")) {
     return(multiplier_bootstrap_small_circle(
+      data = data,
+      null = scenario$null,
+      statistics = statistics,
+      ks_grid = scenario$ks_grid,
+      B = B,
+      alpha = alpha_nominal,
+      seed = seed,
+      n_cores = 1,
+      keep = list(
+        observed_process = FALSE,
+        bootstrap_statistics = TRUE,
+        bootstrap_thetas = TRUE
+      ),
+      control = scenario$control %||% list(),
+      distance_type = scenario$distance_type %||% "geodesic"
+    ))
+  }
+
+  if (identical(scenario$model, "small_circle_symmetric_mixture2")) {
+    return(multiplier_bootstrap_small_circle_symmetric_mixture2(
       data = data,
       null = scenario$null,
       statistics = statistics,
@@ -2482,6 +2607,114 @@ run_full_small_circle_composite_calibration_study <- function(output_dir = NULL,
     n_cores_outer = n_cores_outer,
     seed = seed,
     output_dir = output_dir %||% file.path("output", "calibration", "bootstrap", "small_circle_composite_full"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_smoke_small_circle_symmetric_mixture2_simple_calibration_study <- function(output_dir = NULL,
+                                                                                n_cores_outer = 1,
+                                                                                seed = 123,
+                                                                                kappa_values = c(12, 20),
+                                                                                nu_values = c(0.35, 0.6),
+                                                                                show_progress = FALSE,
+                                                                                verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_small_circle_symmetric_mixture2_simple_calibration_scenarios(
+      kappa_values = kappa_values,
+      nu_values = nu_values
+    ),
+    n_values = 50,
+    M_outer = 10,
+    B = 19,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "calibration", "bootstrap", "small_circle_symmetric_mixture2_simple_smoke"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_full_small_circle_symmetric_mixture2_simple_calibration_study <- function(output_dir = NULL,
+                                                                               n_cores_outer = 1,
+                                                                               seed = 123,
+                                                                               M_outer = 500,
+                                                                               B = 500,
+                                                                               kappa_values = c(12, 20),
+                                                                               nu_values = c(0.35, 0.6),
+                                                                               show_progress = FALSE,
+                                                                               verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_small_circle_symmetric_mixture2_simple_calibration_scenarios(
+      kappa_values = kappa_values,
+      nu_values = nu_values
+    ),
+    n_values = c(50, 100, 200),
+    M_outer = M_outer,
+    B = B,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "calibration", "bootstrap", "small_circle_symmetric_mixture2_simple_full"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_smoke_small_circle_symmetric_mixture2_composite_calibration_study <- function(output_dir = NULL,
+                                                                                   n_cores_outer = 1,
+                                                                                   seed = 123,
+                                                                                   kappa_values = c(12, 20),
+                                                                                   nu_values = c(0.35, 0.6),
+                                                                                   show_progress = FALSE,
+                                                                                   verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_small_circle_symmetric_mixture2_composite_calibration_scenarios(
+      kappa_values = kappa_values,
+      nu_values = nu_values
+    ),
+    n_values = 50,
+    M_outer = 10,
+    B = 19,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "calibration", "bootstrap", "small_circle_symmetric_mixture2_composite_smoke"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_full_small_circle_symmetric_mixture2_composite_calibration_study <- function(output_dir = NULL,
+                                                                                  n_cores_outer = 1,
+                                                                                  seed = 123,
+                                                                                  M_outer = 500,
+                                                                                  B = 500,
+                                                                                  kappa_values = c(12, 20),
+                                                                                  nu_values = c(0.35, 0.6),
+                                                                                  show_progress = FALSE,
+                                                                                  verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_small_circle_symmetric_mixture2_composite_calibration_scenarios(
+      kappa_values = kappa_values,
+      nu_values = nu_values
+    ),
+    n_values = c(50, 100, 200),
+    M_outer = M_outer,
+    B = B,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "calibration", "bootstrap", "small_circle_symmetric_mixture2_composite_full"),
     show_progress = show_progress,
     verbose = verbose
   )
