@@ -4518,7 +4518,7 @@ small_circle_distance_profile_integral <- function(omega,
                                                    kappa,
                                                    nu,
                                                    distance_type = c("geodesic", "chordal"),
-                                                    uso) {
+                                                   quad_n = 1000L) {
   distance_type <- match.arg(distance_type)
   params <- small_circle_validate_parameters(mu = mu, kappa = kappa, nu = nu)
   omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
@@ -4577,6 +4577,25 @@ small_circle_monotone_clip <- function(t_values, values, upper_bound) {
   sorted_values <- cummax(sorted_values)
   sorted_values[t_values[order_idx] <= 0] <- 0
   sorted_values[t_values[order_idx] >= upper_bound] <- 1
+  out <- numeric(length(sorted_values))
+  out[order_idx] <- sorted_values
+  out
+}
+
+small_circle_monotone_clip_dot <- function(dot_values, values) {
+  if (length(values) <= 1L) {
+    out <- pmin(pmax(values, 0), 1)
+    out[dot_values >= 1] <- 0
+    out[dot_values <= -1] <- 1
+    return(out)
+  }
+
+  order_idx <- order(dot_values, decreasing = TRUE)
+  sorted_values <- pmin(pmax(values[order_idx], 0), 1)
+  sorted_values <- cummax(sorted_values)
+  sorted_dots <- dot_values[order_idx]
+  sorted_values[sorted_dots >= 1] <- 0
+  sorted_values[sorted_dots <= -1] <- 1
   out <- numeric(length(sorted_values))
   out[order_idx] <- sorted_values
   out
@@ -5754,6 +5773,1440 @@ rotational_sample_profile_matrix <- function(X,
       ...
     ))
   }, numeric(nrow(X))))
+}
+
+debug_memory_log <- function(control = list(),
+                             label,
+                             objects = list(),
+                             force = FALSE) {
+  enabled <- isTRUE(force) || isTRUE(control$cvm_memory_debug %||% FALSE)
+  if (!enabled) {
+    return(invisible(NULL))
+  }
+
+  gc_info <- tryCatch(gc(), error = function(e) NULL)
+  gc_summary <- if (is.null(gc_info)) {
+    "gc=unavailable"
+  } else {
+    used_col <- grep("^used", colnames(gc_info), value = TRUE)[1L]
+    trigger_col <- grep("^gc trigger", colnames(gc_info), value = TRUE)[1L]
+    paste(
+      sprintf(
+        "%s used=%sMb gc_trigger=%sMb",
+        rownames(gc_info),
+        format(round(gc_info[, used_col], 1), trim = TRUE),
+        format(round(gc_info[, trigger_col], 1), trim = TRUE)
+      ),
+      collapse = " | "
+    )
+  }
+
+  message(sprintf("[CvM debug] %s | %s", label, gc_summary))
+  if (length(objects) > 0L) {
+    for (object_name in names(objects)) {
+      obj <- objects[[object_name]]
+      dims <- dim(obj)
+      dim_text <- if (is.null(dims)) {
+        sprintf("length=%d", length(obj))
+      } else {
+        sprintf("dim=%s", paste(dims, collapse = "x"))
+      }
+      size_mb <- as.numeric(utils::object.size(obj)) / 1024^2
+      message(sprintf(
+        "[CvM debug]   %s: %s, size=%.2f Mb, class=%s",
+        object_name,
+        dim_text,
+        size_mb,
+        paste(class(obj), collapse = "/")
+      ))
+    }
+  }
+
+  invisible(NULL)
+}
+
+small_circle_symmetric_mixture2_validate_parameters <- function(mu, kappa, nu) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  if (length(mu) != 3L) {
+    stop("Symmetric small-circle mixture utilities currently support only S^2.")
+  }
+
+  kappa <- as.numeric(kappa)
+  nu <- as.numeric(nu)
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa < 0) {
+    stop("`kappa` must be a finite scalar in [0, Inf).")
+  }
+  if (length(nu) != 1L || !is.finite(nu) || nu < 0 || nu >= 1) {
+    stop("`nu` must be a finite scalar in [0, 1).")
+  }
+
+  list(mu = mu, kappa = kappa, nu = nu, ambient_dim = 3L)
+}
+
+small_circle_symmetric_mixture2_canonicalize_theta <- function(theta, tol = 1e-12) {
+  if (!is.list(theta)) {
+    stop("Symmetric small-circle-mixture theta must be a list.")
+  }
+
+  mu <- jp_normalize_unit_vector(theta$mu, arg_name = "`theta$mu`", min_length = 3L)
+  kappa <- as.numeric(theta$kappa)
+  nu <- abs(as.numeric(theta$nu))
+  tol <- as.numeric(tol)
+
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa < 0) {
+    stop("`theta$kappa` must be a finite scalar in [0, Inf).")
+  }
+  if (length(nu) != 1L || !is.finite(nu) || nu >= 1) {
+    stop("`theta$nu` must be a finite scalar with absolute value in [0, 1).")
+  }
+  if (length(tol) != 1L || !is.finite(tol) || tol < 0) {
+    stop("`tol` must be a finite nonnegative scalar.")
+  }
+
+  first_nonzero <- which(abs(mu) > tol)[1L]
+  if (!is.na(first_nonzero) && mu[[first_nonzero]] < 0) {
+    mu <- -mu
+  }
+  if (nu <= tol) {
+    nu <- 0
+  }
+
+  list(mu = mu, kappa = kappa, nu = nu, ambient_dim = length(mu))
+}
+
+small_circle_symmetric_mixture2_normalize_theta <- function(theta,
+                                                            ambient_dim = 3L,
+                                                            tol = 1e-12) {
+  params <- small_circle_symmetric_mixture2_canonicalize_theta(theta, tol = tol)
+  if (params$ambient_dim != ambient_dim) {
+    stop("Symmetric small-circle-mixture theta has incompatible ambient dimension.")
+  }
+  params
+}
+
+small_circle_weighted_mixture2_validate_parameters <- function(mu,
+                                                               pi,
+                                                               kappa1,
+                                                               nu1,
+                                                               kappa2,
+                                                               nu2) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  if (length(mu) != 3L) {
+    stop("Weighted small-circle mixture utilities currently support only S^2.")
+  }
+
+  pi <- as.numeric(pi)
+  kappa1 <- as.numeric(kappa1)
+  nu1 <- as.numeric(nu1)
+  kappa2 <- as.numeric(kappa2)
+  nu2 <- as.numeric(nu2)
+
+  if (length(pi) != 1L || !is.finite(pi) || pi <= 0 || pi >= 1) {
+    stop("`pi` must be a finite scalar in (0, 1).")
+  }
+  if (length(kappa1) != 1L || !is.finite(kappa1) || kappa1 < 0) {
+    stop("`kappa1` must be a finite scalar in [0, Inf).")
+  }
+  if (length(nu1) != 1L || !is.finite(nu1) || nu1 < 0 || nu1 >= 1) {
+    stop("`nu1` must be a finite scalar in [0, 1).")
+  }
+  if (length(kappa2) != 1L || !is.finite(kappa2) || kappa2 < 0) {
+    stop("`kappa2` must be a finite scalar in [0, Inf).")
+  }
+  if (length(nu2) != 1L || !is.finite(nu2) || nu2 < 0 || nu2 >= 1) {
+    stop("`nu2` must be a finite scalar in [0, 1).")
+  }
+
+  list(
+    mu = mu,
+    pi = pi,
+    kappa1 = kappa1,
+    nu1 = nu1,
+    kappa2 = kappa2,
+    nu2 = nu2,
+    ambient_dim = 3L
+  )
+}
+
+small_circle_weighted_mixture2_canonicalize_theta <- function(theta, tol = 1e-12) {
+  if (!is.list(theta)) {
+    stop("Weighted small-circle-mixture theta must be a list.")
+  }
+
+  params <- small_circle_weighted_mixture2_validate_parameters(
+    mu = theta$mu,
+    pi = theta$pi,
+    kappa1 = theta$kappa1,
+    nu1 = theta$nu1,
+    kappa2 = theta$kappa2,
+    nu2 = theta$nu2
+  )
+  tol <- as.numeric(tol)
+  if (length(tol) != 1L || !is.finite(tol) || tol < 0) {
+    stop("`tol` must be a finite nonnegative scalar.")
+  }
+
+  mu <- params$mu
+  do_flip <- FALSE
+  if (mu[[3L]] < -tol) {
+    do_flip <- TRUE
+  } else if (abs(mu[[3L]]) <= tol) {
+    first_nonzero <- which(abs(mu) > tol)[1L]
+    if (!is.na(first_nonzero) && mu[[first_nonzero]] < 0) {
+      do_flip <- TRUE
+    }
+  }
+
+  if (!do_flip) {
+    return(params)
+  }
+
+  list(
+    mu = -mu,
+    pi = 1 - params$pi,
+    kappa1 = params$kappa2,
+    nu1 = params$nu2,
+    kappa2 = params$kappa1,
+    nu2 = params$nu1,
+    ambient_dim = params$ambient_dim
+  )
+}
+
+small_circle_weighted_mixture2_normalize_theta <- function(theta,
+                                                           ambient_dim = 3L,
+                                                           tol = 1e-12) {
+  params <- small_circle_weighted_mixture2_canonicalize_theta(theta, tol = tol)
+  if (params$ambient_dim != ambient_dim) {
+    stop("Weighted small-circle-mixture theta has incompatible ambient dimension.")
+  }
+  params
+}
+
+d_sph_small_circle_weighted_mixture2_s2 <- function(x,
+                                                    mu,
+                                                    pi,
+                                                    kappa1,
+                                                    nu1,
+                                                    kappa2,
+                                                    nu2,
+                                                    log = FALSE) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  params <- small_circle_weighted_mixture2_validate_parameters(
+    mu = mu,
+    pi = pi,
+    kappa1 = kappa1,
+    nu1 = nu1,
+    kappa2 = kappa2,
+    nu2 = nu2
+  )
+
+  z <- pmin(pmax(as.numeric(x %*% params$mu), -1), 1)
+  log_density <- -log(2 * base::pi) + rotational_logsumexp2(
+    log(params$pi) + small_circle_axis_density(z, kappa = params$kappa1, nu = params$nu1, log = TRUE),
+    log1p(-params$pi) + small_circle_axis_density(-z, kappa = params$kappa2, nu = params$nu2, log = TRUE)
+  )
+  if (log) log_density else exp(log_density)
+}
+
+small_circle_weighted_mixture2_weighted_loglik_s2 <- function(mu,
+                                                              pi,
+                                                              kappa1,
+                                                              nu1,
+                                                              kappa2,
+                                                              nu2,
+                                                              x,
+                                                              prob_weights = NULL) {
+  params <- small_circle_weighted_mixture2_validate_parameters(
+    mu = mu,
+    pi = pi,
+    kappa1 = kappa1,
+    nu1 = nu1,
+    kappa2 = kappa2,
+    nu2 = nu2
+  )
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(prob_weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(prob_weights, nrow(x))
+  }
+
+  sum(prob_weights * d_sph_small_circle_weighted_mixture2_s2(
+    x = x,
+    mu = params$mu,
+    pi = params$pi,
+    kappa1 = params$kappa1,
+    nu1 = params$nu1,
+    kappa2 = params$kappa2,
+    nu2 = params$nu2,
+    log = TRUE
+  ))
+}
+
+small_circle_weighted_mixture2_start_thetas_s2 <- function(x,
+                                                           weights = NULL,
+                                                           control = list()) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(weights, nrow(x))
+  }
+
+  nu_eps <- as.numeric(control$small_circle_weighted_mixture2_nu_eps %||% 1e-6)
+  kappa_min <- as.numeric(control$small_circle_weighted_mixture2_kappa_min %||% 1e-8)
+  kappa_max <- as.numeric(control$small_circle_weighted_mixture2_kappa_max %||% 1e6)
+
+  warm_start <- control$small_circle_weighted_mixture2_start_theta %||%
+    control$theta_start %||%
+    control$small_circle_symmetric_mixture2_start_theta %||%
+    NULL
+  out <- list()
+  if (!is.null(warm_start)) {
+    warm_start <- small_circle_weighted_mixture2_normalize_theta(warm_start, ambient_dim = 3L)
+    out[[length(out) + 1L]] <- warm_start
+    if (isTRUE(control$small_circle_weighted_mixture2_warm_start_only %||% FALSE)) {
+      return(list(warm_start))
+    }
+  }
+
+  symmetric_start <- control$small_circle_weighted_mixture2_symmetric_start_theta %||% NULL
+  if (!is.null(symmetric_start)) {
+    symmetric_start <- small_circle_symmetric_mixture2_normalize_theta(symmetric_start, ambient_dim = 3L)
+    out[[length(out) + 1L]] <- small_circle_weighted_mixture2_canonicalize_theta(list(
+      mu = symmetric_start$mu,
+      pi = 0.5,
+      kappa1 = symmetric_start$kappa,
+      nu1 = symmetric_start$nu,
+      kappa2 = symmetric_start$kappa,
+      nu2 = symmetric_start$nu
+    ))
+  }
+
+  resultant <- colSums(x * prob_weights)
+  weighted_x <- sweep(x, 1L, sqrt(prob_weights), FUN = "*")
+  second_moment <- crossprod(weighted_x)
+  eig <- eigen(second_moment, symmetric = TRUE)
+  mu_candidates <- rotational_unique_mu_candidates(list(
+    resultant,
+    -resultant,
+    eig$vectors[, which.max(eig$values)],
+    -eig$vectors[, which.max(eig$values)],
+    eig$vectors[, which.min(eig$values)],
+    -eig$vectors[, which.min(eig$values)],
+    c(0, 0, 1),
+    c(0, 0, -1)
+  ))
+
+  derive_component_start <- function(values, value_weights) {
+    if (length(values) == 0L) {
+      return(list(kappa = 10, nu = 0.5))
+    }
+    normalized_component_weights <- value_weights / sum(value_weights)
+    nu0 <- min(max(rotational_weighted_mean(values, normalized_component_weights), nu_eps), 1 - nu_eps)
+    var0 <- rotational_weighted_variance(values, normalized_component_weights, center = nu0)
+    kappa0 <- min(max(1 / (2 * max(var0, 1 / (2 * kappa_max))), kappa_min), kappa_max)
+    list(kappa = kappa0, nu = nu0)
+  }
+
+  for (mu0 in mu_candidates) {
+    projection <- as.numeric(x %*% mu0)
+    north_idx <- projection >= 0
+    south_idx <- !north_idx
+    if (!any(north_idx) || !any(south_idx)) {
+      next
+    }
+
+    pi0 <- sum(prob_weights[north_idx])
+    if (!is.finite(pi0) || pi0 <= 1e-6 || pi0 >= 1 - 1e-6) {
+      next
+    }
+
+    north_start <- derive_component_start(projection[north_idx], prob_weights[north_idx])
+    south_start <- derive_component_start(-projection[south_idx], prob_weights[south_idx])
+    out[[length(out) + 1L]] <- small_circle_weighted_mixture2_canonicalize_theta(list(
+      mu = mu0,
+      pi = pi0,
+      kappa1 = north_start$kappa,
+      nu1 = north_start$nu,
+      kappa2 = south_start$kappa,
+      nu2 = south_start$nu
+    ))
+  }
+
+  if (length(out) == 0L) {
+    out[[1L]] <- small_circle_weighted_mixture2_canonicalize_theta(list(
+      mu = c(0, 0, 1),
+      pi = 0.5,
+      kappa1 = 10,
+      nu1 = 0.5,
+      kappa2 = 10,
+      nu2 = 0.5
+    ))
+  }
+
+  out
+}
+
+small_circle_weighted_mixture2_pack_par <- function(theta,
+                                                   control = list()) {
+  theta <- small_circle_weighted_mixture2_normalize_theta(theta, ambient_dim = 3L)
+  nu_upper <- 1 - as.numeric(control$small_circle_weighted_mixture2_nu_eps %||% 1e-6)
+  list(
+    par = c(
+      stats::qlogis(theta$pi),
+      log(pmax(expm1(theta$kappa1), .Machine$double.eps)),
+      small_circle_inverse_logistic_bounded(theta$nu1, upper = nu_upper),
+      log(pmax(expm1(theta$kappa2), .Machine$double.eps)),
+      small_circle_inverse_logistic_bounded(theta$nu2, upper = nu_upper),
+      theta$mu
+    ),
+    theta = theta
+  )
+}
+
+small_circle_weighted_mixture2_unpack_par <- function(par,
+                                                     control = list()) {
+  kappa_min <- as.numeric(control$small_circle_weighted_mixture2_kappa_min %||% 1e-8)
+  kappa_max <- as.numeric(control$small_circle_weighted_mixture2_kappa_max %||% 1e6)
+  nu_eps <- as.numeric(control$small_circle_weighted_mixture2_nu_eps %||% 1e-6)
+  weight_eps <- as.numeric(control$small_circle_weighted_mixture2_weight_eps %||% 1e-6)
+
+  mu_hat <- rotational_unit_vector_fallback(par[6:8])
+  small_circle_weighted_mixture2_canonicalize_theta(list(
+    mu = mu_hat,
+    pi = rotational_bounded_weight(par[[1L]], weight_eps = weight_eps),
+    kappa1 = min(max(log1p(exp(par[[2L]])), kappa_min), kappa_max),
+    nu1 = small_circle_logistic_bounded(par[[3L]], upper = 1 - nu_eps),
+    kappa2 = min(max(log1p(exp(par[[4L]])), kappa_min), kappa_max),
+    nu2 = small_circle_logistic_bounded(par[[5L]], upper = 1 - nu_eps)
+  ))
+}
+
+small_circle_weighted_mixture2_mle_s2_weighted <- function(x,
+                                                           weights = NULL,
+                                                           control = list()) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(weights, nrow(x))
+  }
+
+  candidate_thetas <- small_circle_weighted_mixture2_start_thetas_s2(
+    x = x,
+    weights = prob_weights,
+    control = control
+  )
+  candidate_thetas <- candidate_thetas[seq_len(min(
+    length(candidate_thetas),
+    as.integer(control$small_circle_weighted_mixture2_n_starts %||% 12L)
+  ))]
+
+  objective <- function(par) {
+    theta <- small_circle_weighted_mixture2_unpack_par(par, control = control)
+    value <- -small_circle_weighted_mixture2_weighted_loglik_s2(
+      mu = theta$mu,
+      pi = theta$pi,
+      kappa1 = theta$kappa1,
+      nu1 = theta$nu1,
+      kappa2 = theta$kappa2,
+      nu2 = theta$nu2,
+      x = x,
+      prob_weights = prob_weights
+    )
+    if (!is.finite(value)) {
+      .Machine$double.xmax / 100
+    } else {
+      value
+    }
+  }
+
+  optim_method <- control$small_circle_weighted_mixture2_optim_method %||% "BFGS"
+  optim_control <- control$small_circle_weighted_mixture2_optim_control %||% list(maxit = 400L, reltol = 1e-9)
+
+  best <- NULL
+  for (theta0 in candidate_thetas) {
+    par0 <- small_circle_weighted_mixture2_pack_par(theta0, control = control)$par
+    opt <- try(stats::optim(
+      par = par0,
+      fn = objective,
+      method = optim_method,
+      control = optim_control
+    ), silent = TRUE)
+    if (inherits(opt, "try-error")) {
+      next
+    }
+
+    theta_hat <- small_circle_weighted_mixture2_unpack_par(opt$par, control = control)
+    if (is.null(best) || opt$value < best$opt$value) {
+      best <- list(theta = theta_hat, opt = opt, start_theta = theta0)
+    }
+  }
+
+  if ((is.null(best) || isTRUE(best$opt$convergence != 0L)) &&
+      isTRUE(control$small_circle_weighted_mixture2_warm_start_only %||% FALSE)) {
+    fallback_control <- control
+    fallback_control$small_circle_weighted_mixture2_warm_start_only <- FALSE
+    return(small_circle_weighted_mixture2_mle_s2_weighted(
+      x = x,
+      weights = prob_weights,
+      control = fallback_control
+    ))
+  }
+
+  if (is.null(best)) {
+    stop("Weighted small-circle-mixture weighted MLE failed for all starting values.")
+  }
+
+  c(
+    best$theta,
+    list(
+      loglik = -best$opt$value,
+      opt = best$opt,
+      weighted_mle = TRUE,
+      start_theta = best$start_theta
+    )
+  )
+}
+
+distance_profile_small_circle_weighted_mixture2 <- function(omega,
+                                                           t_values,
+                                                           mu,
+                                                           pi,
+                                                           kappa1,
+                                                           nu1,
+                                                           kappa2,
+                                                           nu2,
+                                                           distance_type = c("geodesic", "chordal"),
+                                                           method = c("legendre", "integral"),
+                                                           l_max = 150L,
+                                                           quad_n = 1000L,
+                                                           tol = 1e-10,
+                                                           validate_against_integral = FALSE,
+                                                           validation_tol = 5e-6) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  theta <- small_circle_weighted_mixture2_validate_parameters(
+    mu = mu,
+    pi = pi,
+    kappa1 = kappa1,
+    nu1 = nu1,
+    kappa2 = kappa2,
+    nu2 = nu2
+  )
+
+  theta$pi * distance_profile_small_circle(
+    omega = omega,
+    t_values = t_values,
+    mu = theta$mu,
+    kappa = theta$kappa1,
+    nu = theta$nu1,
+    distance_type = distance_type,
+    method = method,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol,
+    validate_against_integral = validate_against_integral,
+    validation_tol = validation_tol
+  ) + (1 - theta$pi) * distance_profile_small_circle(
+    omega = omega,
+    t_values = t_values,
+    mu = -theta$mu,
+    kappa = theta$kappa2,
+    nu = theta$nu2,
+    distance_type = distance_type,
+    method = method,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol,
+    validate_against_integral = validate_against_integral,
+    validation_tol = validation_tol
+  )
+}
+
+distance_profile_small_circle_weighted_mixture2_grid <- function(omega_grid,
+                                                                mu,
+                                                                pi,
+                                                                kappa1,
+                                                                nu1,
+                                                                kappa2,
+                                                                nu2,
+                                                                t_grid,
+                                                                distance_type = c("geodesic", "chordal"),
+                                                                method = c("legendre", "integral"),
+                                                                l_max = 150L,
+                                                                quad_n = 1000L,
+                                                                tol = 1e-10) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  theta <- small_circle_weighted_mixture2_validate_parameters(
+    mu = mu,
+    pi = pi,
+    kappa1 = kappa1,
+    nu1 = nu1,
+    kappa2 = kappa2,
+    nu2 = nu2
+  )
+
+  theta$pi * distance_profile_small_circle_grid(
+    omega_grid = omega_grid,
+    mu = theta$mu,
+    kappa = theta$kappa1,
+    nu = theta$nu1,
+    t_grid = t_grid,
+    distance_type = distance_type,
+    method = method,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol
+  ) + (1 - theta$pi) * distance_profile_small_circle_grid(
+    omega_grid = omega_grid,
+    mu = -theta$mu,
+    kappa = theta$kappa2,
+    nu = theta$nu2,
+    t_grid = t_grid,
+    distance_type = distance_type,
+    method = method,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol
+  )
+}
+
+r_sph_small_circle_weighted_mixture2 <- function(n,
+                                                 mu,
+                                                 pi,
+                                                 kappa1,
+                                                 nu1,
+                                                 kappa2,
+                                                 nu2,
+                                                 check = TRUE) {
+  n <- as.integer(n)
+  if (length(n) != 1L || !is.finite(n) || n < 1L) {
+    stop("`n` must be a strictly positive integer.")
+  }
+
+  params <- small_circle_weighted_mixture2_validate_parameters(
+    mu = mu,
+    pi = pi,
+    kappa1 = kappa1,
+    nu1 = nu1,
+    kappa2 = kappa2,
+    nu2 = nu2
+  )
+  component_one <- stats::runif(n) <= params$pi
+  x <- matrix(0, nrow = n, ncol = 3L)
+  if (any(component_one)) {
+    x[component_one, ] <- r_sph_small_circle(
+      n = sum(component_one),
+      mu = params$mu,
+      kappa = params$kappa1,
+      nu = params$nu1,
+      check = check
+    )
+  }
+  if (any(!component_one)) {
+    x[!component_one, ] <- r_sph_small_circle(
+      n = sum(!component_one),
+      mu = -params$mu,
+      kappa = params$kappa2,
+      nu = params$nu2,
+      check = check
+    )
+  }
+
+  if (isTRUE(check)) {
+    norms <- sqrt(rowSums(x^2))
+    if (any(!is.finite(norms)) || max(abs(norms - 1)) > 1e-8) {
+      stop("Weighted small-circle-mixture sampler returned non-unit vectors.")
+    }
+  }
+
+  x
+}
+
+small_circle_symmetric_mixture2_axis_density <- function(z, kappa, nu) {
+  params <- small_circle_symmetric_mixture2_validate_parameters(
+    mu = c(0, 0, 1),
+    kappa = kappa,
+    nu = nu
+  )
+  z <- as.numeric(z)
+  out <- numeric(length(z))
+  valid <- is.finite(z) & z >= -1 & z <= 1
+  if (!any(valid)) {
+    return(out)
+  }
+
+  out[valid] <- 0.5 * small_circle_axis_density(
+    z = z[valid],
+    kappa = params$kappa,
+    nu = params$nu
+  ) + 0.5 * small_circle_axis_density(
+    z = -z[valid],
+    kappa = params$kappa,
+    nu = params$nu
+  )
+  out
+}
+
+small_circle_symmetric_mixture2_axis_cdf <- function(z, kappa, nu) {
+  params <- small_circle_symmetric_mixture2_validate_parameters(
+    mu = c(0, 0, 1),
+    kappa = kappa,
+    nu = nu
+  )
+  z <- as.numeric(z)
+  out <- numeric(length(z))
+  out[z <= -1] <- 0
+  out[z >= 1] <- 1
+  active <- which(is.finite(z) & z > -1 & z < 1)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  out[active] <- 0.5 * small_circle_axis_cdf(
+    z = z[active],
+    kappa = params$kappa,
+    nu = params$nu
+  ) + 0.5 * (
+    1 - small_circle_axis_cdf(
+      z = -z[active],
+      kappa = params$kappa,
+      nu = params$nu
+    )
+  )
+  pmin(pmax(out, 0), 1)
+}
+
+d_sph_small_circle_symmetric_mixture2_s2 <- function(x,
+                                                     mu,
+                                                     kappa,
+                                                     nu,
+                                                     log = FALSE) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  params <- small_circle_symmetric_mixture2_validate_parameters(
+    mu = mu,
+    kappa = kappa,
+    nu = nu
+  )
+
+  z <- pmin(pmax(as.numeric(x %*% params$mu), -1), 1)
+  log_density <- -log(2 * pi) + rotational_logsumexp2(
+    log(0.5) + small_circle_axis_density(z, kappa = params$kappa, nu = params$nu, log = TRUE),
+    log(0.5) + small_circle_axis_density(-z, kappa = params$kappa, nu = params$nu, log = TRUE)
+  )
+  if (log) log_density else exp(log_density)
+}
+
+small_circle_symmetric_mixture2_weighted_loglik_s2 <- function(mu,
+                                                               kappa,
+                                                               nu,
+                                                               x,
+                                                               prob_weights = NULL) {
+  params <- small_circle_symmetric_mixture2_validate_parameters(
+    mu = mu,
+    kappa = kappa,
+    nu = nu
+  )
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(prob_weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(prob_weights, nrow(x))
+  }
+
+  sum(prob_weights * d_sph_small_circle_symmetric_mixture2_s2(
+    x = x,
+    mu = params$mu,
+    kappa = params$kappa,
+    nu = params$nu,
+    log = TRUE
+  ))
+}
+
+small_circle_symmetric_mixture2_start_thetas_s2 <- function(x,
+                                                            weights = NULL,
+                                                            control = list()) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(weights, nrow(x))
+  }
+
+  nu_eps <- as.numeric(control$small_circle_symmetric_mixture2_nu_eps %||% 1e-6)
+  kappa_min <- as.numeric(control$small_circle_symmetric_mixture2_kappa_min %||% 1e-8)
+  kappa_max <- as.numeric(control$small_circle_symmetric_mixture2_kappa_max %||% 1e6)
+
+  warm_start <- control$small_circle_symmetric_mixture2_start_theta %||%
+    control$theta_start %||%
+    control$jp_mle_start_theta %||%
+    NULL
+
+  out <- list()
+  if (!is.null(warm_start)) {
+    warm_start <- small_circle_symmetric_mixture2_normalize_theta(warm_start, ambient_dim = 3L)
+    out[[length(out) + 1L]] <- warm_start
+    if (isTRUE(control$small_circle_symmetric_mixture2_warm_start_only %||% FALSE)) {
+      return(list(warm_start))
+    }
+  }
+
+  resultant <- colSums(x * prob_weights)
+  weighted_x <- sweep(x, 1L, sqrt(prob_weights), FUN = "*")
+  second_moment <- crossprod(weighted_x)
+  eig <- eigen(second_moment, symmetric = TRUE)
+  mu_candidates <- rotational_unique_mu_candidates(list(
+    resultant,
+    -resultant,
+    eig$vectors[, which.max(eig$values)],
+    -eig$vectors[, which.max(eig$values)],
+    eig$vectors[, which.min(eig$values)],
+    -eig$vectors[, which.min(eig$values)],
+    c(0, 0, 1),
+    c(0, 0, -1)
+  ))
+
+  for (mu0 in mu_candidates) {
+    folded_u <- abs(pmin(pmax(as.numeric(x %*% mu0), -1), 1))
+    nu_candidates <- unique(pmin(pmax(c(
+      rotational_weighted_mean(folded_u, prob_weights),
+      rotational_weighted_quantile(folded_u, prob_weights, prob = 0.50),
+      rotational_weighted_quantile(folded_u, prob_weights, prob = 0.70),
+      rotational_weighted_quantile(folded_u, prob_weights, prob = 0.85)
+    ), nu_eps), 1 - nu_eps))
+
+    for (nu0 in nu_candidates) {
+      var0 <- rotational_weighted_variance(folded_u, prob_weights, center = nu0)
+      kappa0 <- min(max(1 / (2 * max(var0, 1 / (2 * kappa_max))), kappa_min), kappa_max)
+      out[[length(out) + 1L]] <- small_circle_symmetric_mixture2_canonicalize_theta(list(
+        mu = mu0,
+        kappa = kappa0,
+        nu = nu0
+      ))
+    }
+  }
+
+  if (length(out) == 0L) {
+    out[[1L]] <- small_circle_symmetric_mixture2_canonicalize_theta(list(
+      mu = c(0, 0, 1),
+      kappa = 10,
+      nu = 0.5
+    ))
+  }
+
+  out
+}
+
+small_circle_symmetric_mixture2_pack_par <- function(theta,
+                                                     control = list()) {
+  theta <- small_circle_symmetric_mixture2_normalize_theta(theta, ambient_dim = 3L)
+  nu_upper <- 1 - as.numeric(control$small_circle_symmetric_mixture2_nu_eps %||% 1e-6)
+  list(
+    par = c(
+      log(pmax(expm1(theta$kappa), .Machine$double.eps)),
+      small_circle_inverse_logistic_bounded(theta$nu, upper = nu_upper),
+      theta$mu
+    ),
+    theta = theta
+  )
+}
+
+small_circle_symmetric_mixture2_unpack_par <- function(par,
+                                                       control = list()) {
+  kappa_min <- as.numeric(control$small_circle_symmetric_mixture2_kappa_min %||% 1e-8)
+  kappa_max <- as.numeric(control$small_circle_symmetric_mixture2_kappa_max %||% 1e6)
+  nu_eps <- as.numeric(control$small_circle_symmetric_mixture2_nu_eps %||% 1e-6)
+
+  mu_hat <- rotational_unit_vector_fallback(par[3:5])
+  small_circle_symmetric_mixture2_canonicalize_theta(list(
+    mu = mu_hat,
+    kappa = min(max(log1p(exp(par[[1L]])), kappa_min), kappa_max),
+    nu = small_circle_logistic_bounded(par[[2L]], upper = 1 - nu_eps)
+  ))
+}
+
+small_circle_symmetric_mixture2_mle_s2_weighted <- function(x,
+                                                            weights = NULL,
+                                                            control = list()) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  prob_weights <- if (is.null(weights)) {
+    rep(1 / nrow(x), nrow(x))
+  } else {
+    jp_normalize_probability_weights(weights, nrow(x))
+  }
+
+  candidate_thetas <- small_circle_symmetric_mixture2_start_thetas_s2(
+    x = x,
+    weights = prob_weights,
+    control = control
+  )
+  candidate_thetas <- candidate_thetas[seq_len(min(
+    length(candidate_thetas),
+    as.integer(control$small_circle_symmetric_mixture2_n_starts %||% 16L)
+  ))]
+
+  objective <- function(par) {
+    theta <- small_circle_symmetric_mixture2_unpack_par(par, control = control)
+    value <- -small_circle_symmetric_mixture2_weighted_loglik_s2(
+      mu = theta$mu,
+      kappa = theta$kappa,
+      nu = theta$nu,
+      x = x,
+      prob_weights = prob_weights
+    )
+    if (!is.finite(value)) {
+      .Machine$double.xmax / 100
+    } else {
+      value
+    }
+  }
+
+  optim_method <- control$small_circle_symmetric_mixture2_optim_method %||% "BFGS"
+  optim_control <- control$small_circle_symmetric_mixture2_optim_control %||% list(maxit = 400L, reltol = 1e-9)
+
+  best <- NULL
+  for (theta0 in candidate_thetas) {
+    par0 <- small_circle_symmetric_mixture2_pack_par(theta0, control = control)$par
+    opt <- try(stats::optim(
+      par = par0,
+      fn = objective,
+      method = optim_method,
+      control = optim_control
+    ), silent = TRUE)
+    if (inherits(opt, "try-error")) {
+      next
+    }
+
+    theta_hat <- small_circle_symmetric_mixture2_unpack_par(opt$par, control = control)
+    if (is.null(best) || opt$value < best$opt$value) {
+      best <- list(theta = theta_hat, opt = opt, start_theta = theta0)
+    }
+  }
+
+  if ((is.null(best) || isTRUE(best$opt$convergence != 0L)) &&
+      isTRUE(control$small_circle_symmetric_mixture2_warm_start_only %||% FALSE)) {
+    fallback_control <- control
+    fallback_control$small_circle_symmetric_mixture2_warm_start_only <- FALSE
+    return(small_circle_symmetric_mixture2_mle_s2_weighted(
+      x = x,
+      weights = prob_weights,
+      control = fallback_control
+    ))
+  }
+
+  if (is.null(best)) {
+    stop("Symmetric small-circle-mixture weighted MLE failed for all starting values.")
+  }
+
+  c(
+    best$theta,
+    list(
+      loglik = -best$opt$value,
+      opt = best$opt,
+      weighted_mle = TRUE,
+      start_theta = best$start_theta
+    )
+  )
+}
+
+distance_profile_small_circle_symmetric_mixture2 <- function(omega,
+                                                            t_values,
+                                                            mu,
+                                                            kappa,
+                                                            nu,
+                                                            distance_type = c("geodesic", "chordal"),
+                                                            method = c("legendre", "integral"),
+                                                            l_max = 150L,
+                                                            quad_n = 1000L,
+                                                            tol = 1e-10,
+                                                            validate_against_integral = FALSE,
+                                                            validation_tol = 5e-6) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  theta <- small_circle_symmetric_mixture2_validate_parameters(
+    mu = mu,
+    kappa = kappa,
+    nu = nu
+  )
+
+  if (is.matrix(omega)) {
+    omega <- jp_normalize_unit_matrix(omega, arg_name = "`omega`", min_ncol = 3L)
+    if (length(t_values) == 1L) {
+      t_values <- rep(t_values, nrow(omega))
+    }
+    if (length(t_values) != nrow(omega)) {
+      stop("When `omega` is a matrix, `t_values` must have length 1 or nrow(omega).")
+    }
+    return(vapply(seq_len(nrow(omega)), function(i) {
+      distance_profile_small_circle_symmetric_mixture2(
+        omega = omega[i, ],
+        t_values = t_values[i],
+        mu = theta$mu,
+        kappa = theta$kappa,
+        nu = theta$nu,
+        distance_type = distance_type,
+        method = method,
+        l_max = l_max,
+        quad_n = quad_n,
+        tol = tol,
+        validate_against_integral = validate_against_integral,
+        validation_tol = validation_tol
+      )
+    }, numeric(1)))
+  }
+
+  t_values <- as.numeric(t_values)
+  upper_bound <- if (identical(distance_type, "geodesic")) pi else 2
+  out <- numeric(length(t_values))
+  out[t_values <= 0] <- 0
+  out[t_values >= upper_bound] <- 1
+  active <- which(is.finite(t_values) & t_values > 0 & t_values < upper_bound)
+  if (length(active) == 0L) {
+    return(out)
+  }
+
+  if (theta$kappa <= 0) {
+    out[active] <- if (identical(distance_type, "geodesic")) {
+      (1 - cos(t_values[active])) / 2
+    } else {
+      (t_values[active]^2) / 4
+    }
+    return(out)
+  }
+
+  profile_plus <- distance_profile_small_circle(
+    omega = omega,
+    t_values = t_values,
+    mu = theta$mu,
+    kappa = theta$kappa,
+    nu = theta$nu,
+    distance_type = distance_type,
+    method = method,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol,
+    validate_against_integral = FALSE,
+    validation_tol = validation_tol
+  )
+  profile_minus <- distance_profile_small_circle(
+    omega = omega,
+    t_values = t_values,
+    mu = -theta$mu,
+    kappa = theta$kappa,
+    nu = theta$nu,
+    distance_type = distance_type,
+    method = method,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol,
+    validate_against_integral = FALSE,
+    validation_tol = validation_tol
+  )
+  out <- 0.5 * (profile_plus + profile_minus)
+  out <- small_circle_monotone_clip(t_values = t_values, values = out, upper_bound = upper_bound)
+
+  if (isTRUE(validate_against_integral) && identical(method, "legendre")) {
+    out_integral <- distance_profile_small_circle_symmetric_mixture2(
+      omega = omega,
+      t_values = t_values,
+      mu = theta$mu,
+      kappa = theta$kappa,
+      nu = theta$nu,
+      distance_type = distance_type,
+      method = "integral",
+      l_max = l_max,
+      quad_n = quad_n,
+      tol = tol,
+      validate_against_integral = FALSE,
+      validation_tol = validation_tol
+    )
+    discrepancy <- max(abs(out - out_integral))
+    if (discrepancy > validation_tol) {
+      stop(sprintf(
+        "Symmetric small-circle-mixture Legendre profile validation failed: max discrepancy %.3e exceeds %.3e.",
+        discrepancy,
+        validation_tol
+      ))
+    }
+  }
+
+  out
+}
+
+distance_profile_small_circle_symmetric_mixture2_grid <- function(omega_grid,
+                                                                 mu,
+                                                                 kappa,
+                                                                 nu,
+                                                                 t_grid,
+                                                                 distance_type = c("geodesic", "chordal"),
+                                                                 method = c("legendre", "integral"),
+                                                                 l_max = 150L,
+                                                                 quad_n = 1000L,
+                                                                 tol = 1e-10) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  theta <- small_circle_symmetric_mixture2_validate_parameters(
+    mu = mu,
+    kappa = kappa,
+    nu = nu
+  )
+  omega_grid <- jp_normalize_unit_matrix(omega_grid, arg_name = "`omega_grid`", min_ncol = 3L)
+  t_grid <- as.numeric(t_grid)
+
+  if (theta$kappa <= 0) {
+    base_profile <- if (identical(distance_type, "geodesic")) {
+      (1 - cos(t_grid)) / 2
+    } else {
+      (t_grid^2) / 4
+    }
+    return(matrix(base_profile, nrow = nrow(omega_grid), ncol = length(t_grid), byrow = TRUE))
+  }
+
+  0.5 * (
+    distance_profile_small_circle_grid(
+      omega_grid = omega_grid,
+      mu = theta$mu,
+      kappa = theta$kappa,
+      nu = theta$nu,
+      t_grid = t_grid,
+      distance_type = distance_type,
+      method = method,
+      l_max = l_max,
+      quad_n = quad_n,
+      tol = tol
+    ) +
+      distance_profile_small_circle_grid(
+        omega_grid = omega_grid,
+        mu = -theta$mu,
+        kappa = theta$kappa,
+        nu = theta$nu,
+        t_grid = t_grid,
+        distance_type = distance_type,
+        method = method,
+        l_max = l_max,
+        quad_n = quad_n,
+        tol = tol
+      )
+  )
+}
+
+distance_profile_small_circle_symmetric_mixture2_cvm_grid <- function(X,
+                                                                     mu,
+                                                                     kappa,
+                                                                     nu,
+                                                                     distance_matrix = NULL,
+                                                                     distance_type = c("geodesic", "chordal"),
+                                                                     control = list(),
+                                                                     method = c("legendre", "integral"),
+                                                                     l_max = 150L,
+                                                                     quad_n = 1000L,
+                                                                     tol = 1e-10) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  theta <- small_circle_symmetric_mixture2_validate_parameters(
+    mu = mu,
+    kappa = kappa,
+    nu = nu
+  )
+  X <- jp_normalize_unit_matrix(X, arg_name = "`X`", min_ncol = 3L)
+  if (!is.null(distance_matrix)) {
+    distance_matrix <- as.matrix(distance_matrix)
+    if (!identical(dim(distance_matrix), c(nrow(X), nrow(X)))) {
+      stop("`distance_matrix` must be an n x n matrix matching `X`.")
+    }
+  }
+  debug_memory_log(
+    control = control,
+    label = "enter distance_profile_small_circle_symmetric_mixture2_cvm_grid",
+    objects = list(
+      X = X,
+      distance_matrix = distance_matrix
+    )
+  )
+
+  if (theta$kappa <= 0) {
+    dot_products <- if (is.null(distance_matrix)) {
+      pmin(pmax(X %*% t(X), -1), 1)
+    } else {
+      if (identical(distance_type, "geodesic")) {
+        pmin(pmax(cos(distance_matrix), -1), 1)
+      } else {
+        pmin(pmax(1 - (distance_matrix^2) / 2, -1), 1)
+      }
+    }
+    return((1 - dot_products) / 2)
+  }
+
+  if (identical(method, "integral")) {
+    debug_memory_log(control, "cvm_grid integral branch before first component")
+    out <- distance_profile_small_circle_cvm_grid(
+      X = X,
+      mu = theta$mu,
+      kappa = theta$kappa,
+      nu = theta$nu,
+      method = method,
+      l_max = l_max,
+      quad_n = quad_n,
+      tol = tol
+    )
+    debug_memory_log(control, "cvm_grid integral branch after first component", list(out = out))
+    out <- 0.5 * out
+    out <- out + 0.5 * distance_profile_small_circle_cvm_grid(
+      X = X,
+      mu = -theta$mu,
+      kappa = theta$kappa,
+      nu = theta$nu,
+      method = method,
+      l_max = l_max,
+      quad_n = quad_n,
+      tol = tol
+    )
+    debug_memory_log(control, "cvm_grid integral branch after second component", list(out = out))
+    return(out)
+  }
+
+  dot_products <- if (is.null(distance_matrix)) {
+    pmin(pmax(X %*% t(X), -1), 1)
+  } else {
+    if (identical(distance_type, "geodesic")) {
+      pmin(pmax(cos(distance_matrix), -1), 1)
+    } else {
+      pmin(pmax(1 - (distance_matrix^2) / 2, -1), 1)
+    }
+  }
+  debug_memory_log(control, "cvm_grid legendre branch after dot_products", list(dot_products = dot_products))
+  coeffs <- small_circle_legendre_coefficients(
+    kappa = theta$kappa,
+    nu = theta$nu,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol
+  )$coefficients
+  r_values <- as.numeric(X %*% theta$mu)
+  debug_memory_log(control, "cvm_grid legendre branch after coeffs/r_values", list(coeffs = coeffs, r_values = r_values))
+  out <- 1 - small_circle_projection_cdf_legendre_matrix(
+    x_matrix = dot_products,
+    r = r_values,
+    coefficients = coeffs
+  )
+  debug_memory_log(control, "cvm_grid legendre branch after first component", list(out = out))
+  out <- out + 1 - small_circle_projection_cdf_legendre_matrix(
+    x_matrix = dot_products,
+    r = -r_values,
+    coefficients = coeffs
+  )
+  debug_memory_log(control, "cvm_grid legendre branch after second component", list(out = out))
+  out <- 0.5 * out
+  out <- pmin(pmax(out, 0), 1)
+
+  for (i in seq_len(nrow(X))) {
+    out[i, ] <- small_circle_monotone_clip(
+      t_values = acos(dot_products[i, ]),
+      values = out[i, ],
+      upper_bound = pi
+    )
+  }
+
+  out
+}
+
+small_circle_symmetric_mixture2_cvm_profile_block <- function(X_block,
+                                                             dot_threshold_block,
+                                                             mu,
+                                                             kappa,
+                                                             nu,
+                                                             distance_type = c("geodesic", "chordal"),
+                                                             method = c("legendre", "integral"),
+                                                             l_max = 150L,
+                                                             quad_n = 1000L,
+                                                             tol = 1e-10,
+                                                             control = list()) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  X_block <- jp_normalize_unit_matrix(X_block, arg_name = "`X_block`", min_ncol = 3L)
+  dot_threshold_block <- pmin(pmax(as.matrix(dot_threshold_block), -1), 1)
+  theta <- small_circle_symmetric_mixture2_validate_parameters(mu = mu, kappa = kappa, nu = nu)
+
+  if (!identical(dim(dot_threshold_block), c(nrow(X_block), ncol(dot_threshold_block)))) {
+    stop("`dot_threshold_block` must have nrow(`X_block`) rows.")
+  }
+
+  if (theta$kappa <= 0) {
+    return((1 - dot_threshold_block) / 2)
+  }
+
+  if (identical(method, "integral")) {
+    distance_block <- if (identical(distance_type, "geodesic")) {
+      acos(dot_threshold_block)
+    } else {
+      sqrt(pmax(0, 2 * (1 - dot_threshold_block)))
+    }
+    out_plus <- t(vapply(seq_len(nrow(X_block)), function(i) {
+      distance_profile_small_circle(
+        omega = X_block[i, ],
+        t_values = distance_block[i, ],
+        mu = theta$mu,
+        kappa = theta$kappa,
+        nu = theta$nu,
+        distance_type = distance_type,
+        method = "integral",
+        quad_n = quad_n,
+        tol = tol
+      )
+    }, numeric(ncol(dot_threshold_block))))
+    out_minus <- t(vapply(seq_len(nrow(X_block)), function(i) {
+      distance_profile_small_circle(
+        omega = X_block[i, ],
+        t_values = distance_block[i, ],
+        mu = -theta$mu,
+        kappa = theta$kappa,
+        nu = theta$nu,
+        distance_type = distance_type,
+        method = "integral",
+        quad_n = quad_n,
+        tol = tol
+      )
+    }, numeric(ncol(dot_threshold_block))))
+    return(0.5 * (out_plus + out_minus))
+  }
+
+  coeffs <- small_circle_legendre_coefficients(
+    kappa = theta$kappa,
+    nu = theta$nu,
+    l_max = l_max,
+    quad_n = quad_n,
+    tol = tol
+  )$coefficients
+  r_values <- as.numeric(X_block %*% theta$mu)
+
+  out_plus <- 1 - small_circle_projection_cdf_legendre_matrix(
+    x_matrix = dot_threshold_block,
+    r = r_values,
+    coefficients = coeffs
+  )
+  out_minus <- 1 - small_circle_projection_cdf_legendre_matrix(
+    x_matrix = dot_threshold_block,
+    r = -r_values,
+    coefficients = coeffs
+  )
+  out <- 0.5 * (out_plus + out_minus)
+  out <- pmin(pmax(out, 0), 1)
+
+  for (i in seq_len(nrow(X_block))) {
+    out[i, ] <- small_circle_monotone_clip_dot(dot_threshold_block[i, ], out[i, ])
+  }
+
+  debug_memory_log(
+    control = control,
+    label = "small_circle_symmetric_mixture2_cvm_profile_block",
+    objects = list(
+      X_block = X_block,
+      dot_threshold_block = dot_threshold_block,
+      out = out
+    )
+  )
+
+  out
+}
+
+compute_weighted_sample_profile_block <- function(order_matrix_block,
+                                                  rank_linear_index_block,
+                                                  normalized_weights,
+                                                  n_total) {
+  order_matrix_block <- as.matrix(order_matrix_block)
+  rank_linear_index_block <- as.matrix(rank_linear_index_block)
+  block_rows <- nrow(order_matrix_block)
+  n <- ncol(order_matrix_block)
+
+  if (length(normalized_weights) != n || n_total != n) {
+    stop("Incompatible dimensions in `compute_weighted_sample_profile_block()`.")
+  }
+  if (any(!is.finite(normalized_weights)) || any(normalized_weights < 0)) {
+    stop("`normalized_weights` must be finite and nonnegative.")
+  }
+
+  total_weight <- sum(normalized_weights)
+  if (!is.finite(total_weight) || total_weight <= 0) {
+    stop("`normalized_weights` must have strictly positive finite sum.")
+  }
+
+  ordered_weights_matrix <- matrix(
+    normalized_weights[order_matrix_block],
+    nrow = block_rows,
+    ncol = n
+  )
+  cumulative_weights_matrix <- ordered_weights_matrix
+
+  if (n >= 2L) {
+    for (j in 2:n) {
+      cumulative_weights_matrix[, j] <- cumulative_weights_matrix[, j] +
+        cumulative_weights_matrix[, j - 1L]
+    }
+  }
+
+  global_linear_index <- as.integer(rank_linear_index_block)
+  global_row_index <- ((global_linear_index - 1L) %% n_total) + 1L
+  global_rank_index <- ((global_linear_index - global_row_index) %/% n_total) + 1L
+  local_row_index <- matrix(rep.int(seq_len(block_rows), n), nrow = block_rows, ncol = n)
+  local_linear_index <- local_row_index + (matrix(global_rank_index, nrow = block_rows, ncol = n) - 1L) * block_rows
+
+  out <- matrix(cumulative_weights_matrix[local_linear_index] / total_weight, nrow = block_rows, ncol = n)
+  if (any(!is.finite(out)) || any(out < -1e-12) || any(out > 1 + 1e-12)) {
+    stop("`compute_weighted_sample_profile_block()` produced values outside [0, 1].")
+  }
+  out
+}
+
+r_sph_small_circle_symmetric_mixture2 <- function(n,
+                                                  mu,
+                                                  kappa,
+                                                  nu,
+                                                  check = TRUE) {
+  n <- as.integer(n)
+  if (length(n) != 1L || !is.finite(n) || n < 1L) {
+    stop("`n` must be a strictly positive integer.")
+  }
+
+  theta <- small_circle_symmetric_mixture2_validate_parameters(
+    mu = mu,
+    kappa = kappa,
+    nu = nu
+  )
+  component_plus <- stats::runif(n) <= 0.5
+  x <- matrix(0, nrow = n, ncol = 3L)
+
+  n_plus <- sum(component_plus)
+  n_minus <- n - n_plus
+  if (n_plus > 0L) {
+    x[component_plus, ] <- r_sph_small_circle(
+      n = n_plus,
+      mu = theta$mu,
+      kappa = theta$kappa,
+      nu = theta$nu,
+      check = FALSE
+    )
+  }
+  if (n_minus > 0L) {
+    x[!component_plus, ] <- r_sph_small_circle(
+      n = n_minus,
+      mu = -theta$mu,
+      kappa = theta$kappa,
+      nu = theta$nu,
+      check = FALSE
+    )
+  }
+
+  if (isTRUE(check)) {
+    norms <- sqrt(rowSums(x^2))
+    if (any(!is.finite(norms)) || max(abs(norms - 1)) > 1e-8) {
+      stop("Symmetric small-circle-mixture sampler returned non-unit vectors.")
+    }
+  }
+
+  x
 }
 
 beta_mixture2_validate_parameters <- function(mu,
