@@ -1989,6 +1989,274 @@ make_logitnormal_mixture2_spec <- function(distance_type = c("chordal", "geodesi
   )
 }
 
+normalize_axial_truncnorm_mixture2_data <- function(data, control = list()) {
+  if (is.matrix(data) || is.data.frame(data)) {
+    if (ncol(as.matrix(data)) != 1L) {
+      stop("Axial truncated-normal-mixture data must be a numeric vector or one-column matrix/data frame.")
+    }
+    data <- as.matrix(data)[, 1L]
+  }
+
+  z <- as.numeric(data)
+  if (length(z) == 0L) {
+    stop("`data` cannot be empty.")
+  }
+  if (any(!is.finite(z))) {
+    stop("Axial truncated-normal-mixture data must be finite.")
+  }
+  if (any(z < -1 - 1e-12 | z > 1 + 1e-12)) {
+    stop("Axial truncated-normal-mixture data must lie in [-1, 1].")
+  }
+
+  pmin(1, pmax(-1, z))
+}
+
+clip_axial_truncnorm_prob <- function(x, eps = 1e-10) {
+  pmin(1 - eps, pmax(eps, as.numeric(x)))
+}
+
+normalize_axial_truncnorm_mixture2_theta <- function(theta) {
+  if (!is.list(theta)) {
+    stop("Axial truncated-normal-mixture theta must be a list with entries `pi`, `kappa1`, `nu1`, `kappa2`, `nu2`.")
+  }
+
+  pi <- clip_axial_truncnorm_prob(theta$pi)
+  kappa1 <- as.numeric(theta$kappa1)
+  kappa2 <- as.numeric(theta$kappa2)
+  nu1 <- clip_axial_truncnorm_prob(theta$nu1, eps = 1e-10)
+  nu2 <- clip_axial_truncnorm_prob(theta$nu2, eps = 1e-10)
+
+  if (length(kappa1) != 1L || !is.finite(kappa1) || kappa1 <= 0) {
+    stop("Axial truncated-normal-mixture theta requires a strictly positive finite scalar `kappa1`.")
+  }
+  if (length(kappa2) != 1L || !is.finite(kappa2) || kappa2 <= 0) {
+    stop("Axial truncated-normal-mixture theta requires a strictly positive finite scalar `kappa2`.")
+  }
+
+  list(
+    pi = pi,
+    kappa1 = kappa1,
+    nu1 = nu1,
+    kappa2 = kappa2,
+    nu2 = nu2
+  )
+}
+
+axial_truncnorm_interval_mass <- function(kappa, mean_value, lower, upper) {
+  if (!is.finite(kappa) || kappa <= 0) {
+    stop("`kappa` must be strictly positive and finite.")
+  }
+
+  sqrt_kappa <- sqrt(kappa)
+  stats::pnorm(sqrt(2) * sqrt_kappa * (upper - mean_value)) -
+    stats::pnorm(sqrt(2) * sqrt_kappa * (lower - mean_value))
+}
+
+axial_truncnorm_log_normconst <- function(kappa, mean_value) {
+  mass <- axial_truncnorm_interval_mass(kappa, mean_value, lower = -1, upper = 1)
+  if (!is.finite(mass) || mass <= 0) {
+    stop("Failed to compute a positive normalizing constant for the axial truncated-normal component.")
+  }
+
+  0.5 * log(pi / kappa) - log(2) + log(mass)
+}
+
+axial_truncnorm_component_log_density <- function(z, kappa, mean_value) {
+  -(kappa * (z - mean_value)^2) - axial_truncnorm_log_normconst(kappa, mean_value)
+}
+
+axial_truncnorm_component_cdf <- function(z, kappa, mean_value) {
+  z_clipped <- pmin(1, pmax(-1, as.numeric(z)))
+  denom <- axial_truncnorm_interval_mass(kappa, mean_value, lower = -1, upper = 1)
+  numer <- axial_truncnorm_interval_mass(kappa, mean_value, lower = -1, upper = z_clipped)
+  out <- numer / denom
+  out[z <= -1] <- 0
+  out[z >= 1] <- 1
+  pmin(1, pmax(0, out))
+}
+
+axial_truncnorm_logsumexp2 <- function(a, b) {
+  m <- pmax(a, b)
+  m + log(exp(a - m) + exp(b - m))
+}
+
+axial_truncnorm_mixture_log_density <- function(z, theta) {
+  theta <- normalize_axial_truncnorm_mixture2_theta(theta)
+  log_left <- log(theta$pi) + axial_truncnorm_component_log_density(z, theta$kappa1, theta$nu1)
+  log_right <- log1p(-theta$pi) + axial_truncnorm_component_log_density(z, theta$kappa2, -theta$nu2)
+  axial_truncnorm_logsumexp2(log_left, log_right)
+}
+
+axial_truncnorm_mixture_cdf <- function(z, theta) {
+  theta <- normalize_axial_truncnorm_mixture2_theta(theta)
+  theta$pi * axial_truncnorm_component_cdf(z, theta$kappa1, theta$nu1) +
+    (1 - theta$pi) * axial_truncnorm_component_cdf(z, theta$kappa2, -theta$nu2)
+}
+
+axial_truncnorm_mixture_distance_profile <- function(omega, t_values, theta) {
+  theta <- normalize_axial_truncnorm_mixture2_theta(theta)
+  omega <- as.numeric(omega)
+  if (length(omega) != 1L || !is.finite(omega) || omega < -1 || omega > 1) {
+    stop("`omega` must be a finite scalar in [-1, 1].")
+  }
+  t_values <- pmax(0, as.numeric(t_values))
+  upper <- pmin(1, omega + t_values)
+  lower <- pmax(-1, omega - t_values)
+  axial_truncnorm_mixture_cdf(upper, theta) - axial_truncnorm_mixture_cdf(lower, theta)
+}
+
+axial_truncnorm_mixture_distance_profile_grid <- function(omega_grid, t_grid, theta) {
+  omega_grid <- as.numeric(omega_grid)
+  t_grid <- pmax(0, as.numeric(t_grid))
+
+  profile_values <- vapply(omega_grid, function(omega) {
+    axial_truncnorm_mixture_distance_profile(omega = omega, t_values = t_grid, theta = theta)
+  }, numeric(length(t_grid)))
+
+  t(profile_values)
+}
+
+axial_truncnorm_encode_theta <- function(theta) {
+  theta <- normalize_axial_truncnorm_mixture2_theta(theta)
+  c(
+    qlogis(theta$pi),
+    log(theta$kappa1),
+    qlogis(theta$nu1),
+    log(theta$kappa2),
+    qlogis(theta$nu2)
+  )
+}
+
+axial_truncnorm_decode_theta <- function(par) {
+  if (length(par) != 5L) {
+    stop("Internal axial truncated-normal-mixture parameter vector must have length 5.")
+  }
+
+  nu_eps <- 1e-10
+  list(
+    pi = clip_axial_truncnorm_prob(stats::plogis(par[[1L]])),
+    kappa1 = exp(par[[2L]]),
+    nu1 = clip_axial_truncnorm_prob(stats::plogis(par[[3L]]), eps = nu_eps),
+    kappa2 = exp(par[[4L]]),
+    nu2 = clip_axial_truncnorm_prob(stats::plogis(par[[5L]]), eps = nu_eps)
+  )
+}
+
+axial_truncnorm_default_theta_start <- function(data) {
+  z <- normalize_axial_truncnorm_mixture2_data(data)
+  z_pos <- z[z >= 0]
+  z_neg <- -z[z < 0]
+
+  list(
+    pi = 0.5,
+    kappa1 = 10,
+    nu1 = if (length(z_pos) > 0L) clip_axial_truncnorm_prob(mean(z_pos), eps = 1e-4) else 0.25,
+    kappa2 = 10,
+    nu2 = if (length(z_neg) > 0L) clip_axial_truncnorm_prob(mean(z_neg), eps = 1e-4) else 0.25
+  )
+}
+
+fit_axial_truncnorm_mixture2_theta <- function(data,
+                                                weights = NULL,
+                                                null,
+                                                control = list()) {
+  z <- normalize_axial_truncnorm_mixture2_data(data, control)
+
+  if (!is.list(null) || is.null(null$type)) {
+    stop("`null` must be a list containing at least the field `type`.")
+  }
+
+  if (identical(null$type, "simple")) {
+    return(normalize_axial_truncnorm_mixture2_theta(null$theta))
+  }
+
+  if (!identical(null$type, "composite")) {
+    stop("`null$type` must be either `simple` or `composite`.")
+  }
+
+  obs_weights <- if (is.null(weights)) rep.int(1, length(z)) else as.numeric(weights)
+  if (length(obs_weights) != length(z) || any(!is.finite(obs_weights)) || any(obs_weights < 0) || sum(obs_weights) <= 0) {
+    stop("`weights` must be NULL or a nonnegative finite vector with positive sum and length equal to `data`.")
+  }
+
+  theta_start <- control$axial_truncnorm_mixture2_start_theta %||% axial_truncnorm_default_theta_start(z)
+  theta_start <- normalize_axial_truncnorm_mixture2_theta(theta_start)
+  start_par <- axial_truncnorm_encode_theta(theta_start)
+
+  objective <- function(par) {
+    theta <- axial_truncnorm_decode_theta(par)
+    log_density <- axial_truncnorm_mixture_log_density(z, theta)
+    if (any(!is.finite(log_density))) {
+      return(Inf)
+    }
+    -sum(obs_weights * log_density)
+  }
+
+  optim_control <- modifyList(list(maxit = 300L, reltol = 1e-8), control$axial_truncnorm_mixture2_optim_control %||% list())
+  fit <- optim(
+    par = start_par,
+    fn = objective,
+    method = "BFGS",
+    control = optim_control
+  )
+
+  theta_hat <- axial_truncnorm_decode_theta(fit$par)
+  c(
+    theta_hat,
+    list(
+      loglik = -fit$value,
+      opt = fit
+    )
+  )
+}
+
+make_axial_truncnorm_mixture2_spec <- function(distance_type = c("euclidean")) {
+  distance_type <- match.arg(distance_type)
+
+  new_model_spec(
+    name = sprintf("axial_truncnorm_mixture2_%s", distance_type),
+    fit_theta = function(data, weights = NULL, null, control = list()) {
+      fit_axial_truncnorm_mixture2_theta(
+        data = data,
+        weights = weights,
+        null = null,
+        control = control
+      )
+    },
+    distance_matrix = function(data, omega, control = list()) {
+      z <- normalize_axial_truncnorm_mixture2_data(data, control)
+      omega_vec <- normalize_axial_truncnorm_mixture2_data(omega, control)
+      abs(outer(z, omega_vec, FUN = "-"))
+    },
+    profile_eval = function(omega, t, theta, control = list()) {
+      axial_truncnorm_mixture_distance_profile(
+        omega = omega,
+        t_values = as.numeric(t),
+        theta = theta
+      )
+    },
+    normalize_data = normalize_axial_truncnorm_mixture2_data,
+    n_obs = function(data, control = list()) {
+      length(normalize_axial_truncnorm_mixture2_data(data, control))
+    },
+    observation_at = function(data, idx, control = list()) {
+      normalize_axial_truncnorm_mixture2_data(data, control)[[idx]]
+    },
+    extras = list(
+      profile_matrix_eval = function(omega_grid, t_grid, theta, control = list()) {
+        axial_truncnorm_mixture_distance_profile_grid(
+          omega_grid = omega_grid,
+          t_grid = t_grid,
+          theta = theta
+        )
+      },
+      distance_type = distance_type,
+      unknown_param = "theta",
+      weighted_mle = TRUE
+    )
+  )
+}
+
 small_circle_model_spec_path <- resolve_bootstrap_path("bootstrap", "small_circle_model_spec.R")
 if (!exists("make_small_circle_spec", mode = "function") && file.exists(small_circle_model_spec_path)) {
   source(small_circle_model_spec_path)

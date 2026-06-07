@@ -544,6 +544,11 @@ run_bootstrap_chunk <- function(weight_chunk,
         bootstrap_control$small_circle_weighted_mixture2_optim_control <-
           bootstrap_control$small_circle_weighted_mixture2_bootstrap_optim_control %||%
           list(maxit = 80L, reltol = 1e-6)
+      } else if (!is.null(theta_start) && grepl("^axial_truncnorm_mixture2_", spec$name)) {
+        bootstrap_control$axial_truncnorm_mixture2_start_theta <- theta_start
+        bootstrap_control$axial_truncnorm_mixture2_optim_control <-
+          bootstrap_control$axial_truncnorm_mixture2_bootstrap_optim_control %||%
+          list(maxit = 80L, reltol = 1e-6)
       } else if (!is.null(theta_start) && grepl("^logitnormal_mixture2_", spec$name)) {
         bootstrap_control$logitnormal_mixture2_start_theta <- theta_start
         bootstrap_control$logitnormal_mixture2_warm_start_only <- TRUE
@@ -579,6 +584,23 @@ run_bootstrap_chunk <- function(weight_chunk,
         bootstrap_fit_warnings <- c(
           bootstrap_fit_warnings,
           "Bootstrap MLE returned non-finite theta_star; falling back to observed theta_hat."
+        )
+        theta_star <- theta_start
+        theta_star_loglik <- as.numeric(theta_start$loglik %||% NA_real_)
+        theta_star_convergence <- as.integer(theta_start$opt$convergence %||% NA_integer_)
+      }
+      if (grepl("^axial_truncnorm_mixture2_", spec$name) &&
+          (is.null(theta_star) ||
+             any(!is.finite(as.numeric(c(
+               theta_star$pi,
+               theta_star$kappa1,
+               theta_star$nu1,
+               theta_star$kappa2,
+               theta_star$nu2
+             )))))) {
+        bootstrap_fit_warnings <- c(
+          bootstrap_fit_warnings,
+          "Bootstrap axial MLE returned an invalid theta_star; falling back to observed theta_hat."
         )
         theta_star <- theta_start
         theta_star_loglik <- as.numeric(theta_start$loglik %||% NA_real_)
@@ -925,7 +947,11 @@ multiplier_bootstrap_gof <- function(data,
       "normalize_small_circle_weighted_mixture2_data",
       "normalize_small_circle_weighted_mixture2_theta",
       "fit_small_circle_weighted_mixture2_theta",
-      "make_small_circle_weighted_mixture2_spec"
+      "make_small_circle_weighted_mixture2_spec",
+      "normalize_axial_truncnorm_mixture2_data",
+      "normalize_axial_truncnorm_mixture2_theta",
+      "fit_axial_truncnorm_mixture2_theta",
+      "make_axial_truncnorm_mixture2_spec"
     )
 
     parallel::clusterExport(cl, worker_symbols, envir = environment())
@@ -1411,8 +1437,8 @@ multiplier_bootstrap_small_circle_symmetric_mixture2 <- function(data,
 }
 
 multiplier_bootstrap_small_circle_weighted_mixture2 <- function(data,
-                                                                null,
-                                                                statistics = c("ks", "cvm"),
+                                                                 null,
+                                                                 statistics = c("ks", "cvm"),
                                                                 ks_grid = NULL,
                                                                 B = 999,
                                                                 alpha = 0.05,
@@ -1429,6 +1455,38 @@ multiplier_bootstrap_small_circle_weighted_mixture2 <- function(data,
   distance_type <- match.arg(distance_type)
   spec <- make_small_circle_weighted_mixture2_spec(distance_type = distance_type)
 
+  multiplier_bootstrap_gof(
+    data = data,
+    spec = spec,
+    null = null,
+    statistics = statistics,
+    ks_grid = ks_grid,
+    B = B,
+    alpha = alpha,
+    multipliers = multipliers,
+    n_cores = n_cores,
+    seed = seed,
+    keep = keep,
+    control = control
+  )
+}
+
+multiplier_bootstrap_axial_truncnorm_mixture2 <- function(data,
+                                                           null,
+                                                           statistics = c("ks", "cvm"),
+                                                           ks_grid = NULL,
+                                                           B = 999,
+                                                           alpha = 0.05,
+                                                           multipliers = NULL,
+                                                           n_cores = 1,
+                                                           seed = NULL,
+                                                           keep = list(
+                                                             observed_process = TRUE,
+                                                             bootstrap_statistics = TRUE,
+                                                             bootstrap_thetas = FALSE
+                                                           ),
+                                                           control = list()) {
+  spec <- make_axial_truncnorm_mixture2_spec(distance_type = "euclidean")
   multiplier_bootstrap_gof(
     data = data,
     spec = spec,
