@@ -79,6 +79,8 @@ parse_axial_args <- function(args = commandArgs(trailingOnly = TRUE)) {
       file.path("real_data", "sunspots", "output", "sunspots_cycle23_s2_all.csv"),
       sep = ","
     ),
+    ks_omega_points = 60L,
+    ks_t_points = 200L,
     start_window = 1L,
     end_window = Inf,
     statistics = "ks"
@@ -98,6 +100,8 @@ parse_axial_args <- function(args = commandArgs(trailingOnly = TRUE)) {
     "  --output_dir=PATH",
     "  --sc_csv=PATH",
     "  --sunspots_csv=PATH1,PATH2,PATH3",
+    "  --ks_omega_points=60",
+    "  --ks_t_points=200",
     "  --start_window=1",
     "  --end_window=Inf",
     "  --statistics=KS",
@@ -129,6 +133,8 @@ parse_axial_args <- function(args = commandArgs(trailingOnly = TRUE)) {
   if ("output_dir" %in% names(parsed)) defaults$output_dir <- parsed$output_dir
   if ("sc_csv" %in% names(parsed)) defaults$sc_csv <- parsed$sc_csv
   if ("sunspots_csv" %in% names(parsed)) defaults$sunspots_csv <- parsed$sunspots_csv
+  if ("ks_omega_points" %in% names(parsed)) defaults$ks_omega_points <- parse_axial_integer(parsed$ks_omega_points, "ks_omega_points")
+  if ("ks_t_points" %in% names(parsed)) defaults$ks_t_points <- parse_axial_integer(parsed$ks_t_points, "ks_t_points")
   if ("start_window" %in% names(parsed)) defaults$start_window <- parse_axial_integer(parsed$start_window, "start_window")
   if ("end_window" %in% names(parsed)) defaults$end_window <- parse_axial_integer(parsed$end_window, "end_window", allow_inf = TRUE)
   if ("statistics" %in% names(parsed)) defaults$statistics <- parse_axial_statistics(parsed$statistics)
@@ -212,10 +218,12 @@ read_axial_sunspots <- function(path_value, cycles) {
   sunspots[order(sunspots$cycle, sunspots$date), , drop = FALSE]
 }
 
-make_axial_ks_grid <- function(z) {
-  omega_grid <- sort(unique(c(-1, z, 1)))
-  distance_values <- unique(as.vector(abs(outer(z, omega_grid, FUN = "-"))))
-  t_grid <- sort(unique(c(0, distance_values, 2)))
+make_axial_ks_grid <- function(ks_omega_points = 60L, ks_t_points = 200L) {
+  # For KS we follow the repo convention of using a fixed deterministic grid.
+  # Here the metric space is [-1, 1] with Euclidean distance, so centers
+  # omega belong to [-1, 1] and radii t belong to [0, 2].
+  omega_grid <- seq(-1, 1, length.out = as.integer(ks_omega_points))
+  t_grid <- seq(1e-8, 2, length.out = as.integer(ks_t_points))
   list(omega_grid = omega_grid, t_grid = t_grid)
 }
 
@@ -427,7 +435,10 @@ run_axial_window <- function(sc_row, sunspots_cycle, args, log_path) {
   z <- normalize_axial_truncnorm_mixture2_data(z)
 
   start_theta <- make_axial_start_theta(sc_row)
-  ks_grid <- make_axial_ks_grid(z)
+  ks_grid <- make_axial_ks_grid(
+    ks_omega_points = args$ks_omega_points,
+    ks_t_points = args$ks_t_points
+  )
 
   mle_warnings <- character()
   start_time_mle <- Sys.time()
