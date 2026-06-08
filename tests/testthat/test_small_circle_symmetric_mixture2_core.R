@@ -94,6 +94,39 @@ test_that("symmetric small-circle-mixture kappa zero is uniform on S2", {
   expect_equal(observed, (1 - cos(t_grid)) / 2, tolerance = 1e-12)
 })
 
+test_that("symmetric small-circle-mixture axial and S2 densities are numerically normalized", {
+  axial_integral <- integrate(
+    f = function(z) small_circle_symmetric_mixture2_axis_density(
+      z = z,
+      kappa = 12,
+      nu = 0.35
+    ),
+    lower = -1,
+    upper = 1,
+    rel.tol = 1e-8,
+    abs.tol = 1e-10
+  )$value
+
+  s2_integral <- integrate(
+    f = function(z) {
+      x <- cbind(sqrt(pmax(0, 1 - z^2)), 0, z)
+      2 * pi * d_sph_small_circle_symmetric_mixture2_s2(
+        x = x,
+        mu = c(0, 0, 1),
+        kappa = 12,
+        nu = 0.35
+      )
+    },
+    lower = -1,
+    upper = 1,
+    rel.tol = 1e-8,
+    abs.tol = 1e-10
+  )$value
+
+  expect_equal(axial_integral, 1, tolerance = 1e-8)
+  expect_equal(s2_integral, 1, tolerance = 1e-8)
+})
+
 test_that("symmetric small-circle-mixture axis law is even and symmetric", {
   z_grid <- seq(-0.9, 0.9, length.out = 19)
   density_pos <- small_circle_symmetric_mixture2_axis_density(z_grid, kappa = 8, nu = 0.35)

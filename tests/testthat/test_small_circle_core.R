@@ -13,6 +13,18 @@ test_that("Small Circle Legendre coefficients recover the uniform case", {
   expect_equal(coeffs$coefficients[-1L], rep(0, 8), tolerance = 1e-14)
 })
 
+test_that("Small Circle axial density is numerically normalized", {
+  axial_integral <- integrate(
+    f = function(z) small_circle_axis_density(z, kappa = 12, nu = 0.35),
+    lower = -1,
+    upper = 1,
+    rel.tol = 1e-8,
+    abs.tol = 1e-10
+  )$value
+
+  expect_equal(axial_integral, 1, tolerance = 1e-8)
+})
+
 test_that("Small Circle profile recovers the uniform S2 law", {
   mu <- c(0, 0, 1)
   omega <- c(1, 0, 0)
