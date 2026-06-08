@@ -158,7 +158,7 @@ test_that("rotational beta-mixture grid and CvM helpers match naive row-wise eva
   dot_products <- pmin(pmax(x %*% t(x), -1), 1)
 
   for (method in c("legendre", "integral")) {
-    tol_match <- if (identical(method, "legendre")) 1e-8 else 1e-12
+    tol_match <- 1e-8
     grid_naive <- t(vapply(seq_len(nrow(omega_grid)), function(i) {
       distance_profile_beta_mixture2(
         omega = omega_grid[i, ],
@@ -169,6 +169,7 @@ test_that("rotational beta-mixture grid and CvM helpers match naive row-wise eva
         beta1 = theta$beta1,
         alpha2 = theta$alpha2,
         beta2 = theta$beta2,
+        distance_type = "geodesic",
         method = method,
         l_max = 80L,
         quad_n = 250L,
@@ -183,6 +184,7 @@ test_that("rotational beta-mixture grid and CvM helpers match naive row-wise eva
       beta1 = theta$beta1,
       alpha2 = theta$alpha2,
       beta2 = theta$beta2,
+      distance_type = "geodesic",
       t_grid = t_grid,
       method = method,
       l_max = 80L,
@@ -306,6 +308,45 @@ test_that("rotational beta-mixture density is numerically stable at y endpoints"
   )
 
   expect_true(all(is.finite(log_s2)))
+})
+
+test_that("rotational beta-mixture axial and S2 densities are numerically normalized", {
+  axial_integral <- integrate(
+    f = function(z) beta_mixture2_density_gz(
+      z = z,
+      weight1 = 0.4,
+      alpha1 = 2.5,
+      beta1 = 8,
+      alpha2 = 9,
+      beta2 = 2.5
+    ),
+    lower = -1,
+    upper = 1,
+    rel.tol = 1e-8,
+    abs.tol = 1e-10
+  )$value
+
+  s2_integral <- integrate(
+    f = function(z) {
+      x <- cbind(sqrt(pmax(0, 1 - z^2)), 0, z)
+      2 * pi * d_sph_beta_mixture2_s2(
+        x = x,
+        mu = c(0, 0, 1),
+        weight1 = 0.4,
+        alpha1 = 2.5,
+        beta1 = 8,
+        alpha2 = 9,
+        beta2 = 2.5
+      )
+    },
+    lower = -1,
+    upper = 1,
+    rel.tol = 1e-8,
+    abs.tol = 1e-10
+  )$value
+
+  expect_equal(axial_integral, 1, tolerance = 1e-8)
+  expect_equal(s2_integral, 1, tolerance = 1e-8)
 })
 
 test_that("rotational logit-normal-mixture coefficients and special profiles are correct", {

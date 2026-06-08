@@ -66,6 +66,34 @@ test_that("spherical Cauchy projected CDF matches the axial closed form", {
   expect_equal(observed, expected, tolerance = 1e-10)
 })
 
+test_that("spherical Cauchy axial and S2 densities are numerically normalized", {
+  axial_integral <- integrate(
+    f = function(x) spherical_cauchy_axis_projected_density(x = x, rho = 0.4),
+    lower = -1,
+    upper = 1,
+    rel.tol = 1e-8,
+    abs.tol = 1e-10
+  )$value
+
+  s2_integral <- integrate(
+    f = function(z) {
+      x <- cbind(sqrt(pmax(0, 1 - z^2)), 0, z)
+      2 * pi * d_spherical_cauchy_s2(
+        x = x,
+        mu = c(0, 0, 1),
+        rho = 0.4
+      )
+    },
+    lower = -1,
+    upper = 1,
+    rel.tol = 1e-8,
+    abs.tol = 1e-10
+  )$value
+
+  expect_equal(axial_integral, 1, tolerance = 1e-8)
+  expect_equal(s2_integral, 1, tolerance = 1e-8)
+})
+
 test_that("spherical Cauchy geodesic profiles are monotone in t", {
   mu <- c(0, 0, 1)
   omega <- c(1, 0, 0)
