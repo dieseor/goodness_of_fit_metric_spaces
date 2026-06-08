@@ -2048,17 +2048,48 @@ axial_truncnorm_interval_mass <- function(kappa, mean_value, lower, upper) {
   }
 
   sqrt_kappa <- sqrt(kappa)
-  stats::pnorm(sqrt(2) * sqrt_kappa * (upper - mean_value)) -
-    stats::pnorm(sqrt(2) * sqrt_kappa * (lower - mean_value))
+  upper_std <- sqrt(2) * sqrt_kappa * (upper - mean_value)
+  lower_std <- sqrt(2) * sqrt_kappa * (lower - mean_value)
+
+  stats::pnorm(upper_std) - stats::pnorm(lower_std)
+}
+
+axial_truncnorm_logdiffexp <- function(log_x, log_y) {
+  if (any(log_y > log_x, na.rm = TRUE)) {
+    stop("`logdiffexp` requires `log_x >= log_y`.")
+  }
+  log_x + log1p(-exp(log_y - log_x))
+}
+
+axial_truncnorm_log_interval_mass <- function(kappa, mean_value, lower, upper) {
+  if (!is.finite(kappa) || kappa <= 0) {
+    stop("`kappa` must be strictly positive and finite.")
+  }
+
+  sqrt_kappa <- sqrt(kappa)
+  upper_std <- sqrt(2) * sqrt_kappa * (upper - mean_value)
+  lower_std <- sqrt(2) * sqrt_kappa * (lower - mean_value)
+
+  log_p_upper <- stats::pnorm(upper_std, log.p = TRUE)
+  log_p_lower <- stats::pnorm(lower_std, log.p = TRUE)
+
+  if (!is.finite(log_p_upper)) {
+    return(log_p_upper)
+  }
+  if (!is.finite(log_p_lower)) {
+    return(log_p_upper)
+  }
+
+  axial_truncnorm_logdiffexp(log_p_upper, log_p_lower)
 }
 
 axial_truncnorm_log_normconst <- function(kappa, mean_value) {
-  mass <- axial_truncnorm_interval_mass(kappa, mean_value, lower = -1, upper = 1)
-  if (!is.finite(mass) || mass <= 0) {
+  log_mass <- axial_truncnorm_log_interval_mass(kappa, mean_value, lower = -1, upper = 1)
+  if (!is.finite(log_mass)) {
     stop("Failed to compute a positive normalizing constant for the axial truncated-normal component.")
   }
 
-  0.5 * log(pi / kappa) - log(2) + log(mass)
+  0.5 * log(pi / kappa) - log(2) + log_mass
 }
 
 axial_truncnorm_component_log_density <- function(z, kappa, mean_value) {
@@ -2067,9 +2098,14 @@ axial_truncnorm_component_log_density <- function(z, kappa, mean_value) {
 
 axial_truncnorm_component_cdf <- function(z, kappa, mean_value) {
   z_clipped <- pmin(1, pmax(-1, as.numeric(z)))
-  denom <- axial_truncnorm_interval_mass(kappa, mean_value, lower = -1, upper = 1)
-  numer <- axial_truncnorm_interval_mass(kappa, mean_value, lower = -1, upper = z_clipped)
-  out <- numer / denom
+  log_denom <- axial_truncnorm_log_interval_mass(kappa, mean_value, lower = -1, upper = 1)
+  log_numer <- vapply(z_clipped, function(one_z) {
+    if (one_z <= -1) {
+      return(-Inf)
+    }
+    axial_truncnorm_log_interval_mass(kappa, mean_value, lower = -1, upper = one_z)
+  }, numeric(1))
+  out <- exp(log_numer - log_denom)
   out[z <= -1] <- 0
   out[z >= 1] <- 1
   pmin(1, pmax(0, out))
