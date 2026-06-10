@@ -18,7 +18,8 @@ logistic_gaussian_screening_warning <- paste(
   "This workflow performs the logistic Gaussian goodness-of-fit analysis through the global bootstrap pipeline used by the calibration code.",
   "The default mode is the composite multiplier bootstrap for the logistic Gaussian model, with weighted re-estimation of the unknown parameters in every bootstrap replicate.",
   "For the logistic Gaussian model with Aitchison distance, theoretical distance profiles are evaluated through the global logistic Gaussian model specification used by the calibration code, not by local screening-specific profile code.",
-  "The legacy labels composite_parametric and plugin_simple_null are accepted only for backwards compatibility; the screening analysis should be run with bootstrap_mode = 'composite_multiplier'."
+  "The exploratory label plugin_simple_null runs a simple-null plug-in screening: the logistic Gaussian parameters are estimated once from the data, then treated as fixed, the theoretical profile is approximated by Monte Carlo, and the bootstrap samples are generated from that fitted null without re-estimation.",
+  "Therefore, plugin_simple_null p-values are exploratory only and are not valid p-values for the composite null."
 )
 
 default_logistic_gaussian_screening_datasets <- function(include_external = TRUE) {
@@ -184,10 +185,11 @@ logistic_gaussian_screening_dataset_registry <- function() {
       source_type = "search_r_packages",
       candidate_names = "coffee",
       candidate_packages = c("robCompositions", "Compositional"),
-      compositional_columns = c("sort", "acit", "metpyr", "furfu", "furfualc", "dimeth", "met5"),
+      compositional_columns = c("acit", "metpyr", "furfu", "furfualc", "dimeth", "met5"),
       notes = c(
         "Coffee composition dataset from robCompositions.",
-        "All seven columns are treated compositionally."
+        "The factor `sort` is a coffee-type label and is excluded from the compositional analysis.",
+        "The six volatile compounds are treated compositionally."
       )
     ),
     alcohol = list(
@@ -599,7 +601,7 @@ standardize_screening_bootstrap_mode <- function(bootstrap_mode) {
     return("composite_multiplier")
   }
   if (identical(bootstrap_mode, "plugin_simple_null")) {
-    stop("bootstrap_mode = 'plugin_simple_null' is no longer supported by the screening workflow. Use bootstrap_mode = 'composite_multiplier'.")
+    return("plugin_simple_null")
   }
   stop(sprintf("Unsupported bootstrap_mode: %s", bootstrap_mode))
 }
@@ -775,6 +777,69 @@ simulate_fitted_logistic_gaussian <- function(n, fit, seed = NULL) {
     stop("The simulated Logistic Gaussian sample left the simplex interior numerically.")
   }
   x_sim / rowSums(x_sim)
+}
+
+estimate_theoretical_profile_from_null_sample <- function(omega_grid,
+                                                          t_grid,
+                                                          x_null_sample,
+                                                          fit) {
+  z_centers <- ilr_transform_closed(as.matrix(omega_grid), V = fit$ilr_basis)
+  z_null <- ilr_transform_closed(as.matrix(x_null_sample), V = fit$ilr_basis)
+  distance_null <- distance_matrix_from_ilr(z_null, z_centers)
+  compute_profile_matrix_from_distances(distance_null, t_grid)
+}
+
+plugin_parametric_bootstrap_logistic_gaussian_screening <- function(data_closed,
+                                                                    fit,
+                                                                    omega_grid,
+                                                                    t_grid,
+                                                                    theoretical_profile,
+                                                                    observed_ks,
+                                                                    observed_cvm,
+                                                                    B,
+                                                                    seed,
+                                                                    n_cores = 1L) {
+  data_closed <- as.matrix(data_closed)
+  n <- nrow(data_closed)
+  z_centers <- ilr_transform_closed(as.matrix(omega_grid), V = fit$ilr_basis)
+  B <- as.integer(B)
+  n_cores <- max(1L, as.integer(n_cores))
+
+  run_one <- function(b) {
+    x_boot <- simulate_fitted_logistic_gaussian(
+      n = n,
+      fit = fit,
+      seed = as.integer(seed) + b
+    )
+    z_boot <- ilr_transform_closed(x_boot, V = fit$ilr_basis)
+    distance_boot <- distance_matrix_from_ilr(z_boot, z_centers)
+    empirical_boot <- compute_profile_matrix_from_distances(distance_boot, t_grid)
+    compute_screening_statistics_from_profiles(
+      empirical_profile = empirical_boot,
+      theoretical_profile = theoretical_profile,
+      n_obs = n
+    )
+  }
+
+  if (.Platform$OS.type == "unix" && n_cores > 1L && B > 1L) {
+    bootstrap_stats <- parallel::mclapply(
+      X = seq_len(B),
+      FUN = run_one,
+      mc.cores = min(n_cores, B)
+    )
+  } else {
+    bootstrap_stats <- lapply(seq_len(B), run_one)
+  }
+
+  ks_statistics <- vapply(bootstrap_stats, function(x) x$ks, numeric(1))
+  cvm_statistics <- vapply(bootstrap_stats, function(x) x$cvm, numeric(1))
+
+  list(
+    ks_statistics = ks_statistics,
+    cvm_statistics = cvm_statistics,
+    p_value_ks = mean(ks_statistics >= observed_ks),
+    p_value_cvm = mean(cvm_statistics >= observed_cvm)
+  )
 }
 
 prepare_composition_dataset <- function(name) {
@@ -971,6 +1036,79 @@ choose_screening_centers <- function(x_closed, max_centers = 100L, seed = 123L) 
   )
 }
 
+simplex_lattice_count <- function(ambient_dim, level) {
+  choose(level + ambient_dim - 1L, ambient_dim - 1L)
+}
+
+simplex_lattice_indices_recursive <- function(ambient_dim, level) {
+  if (ambient_dim == 1L) {
+    return(matrix(level, nrow = 1L, ncol = 1L))
+  }
+
+  blocks <- lapply(0:level, function(first_part) {
+    tail_block <- simplex_lattice_indices_recursive(ambient_dim - 1L, level - first_part)
+    cbind(first_part, tail_block)
+  })
+  do.call(rbind, blocks)
+}
+
+choose_simplex_lattice_level <- function(ambient_dim, target_points, overshoot_factor = 1.25) {
+  target_points <- as.integer(target_points)
+  if (target_points <= 0L) {
+    stop("`target_points` must be strictly positive.")
+  }
+
+  level <- 1L
+  counts <- integer(0)
+  repeat {
+    count_level <- simplex_lattice_count(ambient_dim, level)
+    counts <- c(counts, count_level)
+    if (count_level >= target_points * overshoot_factor || level >= 25L) {
+      break
+    }
+    level <- level + 1L
+  }
+
+  candidate_levels <- seq_along(counts)
+  best <- candidate_levels[[which.min(abs(counts - target_points))]]
+  as.integer(best)
+}
+
+build_fixed_simplex_omega_grid <- function(ambient_dim,
+                                           max_centers = 100L,
+                                           boundary_epsilon = 5e-3) {
+  ambient_dim <- as.integer(ambient_dim)
+  max_centers <- as.integer(max_centers)
+  if (ambient_dim < 2L) {
+    stop("`ambient_dim` must be at least 2.")
+  }
+  if (max_centers <= 0L) {
+    stop("`max_centers` must be strictly positive.")
+  }
+  if (!is.finite(boundary_epsilon) || boundary_epsilon <= 0 || boundary_epsilon >= 1 / ambient_dim) {
+    stop("`boundary_epsilon` must belong to (0, 1 / ambient_dim).")
+  }
+
+  level <- choose_simplex_lattice_level(
+    ambient_dim = ambient_dim,
+    target_points = max_centers
+  )
+  lattice_idx <- simplex_lattice_indices_recursive(
+    ambient_dim = ambient_dim,
+    level = level
+  )
+  omega_grid <- lattice_idx / level
+  omega_grid <- (1 - ambient_dim * boundary_epsilon) * omega_grid + boundary_epsilon
+  omega_grid <- omega_grid / rowSums(omega_grid)
+
+  list(
+    omega = omega_grid,
+    lattice_level = level,
+    n_centers = nrow(omega_grid),
+    construction = "fixed_simplex_lattice"
+  )
+}
+
 choose_screening_t_grid <- function(distance_observed,
                                     distance_null = NULL,
                                     n_t = 60L,
@@ -1004,6 +1142,33 @@ choose_screening_t_grid <- function(distance_observed,
   }
 
   t_grid
+}
+
+build_fixed_t_grid_logistic_gaussian <- function(fit,
+                                                 omega_grid,
+                                                 n_t = 60L,
+                                                 radius_multiplier = 8) {
+  omega_grid <- as.matrix(omega_grid)
+  omega_ilr <- ilr_transform_closed(omega_grid, V = fit$ilr_basis)
+  shift_norms <- sqrt(rowSums((omega_ilr - matrix(
+    rep(fit$mu_hat, each = nrow(omega_ilr)),
+    nrow = nrow(omega_ilr),
+    ncol = length(fit$mu_hat)
+  ))^2))
+  lambda_max <- max(fit$eigenvalues, 0)
+  gaussian_radius <- as.numeric(radius_multiplier) * sqrt(max(lambda_max, 0) * ncol(fit$Z))
+  t_max <- max(shift_norms) + gaussian_radius
+
+  if (!is.finite(t_max) || t_max <= 0) {
+    t_max <- 1
+  }
+
+  list(
+    t_grid = seq(0, t_max, length.out = as.integer(n_t)),
+    t_max = t_max,
+    radius_multiplier = radius_multiplier,
+    construction = "fixed_interval_from_fitted_scale"
+  )
 }
 
 mardia_multivariate_normality <- function(z, tol = 1e-10) {
@@ -1370,6 +1535,9 @@ run_logistic_gaussian_screening <- function(dataset_name,
                                             ridge = 1e-8,
                                             n_cores = 1L,
                                             control = list(),
+                                            omega_grid_type = c("fixed_simplex_lattice", "sample_points"),
+                                            t_grid_type = c("fixed_fitted_scale", "sample_quantiles"),
+                                            null_mc_size = 20000L,
                                             make_plots = TRUE,
                                             save_outputs = TRUE,
                                             output_dir = file.path("output", "calibration", "bootstrap", "logistic_gaussian", "composite"),
@@ -1377,6 +1545,8 @@ run_logistic_gaussian_screening <- function(dataset_name,
                                             sensitivity_B = NULL,
                                             verbose = TRUE) {
   bootstrap_mode <- standardize_screening_bootstrap_mode(match.arg(bootstrap_mode))
+  omega_grid_type <- match.arg(omega_grid_type)
+  t_grid_type <- match.arg(t_grid_type)
   started_at <- Sys.time()
   dataset_started_proc <- proc.time()[["elapsed"]]
 
@@ -1434,28 +1604,70 @@ run_logistic_gaussian_screening <- function(dataset_name,
     ridge = ridge
   )
 
-  centers <- choose_screening_centers(
-    x_closed = data_prep$X_closed,
-    max_centers = max_centers,
-    seed = seed
-  )
+  centers <- if (identical(omega_grid_type, "fixed_simplex_lattice")) {
+    build_fixed_simplex_omega_grid(
+      ambient_dim = data_prep$D,
+      max_centers = max_centers
+    )
+  } else {
+    sample_centers <- choose_screening_centers(
+      x_closed = data_prep$X_closed,
+      max_centers = max_centers,
+      seed = seed
+    )
+    c(
+      sample_centers,
+      list(
+        lattice_level = NA_integer_,
+        n_centers = nrow(sample_centers$omega),
+        construction = "sample_points"
+      )
+    )
+  }
 
   z_centers <- ilr_transform_closed(centers$omega, V = fit$ilr_basis)
   distance_observed <- distance_matrix_from_ilr(fit$Z, z_centers)
 
-  t_grid <- choose_screening_t_grid(
-    distance_observed = distance_observed,
-    distance_null = NULL,
-    n_t = n_t,
-    probs = probs_t
-  )
+  t_grid_info <- if (identical(t_grid_type, "fixed_fitted_scale")) {
+    build_fixed_t_grid_logistic_gaussian(
+      fit = fit,
+      omega_grid = centers$omega,
+      n_t = n_t
+    )
+  } else {
+    list(
+      t_grid = choose_screening_t_grid(
+        distance_observed = distance_observed,
+        distance_null = NULL,
+        n_t = n_t,
+        probs = probs_t
+      ),
+      t_max = NA_real_,
+      radius_multiplier = NA_real_,
+      construction = "sample_quantiles"
+    )
+  }
+  t_grid <- t_grid_info$t_grid
 
-  theoretical_profile <- evaluate_fitted_logistic_gaussian_profile(
-    omega_grid = centers$omega,
-    t_grid = t_grid,
-    fit = fit
-  )
-  empirical_profile <- compute_profile_matrix_from_distances(distance_observed, t_grid)
+  theoretical_profile <- if (identical(bootstrap_mode, "plugin_simple_null")) {
+    x_null_mc <- simulate_fitted_logistic_gaussian(
+      n = null_mc_size,
+      fit = fit,
+      seed = as.integer(seed) + 500000L
+    )
+    estimate_theoretical_profile_from_null_sample(
+      omega_grid = centers$omega,
+      t_grid = t_grid,
+      x_null_sample = x_null_mc,
+      fit = fit
+    )
+  } else {
+    evaluate_fitted_logistic_gaussian_profile(
+      omega_grid = centers$omega,
+      t_grid = t_grid,
+      fit = fit
+    )
+  }
   empirical_profile <- compute_profile_matrix_from_distances(distance_observed, t_grid)
   observed_stats_grid <- compute_screening_statistics_from_profiles(
     empirical_profile = empirical_profile,
@@ -1463,25 +1675,50 @@ run_logistic_gaussian_screening <- function(dataset_name,
     n_obs = data_prep$n
   )
 
-  ensure_logistic_gaussian_bootstrap_available()
-  bootstrap_result <- multiplier_bootstrap_logistic_gaussian(
-    data = data_prep$X_closed,
-    null = list(type = "composite"),
-    statistics = c("ks", "cvm"),
-    ks_grid = list(
+  if (identical(bootstrap_mode, "plugin_simple_null")) {
+    bootstrap_result <- plugin_parametric_bootstrap_logistic_gaussian_screening(
+      data_closed = data_prep$X_closed,
+      fit = fit,
       omega_grid = centers$omega,
-      t_grid = t_grid
-    ),
-    B = B,
-    alpha = alpha,
-    n_cores = n_cores,
-    seed = seed,
-    control = control,
-    unknown_param = "both"
-  )
+      t_grid = t_grid,
+      theoretical_profile = theoretical_profile,
+      observed_ks = observed_stats_grid$ks,
+      observed_cvm = observed_stats_grid$cvm,
+      B = B,
+      seed = seed,
+      n_cores = n_cores
+    )
+    ks_extracted <- list(
+      statistic = observed_stats_grid$ks,
+      p_value = bootstrap_result$p_value_ks,
+      bootstrap_statistics = bootstrap_result$ks_statistics
+    )
+    cvm_extracted <- list(
+      statistic = observed_stats_grid$cvm,
+      p_value = bootstrap_result$p_value_cvm,
+      bootstrap_statistics = bootstrap_result$cvm_statistics
+    )
+  } else {
+    ensure_logistic_gaussian_bootstrap_available()
+    bootstrap_result <- multiplier_bootstrap_logistic_gaussian(
+      data = data_prep$X_closed,
+      null = list(type = "composite"),
+      statistics = c("ks", "cvm"),
+      ks_grid = list(
+        omega_grid = centers$omega,
+        t_grid = t_grid
+      ),
+      B = B,
+      alpha = alpha,
+      n_cores = n_cores,
+      seed = seed,
+      control = control,
+      unknown_param = "both"
+    )
 
-  ks_extracted <- extract_metric_result(bootstrap_result, "ks")
-  cvm_extracted <- extract_metric_result(bootstrap_result, "cvm")
+    ks_extracted <- extract_metric_result(bootstrap_result, "ks")
+    cvm_extracted <- extract_metric_result(bootstrap_result, "cvm")
+  }
 
   inference <- list(
     ks = list(
@@ -1513,15 +1750,27 @@ run_logistic_gaussian_screening <- function(dataset_name,
     data_prep = data_prep,
     fit = fit,
     grid = list(
-      center_indices = centers$center_indices,
+      center_indices = centers$center_indices %||% NA_integer_,
       omega = centers$omega,
       t_grid = t_grid,
       probs_t = probs_t %||% seq(0.01, 0.99, length.out = n_t),
-      max_centers = max_centers
+      max_centers = max_centers,
+      omega_grid_type = omega_grid_type,
+      omega_grid_construction = centers$construction %||% omega_grid_type,
+      omega_grid_lattice_level = centers$lattice_level %||% NA_integer_,
+      omega_grid_size = centers$n_centers %||% nrow(centers$omega),
+      t_grid_type = t_grid_type,
+      t_grid_construction = t_grid_info$construction %||% t_grid_type,
+      t_grid_t_max = t_grid_info$t_max %||% NA_real_,
+      t_grid_radius_multiplier = t_grid_info$radius_multiplier %||% NA_real_
     ),
     theoretical_profile_info = list(
-      method = "global_logistic_gaussian_model_spec",
-      note = "Theoretical distance profiles are evaluated by make_logistic_gaussian_spec()$profile_matrix_eval, the same model-spec path used by the calibration code.",
+      method = if (identical(bootstrap_mode, "plugin_simple_null")) "monte_carlo_from_fitted_null" else "global_logistic_gaussian_model_spec",
+      note = if (identical(bootstrap_mode, "plugin_simple_null")) {
+        "Theoretical distance profiles are approximated by a large Monte Carlo sample from the fitted logistic Gaussian null with parameters treated as fixed."
+      } else {
+        "Theoretical distance profiles are evaluated by make_logistic_gaussian_spec()$profile_matrix_eval, the same model-spec path used by the calibration code."
+      },
       theoretical_profile = theoretical_profile
     ),
     observed = list(
@@ -1533,7 +1782,7 @@ run_logistic_gaussian_screening <- function(dataset_name,
     ),
     bootstrap = list(
       mode = bootstrap_mode,
-      engine = "multiplier_bootstrap_logistic_gaussian",
+      engine = if (identical(bootstrap_mode, "plugin_simple_null")) "plugin_parametric_bootstrap_logistic_gaussian_screening" else "multiplier_bootstrap_logistic_gaussian",
       raw_result = bootstrap_result,
       ks_statistics = ks_extracted$bootstrap_statistics,
       cvm_statistics = cvm_extracted$bootstrap_statistics,
@@ -1550,6 +1799,9 @@ run_logistic_gaussian_screening <- function(dataset_name,
       ridge = ridge,
       bootstrap_mode = bootstrap_mode,
       n_cores = n_cores,
+      omega_grid_type = omega_grid_type,
+      t_grid_type = t_grid_type,
+      null_mc_size = null_mc_size,
       control = control
     ),
     runtime = list(
@@ -1660,6 +1912,8 @@ run_logistic_gaussian_screening_batch <- function(dataset_names = default_logist
                                                   ridge = 1e-8,
                                                   n_cores = 1L,
                                                   control = list(),
+                                                  omega_grid_type = "fixed_simplex_lattice",
+                                                  t_grid_type = "fixed_fitted_scale",
                                                   make_plots = TRUE,
                                                   output_dir = file.path("output", "calibration", "bootstrap", "logistic_gaussian", "composite"),
                                                   run_seed_sensitivity = FALSE,
@@ -1692,6 +1946,8 @@ run_logistic_gaussian_screening_batch <- function(dataset_names = default_logist
         ridge = ridge,
         n_cores = n_cores,
         control = control,
+        omega_grid_type = omega_grid_type,
+        t_grid_type = t_grid_type,
         make_plots = make_plots,
         save_outputs = TRUE,
         output_dir = output_dir,

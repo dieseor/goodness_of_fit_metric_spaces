@@ -116,6 +116,42 @@ test_that("logistic Gaussian bootstrap supports simple and composite nulls", {
   expect_equal(dim(composite_result$observed$theta_hat$Sigma_ilr), c(2L, 2L))
 })
 
+test_that("logistic Gaussian quadratic-form dispatcher returns finite probabilities", {
+  normal_prob <- logistic_gaussian_quadform_tail_probability(
+    q = 1,
+    lambda = c(0.35, 0.25),
+    h = c(1, 1),
+    delta = c(0.1, 0.2),
+    control = list()
+  )
+  expect_true(is.finite(normal_prob))
+  expect_true(normal_prob >= 0 && normal_prob <= 1)
+
+  ill_prob <- logistic_gaussian_quadform_tail_probability(
+    q = 247,
+    lambda = c(
+      8.88904185274295,
+      2.81096184712308,
+      0.888904185274295,
+      0.281096184712308,
+      0.0888904185274296,
+      0.0281096184712308,
+      0.00888904185274296,
+      0.00281096184712308,
+      0.000888904185274296,
+      0.000281096184712308,
+      0.0000888904185274297,
+      0.0000281096184712308,
+      0.00000888904185274296
+    ),
+    h = rep(1, 13),
+    delta = rep(75, 13),
+    control = list()
+  )
+  expect_true(is.finite(ill_prob))
+  expect_true(ill_prob >= 0 && ill_prob <= 1)
+})
+
 test_that("logistic Gaussian calibration scenarios run in smoke size", {
   simple_output_dir <- file.path(tempdir(), "lg_bootstrap_calibration_smoke")
   simple_result <- run_bootstrap_calibration_study(

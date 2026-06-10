@@ -41,3 +41,34 @@ test_that("HvMF composite CvM calibration runs on prepared disk samples", {
   expect_true(all(results$unknown_param == "both"))
   expect_true(all(results$p_value >= 0 & results$p_value <= 1))
 })
+
+test_that("HvMF simple KS and CvM calibration runs on prepared disk samples", {
+  scenario <- make_hvmf_simple_calibration_scenario(50)
+  sample_data <- load_hvmf_calibration_sample(
+    scenario = scenario,
+    n = 50,
+    replicate_id = 1
+  )
+  ks_grid <- make_hvmf_ks_grid(sample_data, mu = scenario$sample_params$mu)
+
+  expect_equal(dim(ks_grid$omega_grid), c(10, 3))
+  expect_equal(length(ks_grid$t_grid), 10)
+  expect_true(max(acosh(sample_data[, 1])) <= max(acosh(ks_grid$omega_grid[, 1])) + 1e-12)
+
+  results <- run_calibration_scenario(
+    scenario = scenario,
+    n_values = 50,
+    M_outer = 1,
+    B = 2,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = 1,
+    seed = 123
+  )
+
+  expect_equal(sort(unique(results$statistic)), c("cvm", "ks"))
+  expect_true(all(results$model == "hvmf"))
+  expect_true(all(results$null_type == "simple"))
+  expect_true(all(results$p_value >= 0 & results$p_value <= 1))
+})

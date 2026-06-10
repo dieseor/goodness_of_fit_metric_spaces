@@ -899,7 +899,22 @@ default_jp_composite_calibration_scenarios <- function() {
 }
 
 default_hvmf_calibration_data_dir <- function() {
-  resolve_calibration_path("data", "hvmf_typeiv_calibration")
+  candidates <- c(
+    file.path("data", "hvmf_typeiv_calibration"),
+    file.path("sim_data_hvmf", "hvmf_typeiv_calibration"),
+    file.path("..", "data", "hvmf_typeiv_calibration"),
+    file.path("..", "sim_data_hvmf", "hvmf_typeiv_calibration"),
+    file.path("..", "..", "data", "hvmf_typeiv_calibration"),
+    file.path("..", "..", "sim_data_hvmf", "hvmf_typeiv_calibration")
+  )
+
+  for (candidate in candidates) {
+    if (dir.exists(candidate)) {
+      return(candidate)
+    }
+  }
+
+  stop("Could not resolve HvMF calibration data directory in `data/` or `sim_data_hvmf/`.")
 }
 
 hvmf_typeiv_fixed_mu <- function() {
@@ -908,6 +923,60 @@ hvmf_typeiv_fixed_mu <- function() {
     cosh(abs(t0)),
     sinh(abs(t0)) * sign(t0) / sqrt(2),
     sinh(abs(t0)) * sign(t0) / sqrt(2)
+  )
+}
+
+make_hvmf_ks_grid <- function(data,
+                              mu = hvmf_typeiv_fixed_mu(),
+                              n_omega = 10L,
+                              n_t = 10L,
+                              chi_margin = 0.25,
+                              t_margin = 0.25) {
+  x <- normalize_hvmf_h2_data(data)
+  mu <- normalize_hvmf_theta(list(mu = mu, kappa = 1), control = list())$mu
+  n_omega <- as.integer(n_omega)
+  n_t <- as.integer(n_t)
+
+  if (!is.finite(n_omega) || n_omega < 2L) {
+    stop("`n_omega` must be an integer >= 2.")
+  }
+  if (!is.finite(n_t) || n_t < 2L) {
+    stop("`n_t` must be an integer >= 2.")
+  }
+
+  chi_values <- acosh(pmax(as.numeric(x[, 1L]), 1))
+  chi_max <- max(chi_values, na.rm = TRUE) + as.numeric(chi_margin)
+  if (!is.finite(chi_max) || chi_max <= 0) {
+    chi_max <- max(acosh(mu[[1L]]), 0.25)
+  }
+
+  theta0 <- atan2(mu[[3L]], mu[[2L]])
+  n_radial <- ceiling(n_omega / 2)
+  radial_grid <- seq(0, chi_max, length.out = n_radial)
+  angular_grid <- theta0 + c(0, pi / 2)
+
+  omega_grid <- do.call(
+    rbind,
+    lapply(radial_grid, function(chi) {
+      do.call(
+        rbind,
+        lapply(angular_grid, function(theta) {
+          c(cosh(chi), sinh(chi) * cos(theta), sinh(chi) * sin(theta))
+        })
+      )
+    })
+  )
+  omega_grid <- omega_grid[seq_len(min(nrow(omega_grid), n_omega)), , drop = FALSE]
+
+  distance_matrix <- hvmf_distance_matrix(omega_grid, x)
+  t_max <- max(distance_matrix, na.rm = TRUE) + as.numeric(t_margin)
+  if (!is.finite(t_max) || t_max <= 0) {
+    t_max <- chi_max + as.numeric(t_margin)
+  }
+
+  list(
+    omega_grid = omega_grid,
+    t_grid = seq(1e-8, t_max, length.out = n_t)
   )
 }
 
@@ -922,6 +991,7 @@ make_hvmf_composite_calibration_scenario <- function(kappa,
     sample_params = list(mu = mu, kappa = as.numeric(kappa)),
     distance_type = "geodesic",
     unknown_param = "both",
+    ks_grid = NULL,
     data_dir = data_dir
   )
 }
@@ -937,6 +1007,7 @@ make_hvmf_simple_calibration_scenario <- function(kappa,
     sample_params = list(mu = mu, kappa = as.numeric(kappa)),
     distance_type = "geodesic",
     unknown_param = "both",
+    ks_grid = NULL,
     data_dir = data_dir
   )
 }
@@ -1212,11 +1283,20 @@ run_bootstrap_for_scenario <- function(data,
   }
 
   if (identical(scenario$model, "hvmf")) {
+    ks_grid <- scenario$ks_grid %||% if ("ks" %in% tolower(statistics)) {
+      make_hvmf_ks_grid(
+        data = data,
+        mu = scenario$sample_params$mu
+      )
+    } else {
+      NULL
+    }
+
     return(multiplier_bootstrap_hvmf(
       data = data,
       null = scenario$null,
       statistics = statistics,
-      ks_grid = scenario$ks_grid %||% NULL,
+      ks_grid = ks_grid,
       B = B,
       alpha = alpha_nominal,
       seed = seed,
@@ -2411,6 +2491,50 @@ run_full_hvmf_simple_cvm_calibration_study <- function(output_dir = NULL,
     n_cores_outer = n_cores_outer,
     seed = seed,
     output_dir = output_dir %||% file.path("output", "calibration", "bootstrap", "hvmf_simple_cvm_full"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_smoke_hvmf_simple_ks_cvm_calibration_study <- function(output_dir = NULL,
+                                                           n_cores_outer = 1,
+                                                           seed = 123,
+                                                           show_progress = FALSE,
+                                                           verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_hvmf_simple_calibration_scenarios(),
+    n_values = 50,
+    M_outer = 5,
+    B = 19,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "calibration", "bootstrap", "hvmf_simple_ks_cvm_smoke"),
+    show_progress = show_progress,
+    verbose = verbose
+  )
+}
+
+run_full_hvmf_simple_ks_cvm_calibration_study <- function(output_dir = NULL,
+                                                          n_cores_outer = 1,
+                                                          seed = 123,
+                                                          M_outer = 1000,
+                                                          B = 1000,
+                                                          show_progress = FALSE,
+                                                          verbose = TRUE) {
+  run_bootstrap_calibration_study(
+    scenarios = default_hvmf_simple_calibration_scenarios(),
+    n_values = c(50, 100, 200),
+    M_outer = M_outer,
+    B = B,
+    alpha_nominal = 0.05,
+    alphas = c(0.01, 0.05, 0.10),
+    statistics = c("ks", "cvm"),
+    n_cores_outer = n_cores_outer,
+    seed = seed,
+    output_dir = output_dir %||% file.path("output", "calibration", "bootstrap", "hvmf_simple_ks_cvm_full"),
     show_progress = show_progress,
     verbose = verbose
   )

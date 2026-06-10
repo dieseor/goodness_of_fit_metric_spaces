@@ -628,9 +628,110 @@ logistic_gaussian_quadform_tail_probability <- function(q,
                                                         h,
                                                         delta,
                                                         control = list()) {
-  method <- tolower(as.character(control$logistic_gaussian_quadform_method %||% "farebrother"))
-  if (!method %in% c("farebrother", "davies")) {
-    stop("`control$logistic_gaussian_quadform_method` must be 'farebrother' or 'davies'.")
+  # Empirical dispatcher for the weighted noncentral chi-squared CDFs that
+  # arise in the logistic Gaussian distance-profile calculations.
+  #
+  # Benchmark evidence stored under `tests/benchmark_outputs/logistic_gaussian_quadform`
+  # showed that:
+  # - `farebrother` is typically the fastest accurate exact route in the
+  #   regular regime;
+  # - highly ill-conditioned spectra and strongly noncentral medium/high-
+  #   dimensional cases are the main regimes where `farebrother` becomes
+  #   unreliable or expensive;
+  # - in those ill-conditioned regimes `imhof` preserved accuracy well;
+  # - if `imhof` also fails, `HBE` is the most accurate approximation among the
+  #   fast alternatives we benchmarked.
+  #
+  # The ill-conditioning rule is empirical, not theoretical:
+  #   cond(lambda) > 1e4, or
+  #   length(lambda) >= 5, max(delta) > 10, and q / E(Q) > 0.1
+  # with E(Q) = sum_j lambda_j (h_j + delta_j).
+  method <- tolower(as.character(control$logistic_gaussian_quadform_method %||% "auto"))
+  if (!method %in% c("auto", "farebrother", "imhof", "hbe", "davies")) {
+    stop("`control$logistic_gaussian_quadform_method` must be one of 'auto', 'farebrother', 'imhof', 'hbe', or 'davies'.")
+  }
+
+  cond_threshold <- as.numeric(control$logistic_gaussian_ill_conditioned_cond_threshold %||% 1e4)
+  dim_threshold <- as.integer(control$logistic_gaussian_ill_conditioned_dim_threshold %||% 5L)
+  delta_threshold <- as.numeric(control$logistic_gaussian_ill_conditioned_delta_threshold %||% 10)
+  q_ratio_threshold <- as.numeric(control$logistic_gaussian_ill_conditioned_q_ratio_threshold %||% 0.1)
+  q_mean <- sum(lambda * (h + delta))
+  q_ratio <- if (is.finite(q_mean) && q_mean > 0) q / q_mean else Inf
+  cond_number <- max(lambda) / min(lambda)
+
+  is_ill_conditioned <- is.finite(cond_number) &&
+    (
+      cond_number > cond_threshold ||
+        (length(lambda) >= dim_threshold && max(delta) > delta_threshold && q_ratio > q_ratio_threshold)
+    )
+
+  auto_selected_method <- if (identical(method, "auto")) {
+    if (is_ill_conditioned) "imhof" else "farebrother"
+  } else {
+    NA_character_
+  }
+  if (identical(method, "auto")) {
+    method <- auto_selected_method
+  }
+
+  compute_farebrother <- function() {
+    eps <- as.numeric(control$logistic_gaussian_quadform_eps %||% 1e-8)
+    maxit <- as.integer(control$logistic_gaussian_quadform_maxit %||% 100000L)
+    if (!is.finite(eps) || eps <= 0) {
+      eps <- 1e-8
+    }
+    if (!is.finite(maxit) || maxit < 1000L) {
+      maxit <- 100000L
+    }
+    res <- CompQuadForm::farebrother(
+      q = q,
+      lambda = lambda,
+      h = h,
+      delta = delta,
+      maxit = maxit,
+      eps = eps
+    )
+    list(prob = 1 - res$Qq, ifault = as.integer(res$ifault %||% NA_integer_))
+  }
+
+  compute_imhof <- function() {
+    epsabs <- as.numeric(control$logistic_gaussian_quadform_imhof_epsabs %||% 1e-8)
+    epsrel <- as.numeric(control$logistic_gaussian_quadform_imhof_epsrel %||% 1e-8)
+    limit <- as.integer(control$logistic_gaussian_quadform_imhof_limit %||% 20000L)
+    if (!is.finite(epsabs) || epsabs <= 0) {
+      epsabs <- 1e-8
+    }
+    if (!is.finite(epsrel) || epsrel <= 0) {
+      epsrel <- 1e-8
+    }
+    if (!is.finite(limit) || limit < 1000L) {
+      limit <- 20000L
+    }
+    res <- CompQuadForm::imhof(
+      q = q,
+      lambda = lambda,
+      h = h,
+      delta = delta,
+      epsabs = epsabs,
+      epsrel = epsrel,
+      limit = limit
+    )
+    list(prob = 1 - res$Qq)
+  }
+
+  compute_hbe <- function() {
+    prob <- sphunif::p_wschisq(
+      x = q,
+      weights = lambda,
+      dfs = h,
+      ncps = delta,
+      method = "HBE"
+    )
+    list(prob = prob)
+  }
+
+  is_valid_prob <- function(prob) {
+    is.numeric(prob) && length(prob) == 1L && is.finite(prob) && prob >= 0 && prob <= 1
   }
 
   if (identical(method, "davies")) {
@@ -650,26 +751,41 @@ logistic_gaussian_quadform_tail_probability <- function(q,
       acc = acc,
       lim = lim
     )
-  } else {
-    eps <- as.numeric(control$logistic_gaussian_quadform_eps %||% 1e-8)
-    maxit <- as.integer(control$logistic_gaussian_quadform_maxit %||% 100000L)
-    if (!is.finite(eps) || eps <= 0) {
-      eps <- 1e-8
-    }
-    if (!is.finite(maxit) || maxit < 1000L) {
-      maxit <- 100000L
-    }
-    res <- CompQuadForm::farebrother(
-      q = q,
-      lambda = lambda,
-      h = h,
-      delta = delta,
-      maxit = maxit,
-      eps = eps
-    )
+    return(pmin(pmax(1 - res$Qq, 0), 1))
   }
 
-  pmin(pmax(1 - res$Qq, 0), 1)
+  if (identical(method, "farebrother")) {
+    fare <- compute_farebrother()
+    fare_prob <- pmin(pmax(fare$prob, 0), 1)
+    if (identical(auto_selected_method, "farebrother")) {
+      fare_valid <- is_valid_prob(fare$prob) && (is.na(fare$ifault) || fare$ifault == 0L)
+      if (!fare_valid) {
+        imh <- compute_imhof()
+        if (is_valid_prob(imh$prob)) {
+          return(imh$prob)
+        }
+        hbe <- compute_hbe()
+        return(pmin(pmax(hbe$prob, 0), 1))
+      }
+    }
+    return(fare_prob)
+  }
+
+  if (identical(method, "imhof")) {
+    imh <- compute_imhof()
+    if (is_valid_prob(imh$prob)) {
+      return(imh$prob)
+    }
+    hbe <- compute_hbe()
+    return(pmin(pmax(hbe$prob, 0), 1))
+  }
+
+  if (identical(method, "hbe")) {
+    hbe <- compute_hbe()
+    return(pmin(pmax(hbe$prob, 0), 1))
+  }
+
+  stop("Unsupported logistic Gaussian quadratic-form method.")
 }
 
 evaluate_mvnorm_distance_profile_matrix <- function(shift_matrix,
@@ -2015,6 +2131,10 @@ clip_axial_truncnorm_prob <- function(x, eps = 1e-10) {
   pmin(1 - eps, pmax(eps, as.numeric(x)))
 }
 
+clip_axial_truncnorm_kappa <- function(x, min_value = 1e-8, max_value = 1e8) {
+  pmin(max_value, pmax(min_value, as.numeric(x)))
+}
+
 normalize_axial_truncnorm_mixture2_theta <- function(theta) {
   if (!is.list(theta)) {
     stop("Axial truncated-normal-mixture theta must be a list with entries `pi`, `kappa1`, `nu1`, `kappa2`, `nu2`.")
@@ -2035,9 +2155,9 @@ normalize_axial_truncnorm_mixture2_theta <- function(theta) {
 
   list(
     pi = pi,
-    kappa1 = kappa1,
+    kappa1 = clip_axial_truncnorm_kappa(kappa1),
     nu1 = nu1,
-    kappa2 = kappa2,
+    kappa2 = clip_axial_truncnorm_kappa(kappa2),
     nu2 = nu2
   )
 }
@@ -2070,17 +2190,46 @@ axial_truncnorm_log_interval_mass <- function(kappa, mean_value, lower, upper) {
   upper_std <- sqrt(2) * sqrt_kappa * (upper - mean_value)
   lower_std <- sqrt(2) * sqrt_kappa * (lower - mean_value)
 
-  log_p_upper <- stats::pnorm(upper_std, log.p = TRUE)
-  log_p_lower <- stats::pnorm(lower_std, log.p = TRUE)
+  if (lower_std >= 0) {
+    log_tail_lower <- stats::pnorm(lower_std, lower.tail = FALSE, log.p = TRUE)
+    log_tail_upper <- stats::pnorm(upper_std, lower.tail = FALSE, log.p = TRUE)
 
-  if (!is.finite(log_p_upper)) {
-    return(log_p_upper)
-  }
-  if (!is.finite(log_p_lower)) {
-    return(log_p_upper)
+    if (!is.finite(log_tail_lower)) {
+      return(log_tail_lower)
+    }
+    if (!is.finite(log_tail_upper)) {
+      return(log_tail_lower)
+    }
+
+    return(axial_truncnorm_logdiffexp(log_tail_lower, log_tail_upper))
   }
 
-  axial_truncnorm_logdiffexp(log_p_upper, log_p_lower)
+  if (upper_std <= 0) {
+    log_cdf_upper <- stats::pnorm(upper_std, log.p = TRUE)
+    log_cdf_lower <- stats::pnorm(lower_std, log.p = TRUE)
+
+    if (!is.finite(log_cdf_upper)) {
+      return(log_cdf_upper)
+    }
+    if (!is.finite(log_cdf_lower)) {
+      return(log_cdf_upper)
+    }
+
+    return(axial_truncnorm_logdiffexp(log_cdf_upper, log_cdf_lower))
+  }
+
+  left_tail <- stats::pnorm(lower_std)
+  right_tail <- stats::pnorm(upper_std, lower.tail = FALSE)
+  mass <- 1 - left_tail - right_tail
+
+  if (!is.finite(mass) || mass <= 0) {
+    mass <- axial_truncnorm_interval_mass(kappa, mean_value, lower, upper)
+  }
+  if (!is.finite(mass) || mass <= 0) {
+    stop("Failed to compute a positive interval mass for the axial truncated-normal component.")
+  }
+
+  log(mass)
 }
 
 axial_truncnorm_log_normconst <- function(kappa, mean_value) {
@@ -2089,7 +2238,7 @@ axial_truncnorm_log_normconst <- function(kappa, mean_value) {
     stop("Failed to compute a positive normalizing constant for the axial truncated-normal component.")
   }
 
-  0.5 * log(pi / kappa) - log(2) + log_mass
+  0.5 * log(pi / kappa) + log_mass
 }
 
 axial_truncnorm_component_log_density <- function(z, kappa, mean_value) {
@@ -2169,11 +2318,13 @@ axial_truncnorm_decode_theta <- function(par) {
   }
 
   nu_eps <- 1e-10
+  log_kappa_min <- log(1e-8)
+  log_kappa_max <- log(1e8)
   list(
     pi = clip_axial_truncnorm_prob(stats::plogis(par[[1L]])),
-    kappa1 = exp(par[[2L]]),
+    kappa1 = clip_axial_truncnorm_kappa(exp(pmin(pmax(par[[2L]], log_kappa_min), log_kappa_max))),
     nu1 = clip_axial_truncnorm_prob(stats::plogis(par[[3L]]), eps = nu_eps),
-    kappa2 = exp(par[[4L]]),
+    kappa2 = clip_axial_truncnorm_kappa(exp(pmin(pmax(par[[4L]], log_kappa_min), log_kappa_max))),
     nu2 = clip_axial_truncnorm_prob(stats::plogis(par[[5L]]), eps = nu_eps)
   )
 }
@@ -2220,12 +2371,16 @@ fit_axial_truncnorm_mixture2_theta <- function(data,
   start_par <- axial_truncnorm_encode_theta(theta_start)
 
   objective <- function(par) {
-    theta <- axial_truncnorm_decode_theta(par)
-    log_density <- axial_truncnorm_mixture_log_density(z, theta)
-    if (any(!is.finite(log_density))) {
-      return(Inf)
-    }
-    -sum(obs_weights * log_density)
+    tryCatch({
+      theta <- axial_truncnorm_decode_theta(par)
+      log_density <- axial_truncnorm_mixture_log_density(z, theta)
+      if (any(!is.finite(log_density))) {
+        return(Inf)
+      }
+      -sum(obs_weights * log_density)
+    }, error = function(e) {
+      Inf
+    })
   }
 
   optim_control <- modifyList(list(maxit = 300L, reltol = 1e-8), control$axial_truncnorm_mixture2_optim_control %||% list())

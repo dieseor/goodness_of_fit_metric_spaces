@@ -17,10 +17,16 @@ resolve_rotmix_comets_path <- function(...) {
 model_specs_script_path_rotmix_comets <- resolve_rotmix_comets_path("bootstrap", "model_specs.R")
 multiplier_bootstrap_script_path_rotmix_comets <- resolve_rotmix_comets_path("bootstrap", "multiplier_bootstrap.R")
 utils_script_path_rotmix_comets <- resolve_rotmix_comets_path("utils.R")
+comets_utils_script_path_rotmix_comets <- resolve_rotmix_comets_path(
+  "real_data",
+  "comets",
+  "utils_comets_data.R"
+)
 
 source(utils_script_path_rotmix_comets)
 source(model_specs_script_path_rotmix_comets)
 source(multiplier_bootstrap_script_path_rotmix_comets)
+source(comets_utils_script_path_rotmix_comets)
 
 make_beta_mixture2_spec <- get("make_beta_mixture2_spec", mode = "function")
 make_logitnormal_mixture2_spec <- get("make_logitnormal_mixture2_spec", mode = "function")
@@ -37,45 +43,7 @@ write_lines_if_possible_rotmix_comets <- function(lines, path) {
 }
 
 load_comets_distance_profile_data_rotmix <- function() {
-  if (!requireNamespace("sphunif", quietly = TRUE)) {
-    stop("Package `sphunif` is required for the comet analyses.")
-  }
-
-  data("comets", package = "sphunif")
-  comets$normal <- cbind(
-    sin(comets$i) * sin(comets$om),
-    -sin(comets$i) * cos(comets$om),
-    cos(comets$i)
-  )
-
-  valid_rows <-
-    !is.na(comets$class) &
-    is.finite(comets$per_y) &
-    is.finite(comets$i) &
-    is.finite(comets$om) &
-    !is.na(comets$frag)
-
-  comets_valid <- comets[valid_rows, , drop = FALSE]
-  short_selector <-
-    !(comets_valid$class %in% c("HYP", "PAR")) &
-    comets_valid$per_y < 200 &
-    !comets_valid$frag
-  long_selector <-
-    !(comets_valid$class %in% c("HYP", "PAR")) &
-    comets_valid$per_y >= 200 &
-    !comets_valid$frag
-
-  finite_filter <- function(df) {
-    normal_matrix <- as.matrix(df$normal)
-    finite_rows <- apply(normal_matrix, 1L, function(r) all(is.finite(r)))
-    df[finite_rows, , drop = FALSE]
-  }
-
-  list(
-    raw = comets,
-    short = finite_filter(comets_valid[short_selector, , drop = FALSE]),
-    long = finite_filter(comets_valid[long_selector, , drop = FALSE])
-  )
+  load_comets_real_data(finite_normals = "both")
 }
 
 rotmix_model_n_parameters <- function(model_name) {

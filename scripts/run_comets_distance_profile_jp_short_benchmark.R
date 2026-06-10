@@ -23,10 +23,16 @@ multiplier_bootstrap_script_path_jp_comets <- resolve_comets_jp_path(
   "multiplier_bootstrap.R"
 )
 utils_script_path_jp_comets <- resolve_comets_jp_path("utils.R")
+comets_utils_script_path_jp_comets <- resolve_comets_jp_path(
+  "real_data",
+  "comets",
+  "utils_comets_data.R"
+)
 
 source(model_specs_script_path_jp_comets)
 source(multiplier_bootstrap_script_path_jp_comets)
 source(utils_script_path_jp_comets)
+source(comets_utils_script_path_jp_comets)
 
 make_jp_spec <- get("make_jp_spec", mode = "function")
 multiplier_bootstrap_gof <- get("multiplier_bootstrap_gof", mode = "function")
@@ -80,60 +86,12 @@ write_stage_bundle_jp_comets <- function(stage_dir,
 }
 
 load_comets_distance_profile_data_jp <- function() {
-  if (!requireNamespace("sphunif", quietly = TRUE)) {
-    stop("Package `sphunif` is required for the comet analyses.")
-  }
-
-  data("comets", package = "sphunif")
-  comets$normal <- cbind(
-    sin(comets$i) * sin(comets$om),
-    -sin(comets$i) * cos(comets$om),
-    cos(comets$i)
+  comets_data <- load_comets_real_data(
+    finite_normals = "short",
+    warn_incomplete = TRUE,
+    warn_nonfinite = TRUE
   )
-
-  valid_rows <-
-    !is.na(comets$class) &
-    is.finite(comets$per_y) &
-    is.finite(comets$i) &
-    is.finite(comets$om) &
-    !is.na(comets$frag)
-
-  dropped_incomplete <- sum(!valid_rows)
-  if (dropped_incomplete > 0L) {
-    warning(
-      sprintf(
-        "Dropping %d comet rows with incomplete orbital elements before short-period filtering.",
-        dropped_incomplete
-      ),
-      call. = FALSE
-    )
-  }
-
-  short_selector <-
-    valid_rows &
-    !(comets$class %in% c("HYP", "PAR")) &
-    comets$per_y < 200 &
-    !comets$frag
-  comets_short <- comets[short_selector, , drop = FALSE]
-
-  normal_matrix <- as.matrix(comets_short$normal)
-  finite_rows <- apply(normal_matrix, 1L, function(r) all(is.finite(r)))
-  dropped_nonfinite <- sum(!finite_rows)
-  if (dropped_nonfinite > 0L) {
-    warning(
-      sprintf(
-        "Dropping %d short-period comet rows with non-finite normal coordinates after filtering.",
-        dropped_nonfinite
-      ),
-      call. = FALSE
-    )
-    comets_short <- comets_short[finite_rows, , drop = FALSE]
-  }
-
-  list(
-    raw = comets,
-    short = comets_short
-  )
+  list(raw = comets_data$raw, short = comets_data$short)
 }
 
 append_manifest_row_jp_comets <- function(manifest_rows,
@@ -530,7 +488,7 @@ if (sys.nframe() == 0L) {
   base_seed <- if (!is.null(args$seed)) as.integer(args$seed) else 20260529L
   distance_type <- if (!is.null(args$distance_type)) args$distance_type else "geodesic"
 
-  run_comets_distance_profile_jp_short_benchmark(
+  result <- run_comets_distance_profile_jp_short_benchmark(
     output_root = output_root,
     B_values = B_values,
     statistic = statistic,
@@ -539,4 +497,7 @@ if (sys.nframe() == 0L) {
     base_seed = base_seed,
     distance_type = distance_type
   )
+
+  message(sprintf("Saved benchmark to %s", result$output_root))
+  invisible(result)
 }
