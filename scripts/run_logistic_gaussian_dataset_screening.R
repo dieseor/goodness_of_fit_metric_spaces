@@ -28,7 +28,8 @@ resolve_logistic_gaussian_screening_runner_path <- function(...) {
 }
 
 utils_path_logistic_gaussian_screening <- resolve_logistic_gaussian_screening_runner_path(
-  "logistic_gaussian_screening",
+  "real_data",
+  "logistic_gaussian",
   "utils_logistic_gaussian_screening.R"
 )
 source(utils_path_logistic_gaussian_screening)
@@ -89,6 +90,8 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
   ridge <- parse_numeric_arg(args$ridge, 1e-8)
   bootstrap_mode <- as.character(args$bootstrap_mode %||% "composite_multiplier")
   n_cores <- parse_integer_arg(args$n_cores, 1L)
+  omega_grid_type <- as.character(args$omega_grid_type %||% "fixed_simplex_lattice")
+  t_grid_type <- as.character(args$t_grid_type %||% "fixed_fitted_scale")
   output_dir <- as.character(args$output_dir %||% file.path("output", "calibration", "bootstrap", "logistic_gaussian", "composite"))
   make_plots <- parse_flag(args$make_plots, default = TRUE)
   run_seed_sensitivity <- parse_flag(args$run_seed_sensitivity, default = FALSE)
@@ -109,6 +112,8 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
   cat("seed:", seed, "\n")
   cat("bootstrap_mode:", bootstrap_mode, "\n")
   cat("n_cores:", n_cores, "\n")
+  cat("omega_grid_type:", omega_grid_type, "\n")
+  cat("t_grid_type:", t_grid_type, "\n")
   cat("output_dir:", output_dir, "\n\n")
   cat("Composite bootstrap mode is the default. Use --bootstrap_mode=plugin_simple_null only for legacy exploratory checks.\n\n")
 
@@ -122,6 +127,8 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
     alpha = alpha,
     ridge = ridge,
     n_cores = n_cores,
+    omega_grid_type = omega_grid_type,
+    t_grid_type = t_grid_type,
     make_plots = make_plots,
     output_dir = output_dir,
     run_seed_sensitivity = run_seed_sensitivity,

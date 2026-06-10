@@ -22,6 +22,10 @@ These files are not primary scientific outputs. They are diagnostic products use
   - closed-form special-case benchmarks;
   - covariance-matrix benchmarks.
 
+- `logistic_gaussian_quadform`
+  Benchmarks for the weighted noncentral chi-squared evaluations used by the logistic Gaussian distance-profile code.
+  These files compare exact and approximate methods, identify failure regimes, and justify the chosen fallback strategy.
+
 ## What Should Go Here
 
 Store here:

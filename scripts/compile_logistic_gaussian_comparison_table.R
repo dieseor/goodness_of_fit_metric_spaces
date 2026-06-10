@@ -44,6 +44,9 @@ dataset_names <- if (is.null(args$datasets)) {
   c(
     "Aar",
     "ArcticLake",
+    "ClamEast",
+    "ClamWest",
+    "ClamCombined",
     "Boxite",
     "Metabolites",
     "SerumProtein",
@@ -64,10 +67,7 @@ dataset_names <- setdiff(dataset_names, exclude_datasets)
 
 search_dirs <- if (is.null(args$search_dirs)) {
   c(
-    file.path("output", "logistic_gaussian_composite_B1000_3cores_remaining"),
-    file.path("output", "logistic_gaussian_composite_B1000_2cores"),
-    file.path("output", "logistic_gaussian_composite_B1000_10cores"),
-    file.path("output", "logistic_gaussian_composite_B1000_2cores_additional")
+    file.path("output", "calibration", "bootstrap", "logistic_gaussian", "definitive15_B1000_12cores")
   )
 } else {
   trimws(strsplit(args$search_dirs, ",", fixed = TRUE)[[1]])

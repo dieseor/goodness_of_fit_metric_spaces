@@ -18,11 +18,17 @@ model_specs_script_path_sc_circle <- resolve_comets_small_circle_path("bootstrap
 small_circle_model_spec_script_path <- resolve_comets_small_circle_path("bootstrap", "small_circle_model_spec.R")
 multiplier_bootstrap_script_path_sc_circle <- resolve_comets_small_circle_path("bootstrap", "multiplier_bootstrap.R")
 utils_script_path_sc_circle <- resolve_comets_small_circle_path("utils.R")
+comets_utils_script_path_sc_circle <- resolve_comets_small_circle_path(
+  "real_data",
+  "comets",
+  "utils_comets_data.R"
+)
 
 source(model_specs_script_path_sc_circle)
 source(small_circle_model_spec_script_path)
 source(multiplier_bootstrap_script_path_sc_circle)
 source(utils_script_path_sc_circle)
+source(comets_utils_script_path_sc_circle)
 
 make_small_circle_spec <- get("make_small_circle_spec", mode = "function")
 multiplier_bootstrap_gof <- get("multiplier_bootstrap_gof", mode = "function")
@@ -101,39 +107,7 @@ run_small_circle_benchmark_stage <- function(data_matrix,
 }
 
 load_comets_distance_profile_data_small_circle <- function() {
-  if (!requireNamespace("sphunif", quietly = TRUE)) {
-    stop("Package `sphunif` is required for the comet analyses.")
-  }
-
-  data("comets", package = "sphunif")
-  comets$normal <- cbind(
-    sin(comets$i) * sin(comets$om),
-    -sin(comets$i) * cos(comets$om),
-    cos(comets$i)
-  )
-
-  valid_rows <-
-    !is.na(comets$class) &
-    is.finite(comets$per_y) &
-    is.finite(comets$i) &
-    is.finite(comets$om) &
-    !is.na(comets$frag)
-
-  comets_valid <- comets[valid_rows, , drop = FALSE]
-  short_selector <-
-    !(comets_valid$class %in% c("HYP", "PAR")) &
-    comets_valid$per_y < 200 &
-    !comets_valid$frag
-  long_selector <-
-    !(comets_valid$class %in% c("HYP", "PAR")) &
-    comets_valid$per_y >= 200 &
-    !comets_valid$frag
-
-  list(
-    raw = comets,
-    short = comets_valid[short_selector, , drop = FALSE],
-    long = comets_valid[long_selector, , drop = FALSE]
-  )
+  load_comets_real_data(finite_normals = "none")
 }
 
 make_small_circle_ks_grid_comets <- function(M_value,
@@ -226,10 +200,10 @@ run_comets_distance_profile_small_circle_benchmark <- function(output_root = NUL
   data_matrix <- if (identical(dataset, "short")) comets_data$short$normal else comets_data$long$normal
   dataset_label <- if (identical(dataset, "short")) "short_period" else "long_period"
 
-  utils::write.csv(
-    data.frame(dataset = dataset_label, n = nrow(data_matrix), ambient_dim = ncol(data_matrix), stringsAsFactors = FALSE),
-    file = file.path(output_root, "dataset_summary.csv"),
-    row.names = FALSE
+  write_comets_dataset_summary(
+    path = file.path(output_root, "dataset_summary.csv"),
+    dataset_label = dataset_label,
+    data_matrix = data_matrix
   )
   write_lines_if_possible_small_circle_comets(capture.output(sessionInfo()), file.path(output_root, "sessionInfo.txt"))
 

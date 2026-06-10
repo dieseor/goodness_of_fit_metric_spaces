@@ -1,42 +1,14 @@
 suppressPackageStartupMessages({
   source(file.path("utils.R"))
   source(file.path("distance_profiles", "spherical_cauchy_projected_poor_mans_diagnostic.R"))
+  source(file.path("real_data", "comets", "utils_comets_data.R"))
 })
 
 run_sc_projected_poor_mans_diagnostic <- get("run_sc_projected_poor_mans_diagnostic", mode = "function")
 
 load_comets_short_period_for_projection_sc <- function() {
-  if (!requireNamespace("sphunif", quietly = TRUE)) {
-    stop("Package `sphunif` is required for comet diagnostics.")
-  }
-
-  data("comets", package = "sphunif")
-  comets$normal <- cbind(
-    sin(comets$i) * sin(comets$om),
-    -sin(comets$i) * cos(comets$om),
-    cos(comets$i)
-  )
-
-  valid_rows <-
-    !is.na(comets$class) &
-    is.finite(comets$per_y) &
-    is.finite(comets$i) &
-    is.finite(comets$om) &
-    !is.na(comets$frag)
-
-  comets <- comets[valid_rows, , drop = FALSE]
-
-  short_selector <-
-    !(comets$class %in% c("HYP", "PAR")) &
-    comets$per_y < 200 &
-    !comets$frag
-  comets_short <- comets[short_selector, , drop = FALSE]
-
-  normal_matrix <- as.matrix(comets_short$normal)
-  finite_rows <- apply(normal_matrix, 1L, function(r) all(is.finite(r)))
-  comets_short <- comets_short[finite_rows, , drop = FALSE]
-
-  as.matrix(comets_short$normal)
+  comets_data <- load_comets_real_data(finite_normals = "short")
+  as.matrix(comets_data$short$normal)
 }
 
 parse_named_args_sc_projected <- function(args) {

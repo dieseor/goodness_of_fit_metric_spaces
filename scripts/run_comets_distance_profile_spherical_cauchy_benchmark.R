@@ -23,10 +23,16 @@ multiplier_bootstrap_script_path_sc_comets <- resolve_comets_spherical_cauchy_pa
   "multiplier_bootstrap.R"
 )
 utils_script_path_sc_comets <- resolve_comets_spherical_cauchy_path("utils.R")
+comets_utils_script_path_sc_comets <- resolve_comets_spherical_cauchy_path(
+  "real_data",
+  "comets",
+  "utils_comets_data.R"
+)
 
 source(model_specs_script_path_sc_comets)
 source(multiplier_bootstrap_script_path_sc_comets)
 source(utils_script_path_sc_comets)
+source(comets_utils_script_path_sc_comets)
 
 make_spherical_cauchy_spec <- get("make_spherical_cauchy_spec", mode = "function")
 multiplier_bootstrap_gof <- get("multiplier_bootstrap_gof", mode = "function")
@@ -80,73 +86,10 @@ write_stage_bundle_sc_comets <- function(stage_dir,
 }
 
 load_comets_distance_profile_data_sc <- function() {
-  if (!requireNamespace("sphunif", quietly = TRUE)) {
-    stop("Package `sphunif` is required for the comet analyses.")
-  }
-
-  data("comets", package = "sphunif")
-  comets$normal <- cbind(
-    sin(comets$i) * sin(comets$om),
-    -sin(comets$i) * cos(comets$om),
-    cos(comets$i)
-  )
-
-  valid_rows <-
-    !is.na(comets$class) &
-    is.finite(comets$per_y) &
-    is.finite(comets$i) &
-    is.finite(comets$om) &
-    !is.na(comets$frag)
-
-  dropped_incomplete <- sum(!valid_rows)
-  if (dropped_incomplete > 0L) {
-    warning(
-      sprintf(
-        "Dropping %d comet rows with incomplete orbital elements before spherical Cauchy comet filtering.",
-        dropped_incomplete
-      ),
-      call. = FALSE
-    )
-  }
-
-  comets_valid <- comets[valid_rows, , drop = FALSE]
-
-  long_selector <-
-    !(comets_valid$class %in% c("HYP", "PAR")) &
-    comets_valid$per_y >= 200 &
-    !comets_valid$frag
-  short_selector <-
-    !(comets_valid$class %in% c("HYP", "PAR")) &
-    comets_valid$per_y < 200 &
-    !comets_valid$frag
-
-  comets_long <- comets_valid[long_selector, , drop = FALSE]
-  comets_short <- comets_valid[short_selector, , drop = FALSE]
-
-  finite_filter <- function(df, label) {
-    normal_matrix <- as.matrix(df$normal)
-    finite_rows <- apply(normal_matrix, 1L, function(r) all(is.finite(r)))
-    dropped_nonfinite <- sum(!finite_rows)
-    if (dropped_nonfinite > 0L) {
-      warning(
-        sprintf(
-          "Dropping %d %s comet rows with non-finite normal coordinates after filtering.",
-          dropped_nonfinite,
-          label
-        ),
-        call. = FALSE
-      )
-    }
-    df[finite_rows, , drop = FALSE]
-  }
-
-  comets_short <- finite_filter(comets_short, "short-period")
-  comets_long <- finite_filter(comets_long, "long-period")
-
-  list(
-    raw = comets,
-    short = comets_short,
-    long = comets_long
+  load_comets_real_data(
+    finite_normals = "both",
+    warn_incomplete = TRUE,
+    warn_nonfinite = TRUE
   )
 }
 

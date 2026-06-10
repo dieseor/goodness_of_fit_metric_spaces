@@ -21,60 +21,12 @@ short_benchmark_script <- resolve_comets_jp_long_path(
 source(short_benchmark_script)
 
 load_comets_distance_profile_data_jp_long <- function() {
-  if (!requireNamespace("sphunif", quietly = TRUE)) {
-    stop("Package `sphunif` is required for the comet analyses.")
-  }
-
-  data("comets", package = "sphunif")
-  comets$normal <- cbind(
-    sin(comets$i) * sin(comets$om),
-    -sin(comets$i) * cos(comets$om),
-    cos(comets$i)
+  comets_data <- load_comets_real_data(
+    finite_normals = "long",
+    warn_incomplete = TRUE,
+    warn_nonfinite = TRUE
   )
-
-  valid_rows <-
-    !is.na(comets$class) &
-    is.finite(comets$per_y) &
-    is.finite(comets$i) &
-    is.finite(comets$om) &
-    !is.na(comets$frag)
-
-  dropped_incomplete <- sum(!valid_rows)
-  if (dropped_incomplete > 0L) {
-    warning(
-      sprintf(
-        "Dropping %d comet rows with incomplete orbital elements before long-period filtering.",
-        dropped_incomplete
-      ),
-      call. = FALSE
-    )
-  }
-
-  long_selector <-
-    valid_rows &
-    !(comets$class %in% c("HYP", "PAR")) &
-    comets$per_y >= 200 &
-    !comets$frag
-  comets_long <- comets[long_selector, , drop = FALSE]
-
-  normal_matrix <- as.matrix(comets_long$normal)
-  finite_rows <- apply(normal_matrix, 1L, function(r) all(is.finite(r)))
-  dropped_nonfinite <- sum(!finite_rows)
-  if (dropped_nonfinite > 0L) {
-    warning(
-      sprintf(
-        "Dropping %d long-period comet rows with non-finite normal coordinates after filtering.",
-        dropped_nonfinite
-      ),
-      call. = FALSE
-    )
-    comets_long <- comets_long[finite_rows, , drop = FALSE]
-  }
-
-  list(
-    raw = comets,
-    long = comets_long
-  )
+  list(raw = comets_data$raw, long = comets_data$long)
 }
 
 run_comets_distance_profile_jp_long_benchmark <- function(output_root = NULL,
@@ -233,7 +185,7 @@ if (sys.nframe() == 0L) {
   base_seed <- if (!is.null(args$seed)) as.integer(args$seed) else 20260529L
   distance_type <- if (!is.null(args$distance_type)) args$distance_type else "geodesic"
 
-  run_comets_distance_profile_jp_long_benchmark(
+  result <- run_comets_distance_profile_jp_long_benchmark(
     output_root = output_root,
     B_values = B_values,
     statistic = statistic,
@@ -242,4 +194,7 @@ if (sys.nframe() == 0L) {
     base_seed = base_seed,
     distance_type = distance_type
   )
+
+  message(sprintf("Saved benchmark to %s", result$output_root))
+  invisible(result)
 }
