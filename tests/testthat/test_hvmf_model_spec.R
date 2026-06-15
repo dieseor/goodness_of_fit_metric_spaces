@@ -159,3 +159,34 @@ test_that("HvMF tabulated CvM matrix matches the exact matrix closely for kappa=
 
   expect_true(max(abs(exact_matrix - fast_matrix)) < 1e-3)
 })
+
+test_that("HvMF spline tabulation stays close to the legacy linear interpolation", {
+  data <- rbind(
+    hyperboloid_point(0.55, -0.1),
+    hyperboloid_point(0.70, 0.25),
+    hyperboloid_point(0.85, -0.35),
+    hyperboloid_point(0.95, 0.60),
+    hyperboloid_point(0.65, 1.05),
+    hyperboloid_point(1.05, -0.75)
+  )
+  theta <- hvmf_mle_h2(data)
+  theta$kappa <- 80
+
+  spec <- make_hvmf_spec()
+  distance_matrix <- spec$distance_matrix(data, data, control = list())
+
+  spline_matrix <- hvmf_cvm_profile_matrix_tabulated(
+    data = data,
+    theta = theta,
+    grid_size = 4097L,
+    distance_matrix = distance_matrix
+  )
+  linear_matrix <- hvmf_cvm_profile_matrix_tabulated_linear(
+    data = data,
+    theta = theta,
+    grid_size = 4097L,
+    distance_matrix = distance_matrix
+  )
+
+  expect_lt(max(abs(spline_matrix - linear_matrix)), 2e-4)
+})

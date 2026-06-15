@@ -488,6 +488,8 @@ run_bootstrap_chunk <- function(weight_chunk,
   n_reps <- nrow(weight_chunk)
   ks_values <- if (want_ks) numeric(n_reps) else NULL
   cvm_values <- if (want_cvm) numeric(n_reps) else NULL
+  prep_seconds_total <- 0
+  loop_seconds_total <- 0
   theta_values <- if (keep_bootstrap_thetas && identical(null$type, "composite")) {
     vector("list", n_reps)
   } else {
@@ -496,6 +498,7 @@ run_bootstrap_chunk <- function(weight_chunk,
   n <- spec_n_obs(spec, data, control)
 
   for (b in seq_len(n_reps)) {
+    replicate_start <- proc.time()[["elapsed"]]
     normalized_weights <- weight_chunk[b, ]
     replicate_index <- if (is.null(replicate_indices)) b else as.integer(replicate_indices[[b]])
     debug_memory_log(
@@ -699,9 +702,16 @@ run_bootstrap_chunk <- function(weight_chunk,
         cvm_values[b] <- mean(process_star_sample^2)
       }
     }
+    loop_seconds_total <- loop_seconds_total + (proc.time()[["elapsed"]] - replicate_start)
   }
 
-  list(ks = ks_values, cvm = cvm_values, theta = theta_values)
+  list(
+    ks = ks_values,
+    cvm = cvm_values,
+    theta = theta_values,
+    prep_seconds = prep_seconds_total,
+    loop_seconds = loop_seconds_total
+  )
 }
 
 compute_inference_summary <- function(observed_statistics, bootstrap_statistics, alpha) {
@@ -755,6 +765,236 @@ build_observed_output <- function(theta_hat, ks_prep, cvm_prep, keep_options) {
   output
 }
 
+build_fast_ks_indicator_matrix <- function(ks_prep) {
+  n <- nrow(ks_prep$distance_matrix)
+  threshold_matrix <- matrix(
+    rep(as.numeric(ks_prep$t_grid), each = n),
+    nrow = n,
+    ncol = length(ks_prep$t_grid)
+  )
+  indicator_blocks <- lapply(seq_len(ncol(ks_prep$distance_matrix)), function(k) {
+    distance_block <- matrix(
+      rep.int(ks_prep$distance_matrix[, k], length(ks_prep$t_grid)),
+      nrow = n,
+      ncol = length(ks_prep$t_grid),
+      byrow = FALSE
+    )
+    distance_block <= threshold_matrix
+  })
+
+  do.call(cbind, indicator_blocks) * 1
+}
+
+compute_fast_cvm_stat_chunked <- function(centered_weights,
+                                          H_blocks,
+                                          scale_factor) {
+  if (!is.list(H_blocks) || length(H_blocks) == 0L) {
+    stop("`H_blocks` must be a non-empty list of precomputed fast CvM blocks.")
+  }
+  cvm_sum <- 0
+
+  for (H_block in H_blocks) {
+    n <- nrow(H_block)
+    process_block <- scale_factor * drop(crossprod(centered_weights, H_block)) / sqrt(n)
+    cvm_sum <- cvm_sum + sum(process_block^2)
+  }
+
+  n <- nrow(H_blocks[[1L]])
+  cvm_sum / (n * n)
+}
+
+prepare_fast_cvm_H_blocks <- function(S_obs,
+                                      Vhat,
+                                      D_cvm,
+                                      observed_distance_matrix,
+                                      control = list()) {
+  n <- nrow(S_obs)
+  if (nrow(D_cvm) != n * n) {
+    stop("The fast multiplier CvM derivative matrix has incompatible dimensions.")
+  }
+
+  block_size <- as.integer(control$fast_multiplier_cvm_block_size %||% n)
+  if (!is.finite(block_size) || block_size <= 0L) {
+    stop("`control$fast_multiplier_cvm_block_size` must be a strictly positive integer.")
+  }
+
+  correction_obs <- t(fast_multiplier_solve_vhat(
+    t(Vhat),
+    t(S_obs),
+    label = "the fast CvM correction"
+  ))
+  observed_distance_matrix <- as.matrix(observed_distance_matrix)
+  H_blocks <- vector("list", ceiling(n / block_size))
+  block_id <- 1L
+
+  for (block_start in seq.int(1L, n, by = block_size)) {
+    block_end <- min(block_start + block_size - 1L, n)
+    block_rows <- block_end - block_start + 1L
+    idx_flat <- ((block_start - 1L) * n + 1L):(block_end * n)
+    D_block <- D_cvm[idx_flat, , drop = FALSE]
+    Y_block <- matrix(0, nrow = n, ncol = block_rows * n)
+
+    for (offset in seq_len(block_rows)) {
+      center_idx <- block_start + offset - 1L
+      thresholds <- observed_distance_matrix[center_idx, ]
+      distance_to_center <- matrix(
+        rep.int(observed_distance_matrix[center_idx, ], n),
+        nrow = n,
+        ncol = n,
+        byrow = FALSE
+      )
+      Y_block[, ((offset - 1L) * n + 1L):(offset * n)] <- (distance_to_center <=
+        matrix(thresholds, nrow = n, ncol = n, byrow = TRUE)) * 1
+    }
+
+    H_blocks[[block_id]] <- Y_block - correction_obs %*% t(D_block)
+    block_id <- block_id + 1L
+  }
+
+  H_blocks
+}
+
+run_fast_multiplier_bootstrap <- function(weight_matrix,
+                                          spec,
+                                          data,
+                                          null,
+                                          control,
+                                          scale_factor,
+                                          ks_prep = NULL,
+                                          cvm_prep = NULL,
+                                          want_ks = FALSE,
+                                          want_cvm = FALSE,
+                                          theta_hat,
+                                          keep_bootstrap_thetas = FALSE) {
+  if (!identical(null$type, "composite")) {
+    stop("The fast multiplier branch is only implemented for composite nulls.")
+  }
+  fast_prep <- spec_fast_multiplier_prepare(
+    spec = spec,
+    data = data,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = cvm_prep,
+    control = control
+  )
+  if (is.null(fast_prep)) {
+    stop(sprintf(
+      "Model '%s' does not expose the fast multiplier preparation hook required for `bootstrap_method = 'fast_multiplier'`.",
+      spec$name
+    ))
+  }
+  if (isTRUE(fast_prep$fallback_to_reestimated)) {
+    fallback_result <- run_bootstrap_chunk(
+      weight_chunk = weight_matrix,
+      spec = spec,
+      data = data,
+      null = null,
+      control = control,
+      scale_factor = scale_factor,
+      ks_prep = ks_prep,
+      cvm_prep = cvm_prep,
+      want_ks = want_ks,
+      want_cvm = want_cvm,
+      keep_bootstrap_thetas = keep_bootstrap_thetas,
+      theta_start = theta_hat,
+      replicate_indices = seq_len(nrow(weight_matrix))
+    )
+    fallback_result$fallback_to_reestimated <- TRUE
+    fallback_result$fallback_reason <- fast_prep$fallback_reason %||% NA_character_
+    fallback_result$effective_bootstrap_method <- "reestimated"
+    return(fallback_result)
+  }
+
+  prep_start <- proc.time()[["elapsed"]]
+  S_obs <- as.matrix(fast_prep$S_obs)
+  Vhat <- as.matrix(fast_prep$Vhat)
+  if (nrow(S_obs) != spec_n_obs(spec, data, control)) {
+    stop("The fast multiplier observed score matrix has incompatible dimensions.")
+  }
+
+  H_ks <- NULL
+  if (want_ks) {
+    D_ks <- as.matrix(fast_prep$D_ks)
+    Y_ks <- build_fast_ks_indicator_matrix(ks_prep)
+    H_ks <- Y_ks - S_obs %*% fast_multiplier_solve_vhat(
+      Vhat,
+      t(D_ks),
+      label = "the fast KS correction"
+    )
+  }
+  H_cvm_blocks <- NULL
+  if (want_cvm) {
+    H_cvm_blocks <- prepare_fast_cvm_H_blocks(
+      S_obs = S_obs,
+      Vhat = Vhat,
+      D_cvm = fast_prep$D_cvm,
+      observed_distance_matrix = fast_prep$observed_cvm_distance_matrix %||% cvm_prep$distance_matrix,
+      control = control
+    )
+  }
+  prep_seconds <- proc.time()[["elapsed"]] - prep_start
+
+  n_reps <- nrow(weight_matrix)
+  ks_values <- if (want_ks) numeric(n_reps) else NULL
+  cvm_values <- if (want_cvm) numeric(n_reps) else NULL
+  chunk_size <- control$fast_bootstrap_chunk_size %||% NULL
+  if (!is.null(chunk_size)) {
+    chunk_size <- as.integer(chunk_size)
+    if (!is.finite(chunk_size) || chunk_size <= 0L) {
+      stop("`control$fast_bootstrap_chunk_size` must be a strictly positive integer when supplied.")
+    }
+  }
+  replicate_blocks <- if (is.null(chunk_size)) {
+    list(seq_len(n_reps))
+  } else {
+    split(seq_len(n_reps), ceiling(seq_len(n_reps) / chunk_size))
+  }
+  loop_start <- proc.time()[["elapsed"]]
+  for (block_indices in replicate_blocks) {
+    for (b in block_indices) {
+      centered_weights <- as.numeric(weight_matrix[b, ] - 1)
+      if (want_ks) {
+        process_ks <- scale_factor * drop(crossprod(centered_weights, H_ks)) / sqrt(nrow(S_obs))
+        ks_values[b] <- max(abs(process_ks))
+      }
+      if (want_cvm) {
+        cvm_values[b] <- compute_fast_cvm_stat_chunked(
+          centered_weights = centered_weights,
+          H_blocks = H_cvm_blocks,
+          scale_factor = scale_factor
+        )
+      }
+    }
+  }
+  loop_seconds <- proc.time()[["elapsed"]] - loop_start
+
+  list(
+    ks = ks_values,
+    cvm = cvm_values,
+    theta = if (keep_bootstrap_thetas) vector("list", 0L) else NULL,
+    prep_seconds = prep_seconds,
+    loop_seconds = loop_seconds,
+    derivative_method = fast_prep$derivative_method,
+    derivative_mc_size = fast_prep$derivative_mc_size,
+    derivative_mc_seed = fast_prep$derivative_mc_seed,
+    vhat_method = fast_prep$vhat_method %||% NA_character_,
+    S_obs_dim = fast_prep$vhat_diagnostics$S_obs_dim %||% NA_integer_,
+    Psi_aux_dim = fast_prep$vhat_diagnostics$Psi_aux_dim %||% NA_integer_,
+    D_ks_dim = if (!is.null(fast_prep$D_ks)) dim(fast_prep$D_ks) else NULL,
+    D_cvm_dim = if (!is.null(fast_prep$D_cvm)) dim(fast_prep$D_cvm) else NULL,
+    Vhat_dim = fast_prep$vhat_diagnostics$Vhat_dim %||% NA_integer_,
+    score_mean_aux = fast_prep$vhat_diagnostics$score_mean_aux %||% NA_real_,
+    score_mean_aux_norm = fast_prep$vhat_diagnostics$score_mean_aux_norm %||% NA_real_,
+    Vhat_eigenvalues = fast_prep$vhat_diagnostics$Vhat_eigenvalues %||% NA_real_,
+    Vhat_rcond = fast_prep$vhat_diagnostics$Vhat_rcond %||% NA_real_,
+    Vhat_condition_number = fast_prep$vhat_diagnostics$Vhat_condition_number %||% NA_real_,
+    fast_parameter_summary = fast_prep$vhat_diagnostics$par0 %||% NA_real_,
+    fallback_to_reestimated = FALSE,
+    fallback_reason = NA_character_,
+    effective_bootstrap_method = "fast_multiplier"
+  )
+}
+
 multiplier_bootstrap_gof <- function(data,
                                      spec,
                                      null,
@@ -766,6 +1006,7 @@ multiplier_bootstrap_gof <- function(data,
                                      n_cores = 1,
                                      seed = NULL,
                                      observed_theta_hat = NULL,
+                                     bootstrap_method = c("reestimated", "fast_multiplier"),
                                      keep = list(
                                        observed_process = TRUE,
                                        bootstrap_statistics = TRUE,
@@ -775,6 +1016,7 @@ multiplier_bootstrap_gof <- function(data,
   validate_model_spec(spec)
   null <- validate_null_object(null)
   statistics <- normalize_requested_statistics(statistics)
+  bootstrap_method <- match.arg(bootstrap_method)
   keep <- normalize_keep_options(keep)
 
   B <- as.integer(B)
@@ -803,6 +1045,7 @@ multiplier_bootstrap_gof <- function(data,
   scale_factor <- multiplier_spec$mean / multiplier_spec$sd
 
   start_time <- Sys.time()
+  common_observed_start <- proc.time()[["elapsed"]]
 
   theta_hat <- if (is.null(observed_theta_hat)) {
     spec$fit_theta(
@@ -845,6 +1088,7 @@ multiplier_bootstrap_gof <- function(data,
     seed = seed
   )
   normalized_multiplier_matrix <- raw_multiplier_matrix / rowMeans(raw_multiplier_matrix)
+  common_observed_seconds <- proc.time()[["elapsed"]] - common_observed_start
 
   n_cores_effective <- min(n_cores, B)
   chunk_ids <- split(seq_len(B), rep(seq_len(n_cores_effective), length.out = B))
@@ -853,7 +1097,22 @@ multiplier_bootstrap_gof <- function(data,
   })
   replicate_index_chunks <- unname(chunk_ids)
 
-  if (n_cores_effective == 1L) {
+  if (identical(bootstrap_method, "fast_multiplier")) {
+    chunk_results <- list(run_fast_multiplier_bootstrap(
+      weight_matrix = normalized_multiplier_matrix,
+      spec = spec,
+      data = data_normalized,
+      null = null,
+      control = control,
+      scale_factor = scale_factor,
+      ks_prep = ks_prep,
+      cvm_prep = cvm_prep,
+      want_ks = want_ks,
+      want_cvm = want_cvm,
+      theta_hat = theta_hat,
+      keep_bootstrap_thetas = keep$bootstrap_thetas
+    ))
+  } else if (n_cores_effective == 1L) {
     chunk_results <- lapply(seq_along(weight_chunks), function(i) {
       run_bootstrap_chunk(
         weight_chunk = weight_chunks[[i]],
@@ -984,7 +1243,9 @@ multiplier_bootstrap_gof <- function(data,
   if (want_cvm) {
     bootstrap_statistics_internal$cvm <- unlist(lapply(chunk_results, `[[`, "cvm"), use.names = FALSE)
   }
-  bootstrap_theta_internal <- if (keep$bootstrap_thetas && identical(null$type, "composite")) {
+  bootstrap_theta_internal <- if (keep$bootstrap_thetas &&
+    identical(null$type, "composite") &&
+    identical(bootstrap_method, "reestimated")) {
     unlist(lapply(chunk_results, `[[`, "theta"), recursive = FALSE, use.names = FALSE)
   } else {
     NULL
@@ -1006,6 +1267,11 @@ multiplier_bootstrap_gof <- function(data,
 
   end_time <- Sys.time()
   elapsed_seconds <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  branch_prep_seconds <- sum(vapply(chunk_results, function(x) as.numeric(x$prep_seconds %||% 0), numeric(1)))
+  branch_loop_seconds <- sum(vapply(chunk_results, function(x) as.numeric(x$loop_seconds %||% 0), numeric(1)))
+  fallback_to_reestimated <- any(vapply(chunk_results, function(x) isTRUE(x$fallback_to_reestimated), logical(1)))
+  effective_bootstrap_method <- chunk_results[[1L]]$effective_bootstrap_method %||% bootstrap_method
+  fallback_reason <- chunk_results[[1L]]$fallback_reason %||% NA_character_
 
   result <- list(
     observed = build_observed_output(
@@ -1034,9 +1300,35 @@ multiplier_bootstrap_gof <- function(data,
       n_cores = n_cores_effective,
       null_type = null$type,
       spec_name = spec$name,
+      bootstrap_method = bootstrap_method,
+      effective_bootstrap_method = effective_bootstrap_method,
+      fallback_to_reestimated = fallback_to_reestimated,
+      fallback_reason = fallback_reason,
       engine = "multiplier_bootstrap_gof",
       method = "distance_profiles",
       weighted_mle = isTRUE(spec$weighted_mle),
+      derivative_method = chunk_results[[1L]]$derivative_method %||% NA_character_,
+      derivative_mc_size = chunk_results[[1L]]$derivative_mc_size %||% NA_integer_,
+      derivative_mc_seed = chunk_results[[1L]]$derivative_mc_seed %||% NA_integer_,
+      vhat_method = chunk_results[[1L]]$vhat_method %||% NA_character_,
+      S_obs_dim = chunk_results[[1L]]$S_obs_dim %||% NA_integer_,
+      Psi_aux_dim = chunk_results[[1L]]$Psi_aux_dim %||% NA_integer_,
+      D_ks_dim = chunk_results[[1L]]$D_ks_dim %||% NA_integer_,
+      D_cvm_dim = chunk_results[[1L]]$D_cvm_dim %||% NA_integer_,
+      Vhat_dim = chunk_results[[1L]]$Vhat_dim %||% NA_integer_,
+      score_mean_aux = chunk_results[[1L]]$score_mean_aux %||% NA_real_,
+      score_mean_aux_norm = chunk_results[[1L]]$score_mean_aux_norm %||% NA_real_,
+      Vhat_eigenvalues = chunk_results[[1L]]$Vhat_eigenvalues %||% NA_real_,
+      Vhat_rcond = chunk_results[[1L]]$Vhat_rcond %||% NA_real_,
+      Vhat_condition_number = chunk_results[[1L]]$Vhat_condition_number %||% NA_real_,
+      fast_parameter_summary = chunk_results[[1L]]$fast_parameter_summary %||% NA_real_,
+      common_observed_seconds = common_observed_seconds,
+      old_prep_seconds = if (identical(bootstrap_method, "reestimated")) branch_prep_seconds else NA_real_,
+      old_loop_seconds = if (identical(bootstrap_method, "reestimated")) branch_loop_seconds else NA_real_,
+      old_total_seconds = if (identical(bootstrap_method, "reestimated")) common_observed_seconds + branch_prep_seconds + branch_loop_seconds else NA_real_,
+      fast_prep_seconds = if (identical(bootstrap_method, "fast_multiplier")) branch_prep_seconds else NA_real_,
+      fast_loop_seconds = if (identical(bootstrap_method, "fast_multiplier")) branch_loop_seconds else NA_real_,
+      fast_total_seconds = if (identical(bootstrap_method, "fast_multiplier")) common_observed_seconds + branch_prep_seconds + branch_loop_seconds else NA_real_,
       elapsed_seconds = elapsed_seconds
     )
   )
@@ -1054,6 +1346,7 @@ multiplier_bootstrap_normal <- function(data,
                                         multipliers = NULL,
                                         n_cores = 1,
                                         seed = NULL,
+                                        bootstrap_method = c("reestimated", "fast_multiplier"),
                                         keep = list(
                                           observed_process = TRUE,
                                           bootstrap_statistics = TRUE,
@@ -1073,6 +1366,7 @@ multiplier_bootstrap_normal <- function(data,
     multipliers = multipliers,
     n_cores = n_cores,
     seed = seed,
+    bootstrap_method = bootstrap_method,
     keep = keep,
     control = control
   )
@@ -1087,6 +1381,7 @@ multiplier_bootstrap_vmf <- function(data,
                                      multipliers = NULL,
                                      n_cores = 1,
                                      seed = NULL,
+                                     bootstrap_method = c("reestimated", "fast_multiplier"),
                                      keep = list(
                                        observed_process = TRUE,
                                        bootstrap_statistics = TRUE,
@@ -1112,6 +1407,7 @@ multiplier_bootstrap_vmf <- function(data,
     multipliers = multipliers,
     n_cores = n_cores,
     seed = seed,
+    bootstrap_method = bootstrap_method,
     keep = keep,
     control = control
   )
@@ -1126,6 +1422,7 @@ multiplier_bootstrap_jp <- function(data,
                                     multipliers = NULL,
                                     n_cores = 1,
                                     seed = NULL,
+                                    bootstrap_method = c("reestimated", "fast_multiplier"),
                                     keep = list(
                                       observed_process = TRUE,
                                       bootstrap_statistics = TRUE,
@@ -1147,6 +1444,7 @@ multiplier_bootstrap_jp <- function(data,
     multipliers = multipliers,
     n_cores = n_cores,
     seed = seed,
+    bootstrap_method = bootstrap_method,
     keep = keep,
     control = control
   )
@@ -1161,6 +1459,7 @@ multiplier_bootstrap_hvmf <- function(data,
                                       multipliers = NULL,
                                       n_cores = 1,
                                       seed = NULL,
+                                      bootstrap_method = c("reestimated", "fast_multiplier"),
                                       keep = list(
                                         observed_process = TRUE,
                                         bootstrap_statistics = TRUE,
@@ -1181,6 +1480,7 @@ multiplier_bootstrap_hvmf <- function(data,
     multipliers = multipliers,
     n_cores = n_cores,
     seed = seed,
+    bootstrap_method = bootstrap_method,
     keep = keep,
     control = control
   )
@@ -1195,6 +1495,7 @@ multiplier_bootstrap_logistic_gaussian <- function(data,
                                                    multipliers = NULL,
                                                    n_cores = 1,
                                                    seed = NULL,
+                                                   bootstrap_method = c("reestimated", "fast_multiplier"),
                                                    keep = list(
                                                      observed_process = TRUE,
                                                      bootstrap_statistics = TRUE,
@@ -1215,6 +1516,7 @@ multiplier_bootstrap_logistic_gaussian <- function(data,
     multipliers = multipliers,
     n_cores = n_cores,
     seed = seed,
+    bootstrap_method = bootstrap_method,
     keep = keep,
     control = control
   )
@@ -1229,6 +1531,7 @@ multiplier_bootstrap_beta_mixture2 <- function(data,
                                                           multipliers = NULL,
                                                           n_cores = 1,
                                                           seed = NULL,
+                                                          bootstrap_method = c("reestimated", "fast_multiplier"),
                                                           keep = list(
                                                             observed_process = TRUE,
                                                             bootstrap_statistics = TRUE,
@@ -1250,6 +1553,7 @@ multiplier_bootstrap_beta_mixture2 <- function(data,
     multipliers = multipliers,
     n_cores = n_cores,
     seed = seed,
+    bootstrap_method = bootstrap_method,
     keep = keep,
     control = control
   )
@@ -1264,6 +1568,7 @@ multiplier_bootstrap_logitnormal_mixture2 <- function(data,
                                                                  multipliers = NULL,
                                                                  n_cores = 1,
                                                                  seed = NULL,
+                                                                 bootstrap_method = c("reestimated", "fast_multiplier"),
                                                                  keep = list(
                                                                    observed_process = TRUE,
                                                                    bootstrap_statistics = TRUE,
@@ -1285,6 +1590,7 @@ multiplier_bootstrap_logitnormal_mixture2 <- function(data,
     multipliers = multipliers,
     n_cores = n_cores,
     seed = seed,
+    bootstrap_method = bootstrap_method,
     keep = keep,
     control = control
   )
@@ -1300,6 +1606,7 @@ multiplier_bootstrap_cardioid <- function(data,
                                           multipliers = NULL,
                                           n_cores = 1,
                                           seed = NULL,
+                                          bootstrap_method = c("reestimated", "fast_multiplier"),
                                           keep = list(
                                             observed_process = TRUE,
                                             bootstrap_statistics = TRUE,
@@ -1326,6 +1633,7 @@ multiplier_bootstrap_cardioid <- function(data,
     multipliers = multipliers,
     n_cores = n_cores,
     seed = seed,
+    bootstrap_method = bootstrap_method,
     keep = keep,
     control = control
   )
@@ -1340,6 +1648,7 @@ multiplier_bootstrap_spherical_cauchy <- function(data,
                                                   multipliers = NULL,
                                                   n_cores = 1,
                                                   seed = NULL,
+                                                  bootstrap_method = c("reestimated", "fast_multiplier"),
                                                   keep = list(
                                                     observed_process = TRUE,
                                                     bootstrap_statistics = TRUE,
@@ -1361,6 +1670,7 @@ multiplier_bootstrap_spherical_cauchy <- function(data,
     multipliers = multipliers,
     n_cores = n_cores,
     seed = seed,
+    bootstrap_method = bootstrap_method,
     keep = keep,
     control = control
   )
@@ -1375,6 +1685,7 @@ multiplier_bootstrap_small_circle <- function(data,
                                               multipliers = NULL,
                                               n_cores = 1,
                                               seed = NULL,
+                                              bootstrap_method = c("reestimated", "fast_multiplier"),
                                               keep = list(
                                                 observed_process = TRUE,
                                                 bootstrap_statistics = TRUE,
@@ -1396,6 +1707,7 @@ multiplier_bootstrap_small_circle <- function(data,
     multipliers = multipliers,
     n_cores = n_cores,
     seed = seed,
+    bootstrap_method = bootstrap_method,
     keep = keep,
     control = control
   )
@@ -1410,6 +1722,7 @@ multiplier_bootstrap_small_circle_symmetric_mixture2 <- function(data,
                                                                  multipliers = NULL,
                                                                  n_cores = 1,
                                                                  seed = NULL,
+                                                                 bootstrap_method = c("reestimated", "fast_multiplier"),
                                                                  keep = list(
                                                                    observed_process = TRUE,
                                                                    bootstrap_statistics = TRUE,
@@ -1431,6 +1744,7 @@ multiplier_bootstrap_small_circle_symmetric_mixture2 <- function(data,
     multipliers = multipliers,
     n_cores = n_cores,
     seed = seed,
+    bootstrap_method = bootstrap_method,
     keep = keep,
     control = control
   )
@@ -1445,6 +1759,7 @@ multiplier_bootstrap_small_circle_weighted_mixture2 <- function(data,
                                                                 multipliers = NULL,
                                                                 n_cores = 1,
                                                                 seed = NULL,
+                                                                bootstrap_method = c("reestimated", "fast_multiplier"),
                                                                 keep = list(
                                                                   observed_process = TRUE,
                                                                   bootstrap_statistics = TRUE,
@@ -1466,6 +1781,7 @@ multiplier_bootstrap_small_circle_weighted_mixture2 <- function(data,
     multipliers = multipliers,
     n_cores = n_cores,
     seed = seed,
+    bootstrap_method = bootstrap_method,
     keep = keep,
     control = control
   )

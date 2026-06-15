@@ -16,8 +16,7 @@ These are the current decisions and should be treated as binding unless you late
 - For spherical Cauchy, explain why using the product parameter is mathematically legitimate if we ever mention it.
 - For normal and vMF, do not say anything in the new MLE discussion.
 - Avoid developing the weighted-MLE versions in the paper unless they are really needed.
-- Do not mention an analytic gradient unless it was actually used.
-- For the small-circle mixtures, if there is nothing beyond basic likelihood optimization that matters mathematically, do not say anything.
+- For the small-circle mixtures, if there is nothing beyond basic vlikelihood optimization that matters mathematically, do not say anything.
 - For cardioid, if it is just likelihood maximization, do not say anything.
 - Ignore the rotational logit-normal mixture for now.
 - Leave the axial truncated-normal mixture for later.

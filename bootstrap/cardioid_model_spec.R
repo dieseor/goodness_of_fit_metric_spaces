@@ -321,6 +321,89 @@ fit_cardioid_theta <- function(data,
   c(fit, list(weighted_mle = TRUE))
 }
 
+prepare_cardioid_fast_multiplier <- function(spec,
+                                             data,
+                                             theta_hat,
+                                             ks_prep = NULL,
+                                             cvm_prep = NULL,
+                                             control = list(),
+                                             k) {
+  x <- normalize_cardioid_data(data, control)
+  theta_hat <- normalize_cardioid_theta(theta_hat, k = k, ambient_dim = ncol(x))
+  rho_boundary_eps <- as.numeric(control$cardioid_fast_boundary_eps %||% 1e-8)
+  if (abs(theta_hat$rho) <= rho_boundary_eps) {
+    return(list(
+      fallback_to_reestimated = TRUE,
+      fallback_reason = "cardioid_rho_zero_nonidentification",
+      derivative_method = NA_character_,
+      derivative_mc_size = NA_integer_,
+      derivative_mc_seed = NA_integer_
+    ))
+  }
+  if (theta_hat$rho >= 1 - rho_boundary_eps) {
+    return(list(
+      fallback_to_reestimated = TRUE,
+      fallback_reason = "cardioid_rho_one_boundary",
+      derivative_method = NA_character_,
+      derivative_mc_size = NA_integer_,
+      derivative_mc_seed = NA_integer_
+    ))
+  }
+
+  chart <- fast_multiplier_sphere_chart(theta_hat$mu)
+  par0 <- c(0, 0, theta_hat$rho)
+
+  state_from_par <- function(par) {
+    mapped <- fast_multiplier_sphere_chart_map(chart, par[1:2])
+    normalize_cardioid_theta(
+      list(
+        mu = mapped$mu,
+        rho = min(max(par[[3L]], 0), 1 - 1e-10),
+        k = k
+      ),
+      k = k,
+      ambient_dim = ncol(x)
+    )
+  }
+
+  score_matrix_fn <- function(sample, par) {
+    theta_state <- state_from_par(par)
+    sample <- normalize_cardioid_data(sample, control)
+    jac_mu <- fast_multiplier_sphere_chart_jacobian(chart, par[1:2])
+    z <- clip_cardioid_dot_products(as.numeric(sample %*% theta_state$mu))
+    qk <- fast_multiplier_cardioid_legendre(z, k = k)
+    qk_prime <- fast_multiplier_cardioid_legendre_prime(z, k = k)
+    denom <- 1 + theta_state$rho * qk
+    coeff_mu <- theta_state$rho * qk_prime / denom
+    score_mu <- t(vapply(seq_len(nrow(sample)), function(i) {
+      drop(t(jac_mu) %*% (coeff_mu[[i]] * sample[i, ]))
+    }, numeric(2L)))
+    cbind(score_mu, qk / denom)
+  }
+
+  sample_fn <- function(n_aux, par) {
+    theta_state <- state_from_par(par)
+    r_sph_car(
+      n = n_aux,
+      mu = theta_state$mu,
+      rho = theta_state$rho,
+      k = theta_state$k
+    )
+  }
+
+  prepare_fast_multiplier_score_model(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = cvm_prep,
+    control = control,
+    par0 = par0,
+    score_matrix_fn = score_matrix_fn,
+    sample_fn = sample_fn
+  )
+}
+
 make_cardioid_spec <- function(k,
                                distance_type = c("geodesic", "chordal"),
                                unknown_param = "both") {
@@ -379,7 +462,26 @@ make_cardioid_spec <- function(k,
       distance_type = distance_type,
       unknown_param = unknown_param,
       k = k,
-      weighted_mle = TRUE
+      weighted_mle = TRUE,
+      fast_multiplier_prepare = function(data,
+                                         theta_hat,
+                                         ks_prep = NULL,
+                                         cvm_prep = NULL,
+                                         control = list()) {
+        prepare_cardioid_fast_multiplier(
+          spec = make_cardioid_spec(
+            k = k,
+            distance_type = distance_type,
+            unknown_param = unknown_param
+          ),
+          data = data,
+          theta_hat = theta_hat,
+          ks_prep = ks_prep,
+          cvm_prep = cvm_prep,
+          control = control,
+          k = k
+        )
+      }
     )
   )
 }

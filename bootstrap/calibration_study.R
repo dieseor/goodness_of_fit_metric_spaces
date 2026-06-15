@@ -1226,6 +1226,7 @@ run_bootstrap_for_scenario <- function(data,
                                        alpha_nominal,
                                        seed,
                                        statistics = c("ks", "cvm")) {
+  bootstrap_method <- scenario$bootstrap_method %||% "reestimated"
   if (identical(scenario$model, "normal")) {
     return(multiplier_bootstrap_normal(
       data = data,
@@ -1240,6 +1241,7 @@ run_bootstrap_for_scenario <- function(data,
         observed_process = FALSE,
         bootstrap_statistics = TRUE
       ),
+      bootstrap_method = bootstrap_method,
       unknown_param = scenario$unknown_param %||% NULL
     ))
   }
@@ -1259,6 +1261,7 @@ run_bootstrap_for_scenario <- function(data,
         bootstrap_statistics = TRUE
       ),
       distance_type = scenario$distance_type,
+      bootstrap_method = bootstrap_method,
       unknown_param = scenario$unknown_param %||% "xi"
     ))
   }
@@ -1278,6 +1281,7 @@ run_bootstrap_for_scenario <- function(data,
         bootstrap_statistics = TRUE
       ),
       distance_type = scenario$distance_type,
+      bootstrap_method = bootstrap_method,
       control = scenario$control %||% list()
     ))
   }
@@ -1305,6 +1309,7 @@ run_bootstrap_for_scenario <- function(data,
         observed_process = FALSE,
         bootstrap_statistics = TRUE
       ),
+      bootstrap_method = bootstrap_method,
       unknown_param = scenario$unknown_param %||% "both"
     ))
   }
@@ -1323,6 +1328,7 @@ run_bootstrap_for_scenario <- function(data,
         observed_process = FALSE,
         bootstrap_statistics = TRUE
       ),
+      bootstrap_method = bootstrap_method,
       control = scenario$control %||% list(),
       unknown_param = scenario$unknown_param %||% "both"
     ))
@@ -1343,6 +1349,7 @@ run_bootstrap_for_scenario <- function(data,
         bootstrap_statistics = TRUE,
         bootstrap_thetas = TRUE
       ),
+      bootstrap_method = bootstrap_method,
       control = scenario$control %||% list(),
       distance_type = scenario$distance_type %||% "geodesic"
     ))
@@ -1363,6 +1370,7 @@ run_bootstrap_for_scenario <- function(data,
         bootstrap_statistics = TRUE,
         bootstrap_thetas = TRUE
       ),
+      bootstrap_method = bootstrap_method,
       control = scenario$control %||% list(),
       distance_type = scenario$distance_type %||% "geodesic"
     ))
@@ -1383,6 +1391,7 @@ run_bootstrap_for_scenario <- function(data,
         observed_process = FALSE,
         bootstrap_statistics = TRUE
       ),
+      bootstrap_method = bootstrap_method,
       control = scenario$control %||% list(),
       distance_type = scenario$distance_type %||% "geodesic",
       unknown_param = scenario$unknown_param %||% "both"
@@ -1404,6 +1413,7 @@ run_bootstrap_for_scenario <- function(data,
         bootstrap_statistics = TRUE,
         bootstrap_thetas = TRUE
       ),
+      bootstrap_method = bootstrap_method,
       control = scenario$control %||% list(),
       distance_type = scenario$distance_type %||% "geodesic"
     ))
@@ -1424,6 +1434,7 @@ run_bootstrap_for_scenario <- function(data,
         bootstrap_statistics = TRUE,
         bootstrap_thetas = TRUE
       ),
+      bootstrap_method = bootstrap_method,
       control = scenario$control %||% list(),
       distance_type = scenario$distance_type %||% "geodesic"
     ))
@@ -1444,6 +1455,7 @@ run_bootstrap_for_scenario <- function(data,
         bootstrap_statistics = TRUE,
         bootstrap_thetas = TRUE
       ),
+      bootstrap_method = bootstrap_method,
       control = scenario$control %||% list(),
       distance_type = scenario$distance_type %||% "geodesic"
     ))
@@ -1488,6 +1500,9 @@ calibration_result_rows_from_bootstrap <- function(bootstrap_result,
       scenario_label = scenario$label,
       null_type = scenario$null$type,
       unknown_param = scenario$unknown_param %||% NA_character_,
+      bootstrap_method = bootstrap_result$diagnostics$bootstrap_method %||% NA_character_,
+      effective_bootstrap_method = bootstrap_result$diagnostics$effective_bootstrap_method %||% NA_character_,
+      fallback_reason = bootstrap_result$diagnostics$fallback_reason %||% NA_character_,
       n = n,
       statistic = stat_name,
       replicate_id = replicate_id,

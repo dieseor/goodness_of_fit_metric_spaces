@@ -71,6 +71,13 @@ parse_numeric_arg <- function(x, default) {
   as.numeric(x)
 }
 
+parse_optional_numeric_arg <- function(x) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+  as.numeric(x)
+}
+
 run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trailingOnly = TRUE)) {
   args <- parse_screening_args(args)
 
@@ -85,6 +92,8 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
   B <- parse_integer_arg(args$B, 1000L)
   max_centers <- parse_integer_arg(args$max_centers, 100L)
   n_t <- parse_integer_arg(args$n_t, 60L)
+  t_grid_tail_prob <- parse_numeric_arg(args$t_grid_tail_prob, 1e-8)
+  boundary_epsilon <- parse_optional_numeric_arg(args$boundary_epsilon)
   seed <- parse_integer_arg(args$seed, 123L)
   alpha <- parse_numeric_arg(args$alpha, 0.05)
   ridge <- parse_numeric_arg(args$ridge, 1e-8)
@@ -92,6 +101,7 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
   n_cores <- parse_integer_arg(args$n_cores, 1L)
   omega_grid_type <- as.character(args$omega_grid_type %||% "fixed_simplex_lattice")
   t_grid_type <- as.character(args$t_grid_type %||% "fixed_fitted_scale")
+  quadform_method <- as.character(args$quadform_method %||% "hbe")
   output_dir <- as.character(args$output_dir %||% file.path("output", "calibration", "bootstrap", "logistic_gaussian", "composite"))
   make_plots <- parse_flag(args$make_plots, default = TRUE)
   run_seed_sensitivity <- parse_flag(args$run_seed_sensitivity, default = FALSE)
@@ -109,11 +119,14 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
   cat("B:", B, "\n")
   cat("max_centers:", max_centers, "\n")
   cat("n_t:", n_t, "\n")
+  cat("t_grid_tail_prob:", t_grid_tail_prob, "\n")
+  cat("boundary_epsilon:", if (is.null(boundary_epsilon)) "default(0.5/D)" else boundary_epsilon, "\n")
   cat("seed:", seed, "\n")
   cat("bootstrap_mode:", bootstrap_mode, "\n")
   cat("n_cores:", n_cores, "\n")
   cat("omega_grid_type:", omega_grid_type, "\n")
   cat("t_grid_type:", t_grid_type, "\n")
+  cat("quadform_method:", quadform_method, "\n")
   cat("output_dir:", output_dir, "\n\n")
   cat("Composite bootstrap mode is the default. Use --bootstrap_mode=plugin_simple_null only for legacy exploratory checks.\n\n")
 
@@ -122,11 +135,14 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
     B = B,
     max_centers = max_centers,
     n_t = n_t,
+    t_grid_tail_prob = t_grid_tail_prob,
+    boundary_epsilon = boundary_epsilon,
     bootstrap_mode = bootstrap_mode,
     seed = seed,
     alpha = alpha,
     ridge = ridge,
     n_cores = n_cores,
+    control = list(logistic_gaussian_quadform_method = quadform_method),
     omega_grid_type = omega_grid_type,
     t_grid_type = t_grid_type,
     make_plots = make_plots,

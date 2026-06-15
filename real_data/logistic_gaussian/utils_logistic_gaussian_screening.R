@@ -17,15 +17,26 @@ suppressPackageStartupMessages({
 logistic_gaussian_screening_warning <- paste(
   "This workflow performs the logistic Gaussian goodness-of-fit analysis through the global bootstrap pipeline used by the calibration code.",
   "The default mode is the composite multiplier bootstrap for the logistic Gaussian model, with weighted re-estimation of the unknown parameters in every bootstrap replicate.",
+  "For numerical stability and runtime control in the real-data screening workflow, the default quadratic-form evaluator is the HBE approximation from sphunif::p_wschisq().",
+  "Exact CompQuadForm routes remain available through the control list, but they are not the production default because they can be unstable or prohibitively slow on some fitted logistic Gaussian configurations.",
   "For the logistic Gaussian model with Aitchison distance, theoretical distance profiles are evaluated through the global logistic Gaussian model specification used by the calibration code, not by local screening-specific profile code.",
   "The exploratory label plugin_simple_null runs a simple-null plug-in screening: the logistic Gaussian parameters are estimated once from the data, then treated as fixed, the theoretical profile is approximated by Monte Carlo, and the bootstrap samples are generated from that fitted null without re-estimation.",
   "Therefore, plugin_simple_null p-values are exploratory only and are not valid p-values for the composite null."
 )
 
-default_logistic_gaussian_screening_datasets <- function(include_external = TRUE) {
+normalize_logistic_gaussian_screening_control <- function(control = list()) {
+  control <- control %||% list()
+  if (is.null(control$logistic_gaussian_quadform_method)) {
+    control$logistic_gaussian_quadform_method <- "hbe"
+  }
+  control
+}
+
+default_logistic_gaussian_screening_datasets <- function() {
   datasets <- c(
     "SkyeAFM",
-    "SkyeLavasComplete",
+    "SkyeLavas",
+    "SkyeLavasAitchison32",
     "AarMajorOxides",
     "Sediments",
     "HouseholdExp",
@@ -33,18 +44,110 @@ default_logistic_gaussian_screening_datasets <- function(include_external = TRUE
     "ClamWest",
     "ClamCombined"
   )
-  if (isTRUE(include_external)) {
-    datasets <- c(
-      datasets,
-      "FerrettiGut",
-      "FerrettiOral",
-      "Shi2015",
-      "HongKongBudgetsA",
-      "HongKongBudgetsB",
-      "HongKongBudgetsCombined"
+  datasets
+}
+
+make_skye_lavas_blocks <- function() {
+  make_block <- function(sample_id, rock_type,
+                         SiO2, Al2O3, Fe2O3, MgO, CaO,
+                         Na2O, K2O, TiO2, P2O5, MnO) {
+    data.frame(
+      sample_id = as.character(sample_id),
+      rock_type = as.character(rock_type),
+      SiO2 = SiO2,
+      Al2O3 = Al2O3,
+      Fe2O3 = Fe2O3,
+      MgO = MgO,
+      CaO = CaO,
+      Na2O = Na2O,
+      K2O = K2O,
+      TiO2 = TiO2,
+      P2O5 = P2O5,
+      MnO = MnO,
+      stringsAsFactors = FALSE
     )
   }
-  datasets
+
+  b1 <- make_block(
+    sample_id = c(937, 976, 925, 974, 924, 950, 891, 928, 929, 290),
+    rock_type = rep("Basalt", 10),
+    SiO2 = c(46.31, 45.51, 45.19, 47.71, 45.68, 45.60, 46.80, 46.73, 46.83, 46.10),
+    Al2O3 = c(14.18, 14.13, 13.51, 14.46, 14.02, 14.16, 14.57, 14.59, 14.90, 13.92),
+    Fe2O3 = c(12.32, 12.84, 13.32, 11.49, 13.20, 13.58, 12.98, 12.00, 11.67, 12.73),
+    MgO = c(12.74, 12.65, 12.27, 10.50, 11.52, 11.59, 10.99, 10.16, 9.86, 10.65),
+    CaO = c(9.62, 9.41, 8.30, 9.86, 8.52, 8.88, 9.03, 9.06, 9.63, 9.87),
+    Na2O = c(2.51, 2.47, 2.89, 2.48, 2.66, 2.70, 2.78, 2.53, 2.92, 2.66),
+    K2O = c(0.34, 0.47, 0.37, 0.60, 0.47, 0.43, 0.40, 0.38, 0.44, 0.54),
+    TiO2 = c(1.53, 1.66, 2.03, 1.30, 1.95, 1.93, 1.65, 1.60, 1.44, 1.82),
+    P2O5 = c(0.16, 0.18, 0.22, 0.16, 0.22, 0.21, 0.19, 0.16, 0.17, 0.20),
+    MnO = c(0.18, 0.19, 0.16, 0.18, 0.19, 0.19, 0.18, 0.17, 0.16, 0.19)
+  )
+
+  b2 <- make_block(
+    sample_id = c(927, 921, 968, 977, 953, 952, 923, 289, 285, 922, 280, 926),
+    rock_type = rep("Basalt", 12),
+    SiO2 = c(45.39, 45.05, 45.38, 46.88, 47.09, 48.55, 46.14, 46.60, 46.67, 45.88, 45.28, 46.34),
+    Al2O3 = c(14.48, 14.01, 15.11, 15.17, 14.80, 14.44, 14.77, 15.65, 15.79, 13.80, 15.64, 14.55),
+    Fe2O3 = c(12.75, 13.94, 13.01, 12.33, 11.55, 10.94, 12.76, 11.79, 13.07, 13.10, 14.13, 13.65),
+    MgO = c(10.55, 11.47, 10.28, 9.70, 9.09, 8.60, 9.85, 8.92, 9.57, 9.58, 10.13, 9.78),
+    CaO = c(8.81, 9.04, 9.58, 9.90, 10.41, 9.77, 8.81, 10.78, 9.73, 8.73, 10.12, 9.11),
+    Na2O = c(2.29, 2.70, 2.48, 2.61, 2.43, 2.52, 2.72, 2.30, 2.96, 2.96, 2.74, 2.84),
+    K2O = c(0.48, 0.35, 0.45, 0.51, 0.55, 0.62, 0.53, 0.46, 0.48, 0.53, 0.25, 0.57),
+    TiO2 = c(1.90, 2.15, 1.79, 1.42, 1.40, 1.24, 1.83, 1.42, 1.82, 1.99, 1.82, 1.90),
+    P2O5 = c(0.21, 0.23, 0.20, 0.17, 0.18, 0.15, 0.20, 0.16, 0.24, 0.23, 0.19, 0.25),
+    MnO = c(0.19, 0.20, 0.20, 0.19, 0.19, 0.18, 0.18, 0.22, 0.22, 0.17, 0.22, 0.22)
+  )
+
+  b3 <- make_block(
+    sample_id = c(932, 279, 892, 949, 216, 282, 896, 276, 284, 967),
+    rock_type = rep("Basalt", 10),
+    SiO2 = c(44.89, 45.44, 48.01, 44.12, 44.72, 44.60, 47.05, 44.37, 46.54, 47.84),
+    Al2O3 = c(16.04, 15.18, 15.59, 14.95, 16.15, 15.81, 15.28, 15.40, 16.05, 17.47),
+    Fe2O3 = c(14.76, 14.54, 11.70, 14.81, 14.62, 14.41, 13.71, 14.98, 13.06, 12.97),
+    MgO = c(9.97, 9.58, 7.63, 9.28, 8.42, 8.21, 7.79, 8.43, 6.98, 6.66),
+    CaO = c(9.29, 8.88, 10.29, 9.31, 9.93, 9.70, 8.83, 9.61, 10.23, 10.70),
+    Na2O = c(2.81, 3.35, 2.59, 2.78, 2.79, 2.80, 3.29, 2.83, 2.82, 2.83),
+    K2O = c(0.22, 0.47, 0.62, 0.41, 0.35, 0.48, 0.70, 0.39, 0.61, 0.51),
+    TiO2 = c(2.05, 2.14, 1.27, 2.63, 2.25, 2.30, 1.60, 2.58, 1.99, 1.25),
+    P2O5 = c(0.20, 0.27, 0.17, 0.28, 0.26, 0.27, 0.26, 0.28, 0.29, 0.17),
+    MnO = c(0.21, 0.20, 0.17, 0.23, 0.23, 0.23, 0.20, 0.24, 0.26, 0.26)
+  )
+
+  b_extra <- make_block(
+    sample_id = 982,
+    rock_type = "Basalt",
+    SiO2 = 46.84,
+    Al2O3 = 15.73,
+    Fe2O3 = 11.68,
+    MgO = 9.72,
+    CaO = 12.63,
+    Na2O = 1.78,
+    K2O = 0.04,
+    TiO2 = 1.11,
+    P2O5 = 0.09,
+    MnO = 0.23
+  )
+
+  list(
+    b1 = b1,
+    b2 = b2,
+    b3 = b3,
+    b_extra = b_extra
+  )
+}
+
+make_skye_lavas_33_basalt_raw <- function() {
+  blocks <- make_skye_lavas_blocks()
+  output <- rbind(blocks$b1, blocks$b2, blocks$b3, blocks$b_extra)
+  rownames(output) <- output$sample_id
+  output
+}
+
+make_skye_lavas_aitchison_32_raw <- function() {
+  blocks <- make_skye_lavas_blocks()
+  output <- rbind(blocks$b1, blocks$b2, blocks$b3)
+  rownames(output) <- output$sample_id
+  output
 }
 
 logistic_gaussian_screening_dataset_registry <- function() {
@@ -59,16 +162,31 @@ logistic_gaussian_screening_dataset_registry <- function() {
         "Rows already sum to 100 before closure."
       )
     ),
-    SkyeLavasComplete = list(
-      source_type = "search_r_packages",
-      candidate_names = c("Skye", "skye", "SkyeLavas", "skyeLavas", "SkyeLava", "skyeLava", "lavas", "Lava"),
-      candidate_packages = c("compositions", "robCompositions", "compositional", "Hotelling", "bayesm"),
-      compositional_columns = NULL,
-      expected_n = 32L,
-      expected_D = 10L,
+    SkyeLavas = list(
+      source_type = "local_constructed",
+      constructor = make_skye_lavas_33_basalt_raw,
+      compositional_columns = c("SiO2", "Al2O3", "Fe2O3", "MgO", "CaO", "Na2O", "K2O", "TiO2", "P2O5", "MnO"),
       notes = c(
-        "Complete Skye lavas dataset from Aitchison/Thompson--Esson--Duncan if reproducibly available.",
-        "If the dataset cannot be found in installed packages, the result is recorded as not_found."
+        "Skye lavas dataset reconstructed from Thompson, Esson and Duncan (1972), Table 2.",
+        "This version contains the 33 basalt specimens from the first three basalt blocks plus sample 982, and uses the 10 major oxides as compositional parts."
+      )
+    ),
+    SkyeLavasAitchison32 = list(
+      source_type = "local_constructed",
+      constructor = make_skye_lavas_aitchison_32_raw,
+      compositional_columns = c("SiO2", "Al2O3", "Fe2O3", "MgO", "CaO", "Na2O", "K2O", "TiO2", "P2O5", "MnO"),
+      notes = c(
+        "Aitchison's 32 basalt Skye lavas reconstructed from Thompson, Esson and Duncan (1972), Table 2.",
+        "This version keeps only the first three basalt blocks and uses the 10 major oxides as compositional parts."
+      )
+    ),
+    SkyeLavasComplete = list(
+      source_type = "local_constructed",
+      constructor = make_skye_lavas_33_basalt_raw,
+      compositional_columns = c("SiO2", "Al2O3", "Fe2O3", "MgO", "CaO", "Na2O", "K2O", "TiO2", "P2O5", "MnO"),
+      notes = c(
+        "Alias of SkyeLavas: Skye lavas reconstructed from Thompson, Esson and Duncan (1972), Table 2.",
+        "This alias currently points to the 33-basalt version, i.e. the first three basalt blocks plus sample 982."
       )
     ),
     AarMajorOxides = list(
@@ -242,66 +360,6 @@ logistic_gaussian_screening_dataset_registry <- function() {
         "A site label is retained for ilr diagnostics because the combined sample may be a mixture."
       )
     ),
-    FerrettiGut = list(
-      source_type = "curated_metagenomic_data",
-      study = "FerrettiP_2018",
-      body_site = "stool",
-      infant_timepoint = "Day 1",
-      top_taxa = 4L,
-      notes = c(
-        "Ferretti 2018 gut/stool microbiome dataset from curatedMetagenomicData, if available.",
-        "The target subset follows Fang--Subedi: adults plus infant Day 1 samples, genus level, top 4 taxa plus Other."
-      )
-    ),
-    FerrettiOral = list(
-      source_type = "curated_metagenomic_data",
-      study = "FerrettiP_2018",
-      body_site = "oral",
-      infant_timepoint = "Day 3",
-      top_taxa = 4L,
-      notes = c(
-        "Ferretti 2018 oral microbiome dataset from curatedMetagenomicData, if available.",
-        "The target subset follows Fang--Subedi: adults plus infant Day 3 samples, genus level, top 4 taxa plus Other."
-      )
-    ),
-    Shi2015 = list(
-      source_type = "curated_metagenomic_data",
-      study = "ShiB_2015",
-      top_taxa = 4L,
-      notes = c(
-        "Shi 2015 subgingival microbiome dataset from curatedMetagenomicData, if available.",
-        "The target subset follows Fang--Subedi: periodontitis and recovered samples, genus level, top 4 taxa plus Other."
-      )
-    ),
-    HongKongBudgetsA = list(
-      source_type = "search_r_packages",
-      candidate_names = c("HongKong", "HongKongBudgets", "Household", "HouseholdBudgets", "Budgets", "Expenditure", "Expenditures", "HK", "HKBudgets"),
-      candidate_packages = c("compositions", "robCompositions", "compositional"),
-      subgroup = "A",
-      notes = c(
-        "Hong Kong household expenditure budgets, housing category A, if reproducibly available.",
-        "Aitchison reports 41 households in category A."
-      )
-    ),
-    HongKongBudgetsB = list(
-      source_type = "search_r_packages",
-      candidate_names = c("HongKong", "HongKongBudgets", "Household", "HouseholdBudgets", "Budgets", "Expenditure", "Expenditures", "HK", "HKBudgets"),
-      candidate_packages = c("compositions", "robCompositions", "compositional"),
-      subgroup = "B",
-      notes = c(
-        "Hong Kong household expenditure budgets, housing category B, if reproducibly available.",
-        "Aitchison reports 42 households in category B."
-      )
-    ),
-    HongKongBudgetsCombined = list(
-      source_type = "combined_prepared",
-      components = c("HongKongBudgetsA", "HongKongBudgetsB"),
-      group_variable = "housing_category",
-      notes = c(
-        "Combined Hong Kong household expenditure budgets, categories A and B, if both are reproducibly available.",
-        "The grouped analyses remain the primary ones because categories A and B may have different distributions."
-      )
-    )
   )
 }
 
@@ -649,18 +707,22 @@ find_named_numeric_vector <- function(x, candidate_names) {
 extract_metric_result <- function(bootstrap_result, statistic_name) {
   statistic_name <- as.character(statistic_name)
   statistic_node <- NULL
+  statistic_node_source <- NA_character_
 
   for (container_name in c("inference", "statistics", "statistic", "results", "observed")) {
     if (!is.null(bootstrap_result[[container_name]][[statistic_name]])) {
       statistic_node <- bootstrap_result[[container_name]][[statistic_name]]
+      statistic_node_source <- sprintf("%s$%s", container_name, statistic_name)
       break
     }
   }
   if (is.null(statistic_node) && !is.null(bootstrap_result[[statistic_name]])) {
     statistic_node <- bootstrap_result[[statistic_name]]
+    statistic_node_source <- statistic_name
   }
   if (is.null(statistic_node)) {
     statistic_node <- bootstrap_result
+    statistic_node_source <- "bootstrap_result"
   }
 
   observed_statistic <- find_named_numeric_value(
@@ -698,7 +760,9 @@ extract_metric_result <- function(bootstrap_result, statistic_name) {
   list(
     statistic = observed_statistic,
     p_value = p_value,
-    bootstrap_statistics = bootstrap_statistics
+    bootstrap_statistics = bootstrap_statistics,
+    statistic_node_source = statistic_node_source,
+    statistic_node_names = if (is.list(statistic_node)) paste(names(statistic_node), collapse = ";") else NA_character_
   )
 }
 
@@ -891,7 +955,17 @@ prepare_composition_dataset <- function(name) {
     return(prepare_curated_metagenomic_placeholder(name, spec))
   }
 
-  if (identical(spec$source_type, "compositions_data")) {
+  if (identical(spec$source_type, "local_constructed")) {
+    if (!is.function(spec$constructor)) {
+      stop(sprintf("Dataset %s has source_type 'local_constructed' but no valid constructor.", name))
+    }
+    loaded <- list(
+      object = spec$constructor(),
+      package = "local",
+      name = name,
+      searched = name
+    )
+  } else if (identical(spec$source_type, "compositions_data")) {
     loaded <- load_first_available_dataset(
       candidate_names = spec$candidate_names,
       candidate_packages = spec$candidate_packages
@@ -1076,7 +1150,7 @@ choose_simplex_lattice_level <- function(ambient_dim, target_points, overshoot_f
 
 build_fixed_simplex_omega_grid <- function(ambient_dim,
                                            max_centers = 100L,
-                                           boundary_epsilon = 5e-3) {
+                                           boundary_epsilon = NULL) {
   ambient_dim <- as.integer(ambient_dim)
   max_centers <- as.integer(max_centers)
   if (ambient_dim < 2L) {
@@ -1084,6 +1158,9 @@ build_fixed_simplex_omega_grid <- function(ambient_dim,
   }
   if (max_centers <= 0L) {
     stop("`max_centers` must be strictly positive.")
+  }
+  if (is.null(boundary_epsilon)) {
+    boundary_epsilon <- 0.5 / ambient_dim
   }
   if (!is.finite(boundary_epsilon) || boundary_epsilon <= 0 || boundary_epsilon >= 1 / ambient_dim) {
     stop("`boundary_epsilon` must belong to (0, 1 / ambient_dim).")
@@ -1105,6 +1182,7 @@ build_fixed_simplex_omega_grid <- function(ambient_dim,
     omega = omega_grid,
     lattice_level = level,
     n_centers = nrow(omega_grid),
+    boundary_epsilon = boundary_epsilon,
     construction = "fixed_simplex_lattice"
   )
 }
@@ -1147,7 +1225,7 @@ choose_screening_t_grid <- function(distance_observed,
 build_fixed_t_grid_logistic_gaussian <- function(fit,
                                                  omega_grid,
                                                  n_t = 60L,
-                                                 radius_multiplier = 8) {
+                                                 tail_prob = 1e-8) {
   omega_grid <- as.matrix(omega_grid)
   omega_ilr <- ilr_transform_closed(omega_grid, V = fit$ilr_basis)
   shift_norms <- sqrt(rowSums((omega_ilr - matrix(
@@ -1155,8 +1233,27 @@ build_fixed_t_grid_logistic_gaussian <- function(fit,
     nrow = nrow(omega_ilr),
     ncol = length(fit$mu_hat)
   ))^2))
+
   lambda_max <- max(fit$eigenvalues, 0)
-  gaussian_radius <- as.numeric(radius_multiplier) * sqrt(max(lambda_max, 0) * ncol(fit$Z))
+  ilr_dim <- ncol(fit$Z)
+
+  if (!is.finite(tail_prob) || tail_prob <= 0 || tail_prob >= 1) {
+    stop("`tail_prob` must belong to (0, 1).")
+  }
+
+  # The KS grid in t should cover the distances that are relevant under the
+  # fitted logistic Gaussian model. In ilr coordinates, the fitted model is
+  # approximately N(mu_hat, Sigma_hat). If Y ~ N(0, I_q), q = ilr_dim, then
+  # ||Z - mu_hat||_2 <= sqrt(lambda_max(Sigma_hat)) * ||Y||_2 in the
+  # conservative worst direction, and ||Y||_2^2 has a chi-square_q law.
+  # Therefore this radius is a high-probability conservative bound for the
+  # fitted Gaussian spread, avoiding an arbitrary fixed multiplier such as
+  # eight effective standard deviations.
+  gaussian_radius <- sqrt(max(lambda_max, 0) * stats::qchisq(
+    p = 1 - tail_prob,
+    df = ilr_dim
+  ))
+
   t_max <- max(shift_norms) + gaussian_radius
 
   if (!is.finite(t_max) || t_max <= 0) {
@@ -1166,8 +1263,8 @@ build_fixed_t_grid_logistic_gaussian <- function(fit,
   list(
     t_grid = seq(0, t_max, length.out = as.integer(n_t)),
     t_max = t_max,
-    radius_multiplier = radius_multiplier,
-    construction = "fixed_interval_from_fitted_scale"
+    tail_prob = tail_prob,
+    construction = "fixed_interval_from_fitted_high_probability_radius"
   )
 }
 
@@ -1339,6 +1436,166 @@ save_screening_plots <- function(result, base_dir) {
   plot_paths
 }
 
+build_combined_simplex_dataset_plot_data <- function(dataset_names) {
+  ternary_datasets <- character(0)
+  plot_blocks <- list()
+
+  for (dataset_name in dataset_names) {
+    data_prep <- tryCatch(
+      prepare_composition_dataset(dataset_name),
+      error = function(e) NULL
+    )
+    if (is.null(data_prep) || !identical(data_prep$status %||% "ok", "ok")) {
+      next
+    }
+    if (!is.matrix(data_prep$X_closed) || ncol(data_prep$X_closed) != 3L) {
+      next
+    }
+
+    proj <- project_simplex_to_ternary(data_prep$X_closed)
+    plot_blocks[[length(plot_blocks) + 1L]] <- data.frame(
+      dataset = dataset_name,
+      x = proj$x,
+      y = proj$y,
+      stringsAsFactors = FALSE
+    )
+    ternary_datasets <- c(ternary_datasets, dataset_name)
+  }
+
+  if (length(plot_blocks) == 0L) {
+    return(NULL)
+  }
+
+  list(
+    plot_data = do.call(rbind, plot_blocks),
+    dataset_names = ternary_datasets
+  )
+}
+
+save_combined_simplex_dataset_plot <- function(dataset_names, file) {
+  plot_info <- build_combined_simplex_dataset_plot_data(dataset_names)
+  if (is.null(plot_info)) {
+    return(invisible(NULL))
+  }
+
+  simplex_boundary <- data.frame(
+    x = c(0, 1, 0.5, 0),
+    y = c(0, 0, sqrt(3) / 2, 0)
+  )
+
+  plt <- ggplot() +
+    geom_path(
+      data = simplex_boundary,
+      aes(x = x, y = y),
+      linewidth = 0.6
+    ) +
+    geom_point(
+      data = plot_info$plot_data,
+      aes(x = x, y = y, colour = dataset),
+      size = 2.2,
+      alpha = 0.85
+    ) +
+    coord_equal(
+      xlim = c(-0.04, 1.04),
+      ylim = c(-0.03, sqrt(3) / 2 + 0.04),
+      expand = FALSE
+    ) +
+    labs(
+      x = NULL,
+      y = NULL,
+      colour = "Dataset"
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.grid = element_blank(),
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      legend.position = c(0.93, 0.91),
+      legend.justification = c(1, 1),
+      legend.background = element_rect(fill = scales::alpha("white", 0.75), colour = NA),
+      legend.margin = margin(2, 2, 2, 2)
+    )
+
+  ggplot2::ggsave(filename = file, plot = plt, width = 7, height = 5, dpi = 300)
+  invisible(file)
+}
+
+save_fixed_simplex_omega_grid_plot <- function(max_centers, boundary_epsilon, file) {
+  centers <- build_fixed_simplex_omega_grid(
+    ambient_dim = 3L,
+    max_centers = max_centers,
+    boundary_epsilon = boundary_epsilon
+  )
+  proj <- project_simplex_to_ternary(centers$omega)
+  simplex_boundary <- data.frame(
+    x = c(0, 1, 0.5, 0),
+    y = c(0, 0, sqrt(3) / 2, 0)
+  )
+
+  plt <- ggplot() +
+    geom_path(
+      data = simplex_boundary,
+      aes(x = x, y = y),
+      linewidth = 0.6,
+      colour = "grey25"
+    ) +
+    geom_point(
+      data = proj,
+      aes(x = x, y = y),
+      colour = "#2166ac",
+      size = 2.1,
+      alpha = 0.95
+    ) +
+    coord_equal(
+      xlim = c(-0.04, 1.04),
+      ylim = c(-0.03, sqrt(3) / 2 + 0.04),
+      expand = FALSE
+    ) +
+    labs(
+      x = NULL,
+      y = NULL,
+      title = sprintf(
+        "Fixed simplex lattice for KS (D = 3, %d centers, boundary epsilon = %.6g)",
+        nrow(centers$omega),
+        centers$boundary_epsilon
+      )
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.grid = element_blank(),
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    )
+
+  ggplot2::ggsave(filename = file, plot = plt, width = 6, height = 5, dpi = 300)
+  invisible(file)
+}
+
+save_batch_screening_plots <- function(dataset_names,
+                                       base_dir,
+                                       max_centers,
+                                       boundary_epsilon) {
+  dirs <- ensure_logistic_gaussian_screening_directories(base_dir)
+  unlink(file.path(dirs$plots, "*.png"))
+
+  combined_plot <- file.path(dirs$plots, "simplex_d3_datasets.png")
+  ks_grid_plot <- file.path(dirs$plots, "simplex_fixed_ks_lattice.png")
+
+  output_paths <- list(
+    simplex_datasets = save_combined_simplex_dataset_plot(
+      dataset_names = dataset_names,
+      file = combined_plot
+    ),
+    simplex_fixed_ks_lattice = save_fixed_simplex_omega_grid_plot(
+      max_centers = max_centers,
+      boundary_epsilon = boundary_epsilon,
+      file = ks_grid_plot
+    )
+  )
+
+  output_paths[!vapply(output_paths, is.null, logical(1))]
+}
+
 screening_problem_reasons <- function(data_prep, fit, ilr_dim) {
   reasons <- character(0)
 
@@ -1470,6 +1727,7 @@ make_problematic_screening_result <- function(dataset_name,
     ),
     bootstrap = list(
       mode = bootstrap_mode,
+      bootstrap_method = bootstrap_method,
       ks_statistics = numeric(0),
       cvm_statistics = numeric(0),
       bootstrap_fit_summaries = NULL
@@ -1528,12 +1786,15 @@ run_logistic_gaussian_screening <- function(dataset_name,
                                             B = 1000L,
                                             max_centers = 100L,
                                             n_t = 60L,
+                                            t_grid_tail_prob = 1e-8,
+                                            boundary_epsilon = NULL,
                                             probs_t = NULL,
                                             bootstrap_mode = c("composite_multiplier", "composite_parametric", "plugin_simple_null"),
                                             seed = 123L,
                                             alpha = 0.05,
                                             ridge = 1e-8,
                                             n_cores = 1L,
+                                            bootstrap_method = "reestimated",
                                             control = list(),
                                             omega_grid_type = c("fixed_simplex_lattice", "sample_points"),
                                             t_grid_type = c("fixed_fitted_scale", "sample_quantiles"),
@@ -1547,6 +1808,7 @@ run_logistic_gaussian_screening <- function(dataset_name,
   bootstrap_mode <- standardize_screening_bootstrap_mode(match.arg(bootstrap_mode))
   omega_grid_type <- match.arg(omega_grid_type)
   t_grid_type <- match.arg(t_grid_type)
+  control <- normalize_logistic_gaussian_screening_control(control)
   started_at <- Sys.time()
   dataset_started_proc <- proc.time()[["elapsed"]]
 
@@ -1607,7 +1869,8 @@ run_logistic_gaussian_screening <- function(dataset_name,
   centers <- if (identical(omega_grid_type, "fixed_simplex_lattice")) {
     build_fixed_simplex_omega_grid(
       ambient_dim = data_prep$D,
-      max_centers = max_centers
+      max_centers = max_centers,
+      boundary_epsilon = boundary_epsilon
     )
   } else {
     sample_centers <- choose_screening_centers(
@@ -1632,7 +1895,8 @@ run_logistic_gaussian_screening <- function(dataset_name,
     build_fixed_t_grid_logistic_gaussian(
       fit = fit,
       omega_grid = centers$omega,
-      n_t = n_t
+      n_t = n_t,
+      tail_prob = t_grid_tail_prob
     )
   } else {
     list(
@@ -1643,7 +1907,7 @@ run_logistic_gaussian_screening <- function(dataset_name,
         probs = probs_t
       ),
       t_max = NA_real_,
-      radius_multiplier = NA_real_,
+      tail_prob = NA_real_,
       construction = "sample_quantiles"
     )
   }
@@ -1663,10 +1927,11 @@ run_logistic_gaussian_screening <- function(dataset_name,
     )
   } else {
     evaluate_fitted_logistic_gaussian_profile(
-      omega_grid = centers$omega,
-      t_grid = t_grid,
-      fit = fit
-    )
+    omega_grid = centers$omega,
+    t_grid = t_grid,
+    fit = fit,
+    control = control
+  )
   }
   empirical_profile <- compute_profile_matrix_from_distances(distance_observed, t_grid)
   observed_stats_grid <- compute_screening_statistics_from_profiles(
@@ -1712,6 +1977,7 @@ run_logistic_gaussian_screening <- function(dataset_name,
       alpha = alpha,
       n_cores = n_cores,
       seed = seed,
+      bootstrap_method = bootstrap_method,
       control = control,
       unknown_param = "both"
     )
@@ -1738,11 +2004,6 @@ run_logistic_gaussian_screening <- function(dataset_name,
     shapiro_p_values = compute_marginal_shapiro_pvalues(fit$Z)
   )
 
-  diagnostics <- list(
-    mardia = mardia_multivariate_normality(fit$Z),
-    shapiro_p_values = compute_marginal_shapiro_pvalues(fit$Z)
-  )
-
   result <- list(
     dataset_name = dataset_name,
     screening_type = "logistic_gaussian_composite_or_screening",
@@ -1759,10 +2020,11 @@ run_logistic_gaussian_screening <- function(dataset_name,
       omega_grid_construction = centers$construction %||% omega_grid_type,
       omega_grid_lattice_level = centers$lattice_level %||% NA_integer_,
       omega_grid_size = centers$n_centers %||% nrow(centers$omega),
+      omega_grid_boundary_epsilon = centers$boundary_epsilon %||% NA_real_,
       t_grid_type = t_grid_type,
       t_grid_construction = t_grid_info$construction %||% t_grid_type,
       t_grid_t_max = t_grid_info$t_max %||% NA_real_,
-      t_grid_radius_multiplier = t_grid_info$radius_multiplier %||% NA_real_
+      t_grid_tail_prob = t_grid_info$tail_prob %||% NA_real_
     ),
     theoretical_profile_info = list(
       method = if (identical(bootstrap_mode, "plugin_simple_null")) "monte_carlo_from_fitted_null" else "global_logistic_gaussian_model_spec",
@@ -1782,6 +2044,7 @@ run_logistic_gaussian_screening <- function(dataset_name,
     ),
     bootstrap = list(
       mode = bootstrap_mode,
+      bootstrap_method = bootstrap_method,
       engine = if (identical(bootstrap_mode, "plugin_simple_null")) "plugin_parametric_bootstrap_logistic_gaussian_screening" else "multiplier_bootstrap_logistic_gaussian",
       raw_result = bootstrap_result,
       ks_statistics = ks_extracted$bootstrap_statistics,
@@ -1793,7 +2056,10 @@ run_logistic_gaussian_screening <- function(dataset_name,
     settings = list(
       B = B,
       max_centers = max_centers,
-      n_t = length(t_grid),
+      n_t = n_t,
+      t_grid_tail_prob = t_grid_tail_prob,
+      boundary_epsilon = centers$boundary_epsilon %||% NA_real_,
+      probs_t = probs_t %||% seq(0.01, 0.99, length.out = n_t),
       seed = seed,
       alpha = alpha,
       ridge = ridge,
@@ -1802,6 +2068,7 @@ run_logistic_gaussian_screening <- function(dataset_name,
       omega_grid_type = omega_grid_type,
       t_grid_type = t_grid_type,
       null_mc_size = null_mc_size,
+      quadform_method = control$logistic_gaussian_quadform_method %||% NA_character_,
       control = control
     ),
     runtime = list(
@@ -1819,6 +2086,8 @@ run_logistic_gaussian_screening <- function(dataset_name,
       B = sensitivity_B %||% max(99L, ceiling(B / 4)),
       max_centers = max_centers,
       n_t = n_t,
+      t_grid_tail_prob = t_grid_tail_prob,
+      boundary_epsilon = boundary_epsilon,
       probs_t = probs_t,
       bootstrap_mode = bootstrap_mode,
       seed = alt_seed,
@@ -1881,6 +2150,10 @@ make_logistic_gaussian_screening_summary_row <- function(result) {
     min_eigenvalue = if (is.null(fit)) NA_real_ else min(fit$eigenvalues),
     max_eigenvalue = if (is.null(fit)) NA_real_ else max(fit$eigenvalues),
     condition_number = if (is.null(fit)) NA_real_ else fit$condition_number,
+    boundary_epsilon = result$settings$boundary_epsilon %||% result$grid$omega_grid_boundary_epsilon %||% NA_real_,
+    omega_grid_construction = result$grid$omega_grid_construction %||% NA_character_,
+    n_centers = result$grid$omega_grid_size %||% NA_integer_,
+    t_grid_max = result$grid$t_grid_t_max %||% NA_real_,
     ks_statistic = result$inference$ks$statistic,
     ks_pvalue = result$inference$ks$p_value,
     cvm_statistic = result$inference$cvm$statistic,
@@ -1905,12 +2178,15 @@ run_logistic_gaussian_screening_batch <- function(dataset_names = default_logist
                                                   B = 1000L,
                                                   max_centers = 100L,
                                                   n_t = 60L,
+                                                  t_grid_tail_prob = 1e-8,
+                                                  boundary_epsilon = NULL,
                                                   probs_t = NULL,
                                                   bootstrap_mode = "composite_multiplier",
                                                   seed = 123L,
                                                   alpha = 0.05,
                                                   ridge = 1e-8,
                                                   n_cores = 1L,
+                                                  bootstrap_method = "reestimated",
                                                   control = list(),
                                                   omega_grid_type = "fixed_simplex_lattice",
                                                   t_grid_type = "fixed_fitted_scale",
@@ -1939,16 +2215,19 @@ run_logistic_gaussian_screening_batch <- function(dataset_names = default_logist
         B = B,
         max_centers = max_centers,
         n_t = n_t,
+        t_grid_tail_prob = t_grid_tail_prob,
+        boundary_epsilon = boundary_epsilon,
         probs_t = probs_t,
         bootstrap_mode = bootstrap_mode,
         seed = dataset_seed,
         alpha = alpha,
         ridge = ridge,
         n_cores = n_cores,
+        bootstrap_method = bootstrap_method,
         control = control,
         omega_grid_type = omega_grid_type,
         t_grid_type = t_grid_type,
-        make_plots = make_plots,
+        make_plots = FALSE,
         save_outputs = TRUE,
         output_dir = output_dir,
         run_seed_sensitivity = run_seed_sensitivity,
@@ -1981,8 +2260,8 @@ run_logistic_gaussian_screening_batch <- function(dataset_names = default_logist
             use_in_paper = "no",
             why = conditionMessage(e)
           ),
-          bootstrap = list(mode = bootstrap_mode, engine = NA_character_),
-          settings = list(B = B, seed = dataset_seed, n_cores = n_cores, control = control),
+          bootstrap = list(mode = bootstrap_mode, engine = NA_character_, bootstrap_method = bootstrap_method),
+          settings = list(B = B, seed = dataset_seed, n_cores = n_cores, bootstrap_method = bootstrap_method, control = control),
           runtime = list(elapsed_seconds = NA_real_)
         )
       }
@@ -2015,17 +2294,30 @@ run_logistic_gaussian_screening_batch <- function(dataset_names = default_logist
       B = B,
       max_centers = max_centers,
       n_t = n_t,
+      t_grid_tail_prob = t_grid_tail_prob,
+      boundary_epsilon = boundary_epsilon,
       probs_t = probs_t %||% seq(0.01, 0.99, length.out = n_t),
       bootstrap_mode = bootstrap_mode,
       seed = seed,
       alpha = alpha,
       ridge = ridge,
       n_cores = n_cores,
+      bootstrap_method = bootstrap_method,
       control = control,
       result_paths = result_paths
     ),
     file = config_file
   )
+
+  plot_paths <- NULL
+  if (isTRUE(make_plots)) {
+    plot_paths <- save_batch_screening_plots(
+      dataset_names = dataset_names,
+      base_dir = output_dir,
+      max_centers = max_centers,
+      boundary_epsilon = boundary_epsilon
+    )
+  }
 
   list(
     summary = summary_df,
@@ -2033,6 +2325,7 @@ run_logistic_gaussian_screening_batch <- function(dataset_names = default_logist
     session_info_file = session_info_file,
     package_versions_file = package_versions_file,
     warning_file = warning_file,
-    config_file = config_file
+    config_file = config_file,
+    plot_paths = plot_paths
   )
 }
