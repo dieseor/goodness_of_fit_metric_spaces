@@ -142,6 +142,67 @@ test_that("r_sph_jp returns unit vectors and matches the inversion CDF", {
   expect_lt(max(abs(empirical_cdf - theoretical_cdf)), 0.04)
 })
 
+test_that("JP spline interpolation stays close to the legacy linear interpolation", {
+  mu <- c(0, 0, 1)
+  cdf_table <- build_jp_axis_cdf_table(mu = mu, kappa = 2, psi = 0.5, grid_size = 8193L)
+  x_eval <- seq(-0.97, 0.97, length.out = 401L)
+
+  spline_values <- jp_interpolate_cdf(
+    x = x_eval,
+    x_grid = cdf_table$u,
+    cdf_grid = cdf_table$cdf
+  )
+  linear_values <- jp_interpolate_cdf_linear(
+    x = x_eval,
+    x_grid = cdf_table$u,
+    cdf_grid = cdf_table$cdf
+  )
+
+  expect_lt(max(abs(spline_values - linear_values)), 2e-4)
+  expect_true(all(diff(spline_values) >= -1e-10))
+})
+
+test_that("JP projected grid profile stays close to the legacy linear interpolation", {
+  mu <- c(0, 0, 1)
+  omega_grid <- generate_canonical_lattice(8L, dim = 3)
+  t_grid <- seq(0.05, pi - 0.05, length.out = 25L)
+  kappa <- 2
+  psi <- 0.5
+
+  spline_matrix <- distance_profile_jp_grid(
+    omega_grid = omega_grid,
+    mu = mu,
+    kappa = kappa,
+    psi = psi,
+    t_grid = t_grid,
+    distance_type = "geodesic",
+    n_u = 4097L,
+    n_delta = 1025L
+  )
+
+  params <- jp_validate_parameters(mu = mu, kappa = kappa, psi = psi)
+  rho <- as.numeric(omega_grid %*% params$mu)
+  cdf_object <- build_jp_projected_cdf_matrix(
+    rho = rho,
+    q = params$q,
+    alpha = params$alpha,
+    beta = params$beta,
+    n_u = 4097L,
+    n_delta = 1025L
+  )
+  thresholds <- sphere_distance_to_dot_threshold(t_grid, distance_type = "geodesic")
+  thresholds <- pmin(pmax(thresholds, -1), 1)
+  linear_matrix <- t(vapply(seq_along(rho), function(i) {
+    jp_interpolate_upper_tail_linear(
+      threshold = thresholds,
+      x_grid = cdf_object$u,
+      cdf_grid = cdf_object$cdf[, i]
+    )
+  }, numeric(length(t_grid))))
+
+  expect_lt(max(abs(spline_matrix - linear_matrix)), 3e-4)
+})
+
 test_that("alpha zero sampler recovers uniformity on S2", {
   set.seed(456)
   mu <- c(0, 0, 1)

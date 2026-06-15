@@ -57,6 +57,7 @@ run_small_circle_benchmark_stage <- function(data_matrix,
                                              B_value,
                                              n_cores,
                                              seed,
+                                             bootstrap_method = "reestimated",
                                              distance_type,
                                              ks_t_points,
                                              control) {
@@ -73,6 +74,7 @@ run_small_circle_benchmark_stage <- function(data_matrix,
       alpha = 0.05,
       n_cores = as.integer(stage_cores),
       seed = as.integer(seed),
+      bootstrap_method = bootstrap_method,
       keep = list(observed_process = TRUE, bootstrap_statistics = TRUE, bootstrap_thetas = TRUE),
       control = control
     )
@@ -175,6 +177,7 @@ run_comets_distance_profile_small_circle_benchmark <- function(output_root = NUL
                                                                n_cores = 12L,
                                                                ks_t_points = 250L,
                                                                base_seed = 20260531L,
+                                                               bootstrap_method = "reestimated",
                                                                distance_type = "geodesic",
                                                                control = list(
                                                                  small_circle_profile_method = "legendre",
@@ -247,6 +250,7 @@ run_comets_distance_profile_small_circle_benchmark <- function(output_root = NUL
       B_value = B_value,
       n_cores = n_cores,
       seed = as.integer(base_seed + i),
+      bootstrap_method = bootstrap_method,
       distance_type = distance_type,
       ks_t_points = ks_t_points,
       control = control

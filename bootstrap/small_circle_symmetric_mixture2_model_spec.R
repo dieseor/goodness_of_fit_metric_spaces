@@ -440,6 +440,112 @@ fit_small_circle_symmetric_mixture2_theta <- function(data,
   c(theta, fit[setdiff(names(fit), names(theta))])
 }
 
+prepare_small_circle_symmetric_mixture2_fast_multiplier <- function(spec,
+                                                                    data,
+                                                                    theta_hat,
+                                                                    ks_prep = NULL,
+                                                                    cvm_prep = NULL,
+                                                                    control = list()) {
+  x <- normalize_small_circle_symmetric_mixture2_data(data, control)
+  theta_hat <- normalize_small_circle_symmetric_mixture2_theta(theta_hat, ambient_dim = ncol(x))
+  chart <- fast_multiplier_sphere_chart(theta_hat$mu)
+  nu_upper <- 1 - as.numeric(control$small_circle_symmetric_mixture2_nu_eps %||% 1e-6)
+  par0 <- c(
+    0,
+    0,
+    log(pmax(expm1(theta_hat$kappa), .Machine$double.eps)),
+    small_circle_inverse_logistic_bounded(theta_hat$nu, upper = nu_upper)
+  )
+  kappa_min <- as.numeric(control$small_circle_symmetric_mixture2_kappa_min %||% 1e-8)
+  kappa_max <- as.numeric(control$small_circle_symmetric_mixture2_kappa_max %||% 1e6)
+  nu_eps <- as.numeric(control$small_circle_symmetric_mixture2_nu_eps %||% 1e-6)
+
+  softplus <- function(x) log1p(exp(x))
+  d_softplus <- function(x) stats::plogis(x)
+  d_bounded_logistic <- function(raw) {
+    prob <- stats::plogis(raw)
+    (1 - nu_eps) * prob * (1 - prob)
+  }
+
+  state_from_par <- function(par) {
+    mapped <- fast_multiplier_sphere_chart_map(chart, par[1:2])
+    normalize_small_circle_symmetric_mixture2_theta(
+      list(
+        mu = mapped$mu,
+        kappa = min(max(softplus(par[[3L]]), kappa_min), kappa_max),
+        nu = small_circle_logistic_bounded(par[[4L]], upper = 1 - nu_eps)
+      ),
+      ambient_dim = ncol(x)
+    )
+  }
+
+  score_matrix_fn <- function(sample, par) {
+    theta_state <- state_from_par(par)
+    sample <- normalize_small_circle_symmetric_mixture2_data(sample, control)
+    jac_mu <- fast_multiplier_sphere_chart_jacobian(chart, par[1:2])
+    z <- pmin(pmax(as.numeric(sample %*% theta_state$mu), -1), 1)
+    s1 <- z
+    s2 <- -z
+    log_f1 <- fast_multiplier_small_circle_component_log_density(
+      s = s1,
+      kappa = theta_state$kappa,
+      nu = theta_state$nu
+    )
+    log_f2 <- fast_multiplier_small_circle_component_log_density(
+      s = s2,
+      kappa = theta_state$kappa,
+      nu = theta_state$nu
+    )
+    log_mix <- rotational_logsumexp2(log(0.5) + log_f1, log(0.5) + log_f2)
+    r1 <- exp(log(0.5) + log_f1 - log_mix)
+    r2 <- 1 - r1
+
+    coeff_mu <- r1 * (-2 * theta_state$kappa * (s1 - theta_state$nu)) +
+      r2 * (2 * theta_state$kappa * (s2 - theta_state$nu))
+    score_mu <- t(vapply(seq_len(nrow(sample)), function(i) {
+      drop(t(jac_mu) %*% (coeff_mu[[i]] * sample[i, ]))
+    }, numeric(2L)))
+    score_comp1 <- fast_multiplier_small_circle_component_scores_natural(
+      s = s1,
+      kappa = theta_state$kappa,
+      nu = theta_state$nu
+    )
+    score_comp2 <- fast_multiplier_small_circle_component_scores_natural(
+      s = s2,
+      kappa = theta_state$kappa,
+      nu = theta_state$nu
+    )
+
+    cbind(
+      score_mu,
+      (r1 * score_comp1[, 1L] + r2 * score_comp2[, 1L]) * d_softplus(par[[3L]]),
+      (r1 * score_comp1[, 2L] + r2 * score_comp2[, 2L]) * d_bounded_logistic(par[[4L]])
+    )
+  }
+
+  sample_fn <- function(n_aux, par) {
+    theta_state <- state_from_par(par)
+    r_sph_small_circle_symmetric_mixture2(
+      n = n_aux,
+      mu = theta_state$mu,
+      kappa = theta_state$kappa,
+      nu = theta_state$nu
+    )
+  }
+
+  prepare_fast_multiplier_score_model(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = cvm_prep,
+    control = control,
+    par0 = par0,
+    score_matrix_fn = score_matrix_fn,
+    sample_fn = sample_fn
+  )
+}
+
 make_small_circle_symmetric_mixture2_spec <- function(distance_type = c("chordal", "geodesic")) {
   distance_type <- match.arg(distance_type)
 
@@ -550,7 +656,21 @@ make_small_circle_symmetric_mixture2_spec <- function(distance_type = c("chordal
       },
       distance_type = distance_type,
       unknown_param = "theta",
-      weighted_mle = TRUE
+      weighted_mle = TRUE,
+      fast_multiplier_prepare = function(data,
+                                         theta_hat,
+                                         ks_prep = NULL,
+                                         cvm_prep = NULL,
+                                         control = list()) {
+        prepare_small_circle_symmetric_mixture2_fast_multiplier(
+          spec = make_small_circle_symmetric_mixture2_spec(distance_type = distance_type),
+          data = data,
+          theta_hat = theta_hat,
+          ks_prep = ks_prep,
+          cvm_prep = cvm_prep,
+          control = control
+        )
+      }
     )
   )
 }

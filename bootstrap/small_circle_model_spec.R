@@ -83,6 +83,65 @@ fit_small_circle_theta <- function(data,
   normalize_small_circle_theta(fit, ambient_dim = ncol(x))
 }
 
+prepare_small_circle_fast_multiplier <- function(spec,
+                                                 data,
+                                                 theta_hat,
+                                                 ks_prep = NULL,
+                                                 cvm_prep = NULL,
+                                                 control = list()) {
+  x <- normalize_small_circle_data(data, control)
+  theta_hat <- normalize_small_circle_theta(theta_hat, ambient_dim = ncol(x))
+  chart <- fast_multiplier_sphere_chart(theta_hat$mu)
+  par0 <- c(0, 0, theta_hat$kappa, theta_hat$nu)
+
+  state_from_par <- function(par) {
+    mapped <- fast_multiplier_sphere_chart_map(chart, par[1:2])
+    normalize_small_circle_theta(
+      list(mu = mapped$mu, kappa = par[[3L]], nu = par[[4L]]),
+      ambient_dim = ncol(x)
+    )
+  }
+
+  score_matrix_fn <- function(sample, par) {
+    theta_state <- state_from_par(par)
+    sample <- normalize_small_circle_data(sample, control)
+    jac_mu <- fast_multiplier_sphere_chart_jacobian(chart, par[1:2])
+    z <- pmin(pmax(as.numeric(sample %*% theta_state$mu), -1), 1)
+    coeff_mu <- -2 * theta_state$kappa * (z - theta_state$nu)
+    score_mu <- t(vapply(seq_len(nrow(sample)), function(i) {
+      drop(t(jac_mu) %*% (coeff_mu[[i]] * sample[i, ]))
+    }, numeric(2L)))
+    score_scalar <- fast_multiplier_small_circle_component_scores_natural(
+      s = z,
+      kappa = theta_state$kappa,
+      nu = theta_state$nu
+    )
+    cbind(score_mu, score_scalar)
+  }
+
+  sample_fn <- function(n_aux, par) {
+    theta_state <- state_from_par(par)
+    r_sph_small_circle(
+      n = n_aux,
+      mu = theta_state$mu,
+      kappa = theta_state$kappa,
+      nu = theta_state$nu
+    )
+  }
+
+  prepare_fast_multiplier_score_model(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = cvm_prep,
+    control = control,
+    par0 = par0,
+    score_matrix_fn = score_matrix_fn,
+    sample_fn = sample_fn
+  )
+}
+
 make_small_circle_spec <- function(distance_type = c("chordal", "geodesic")) {
   distance_type <- match.arg(distance_type)
 
@@ -170,7 +229,21 @@ make_small_circle_spec <- function(distance_type = c("chordal", "geodesic")) {
       },
       distance_type = distance_type,
       unknown_param = "theta",
-      weighted_mle = TRUE
+      weighted_mle = TRUE,
+      fast_multiplier_prepare = function(data,
+                                         theta_hat,
+                                         ks_prep = NULL,
+                                         cvm_prep = NULL,
+                                         control = list()) {
+        prepare_small_circle_fast_multiplier(
+          spec = make_small_circle_spec(distance_type = distance_type),
+          data = data,
+          theta_hat = theta_hat,
+          ks_prep = ks_prep,
+          cvm_prep = cvm_prep,
+          control = control
+        )
+      }
     )
   )
 }

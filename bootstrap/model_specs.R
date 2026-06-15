@@ -171,6 +171,458 @@ spec_cvm_prepare <- function(spec,
   spec$cvm_prepare(data, theta_hat, control)
 }
 
+spec_fast_multiplier_prepare <- function(spec,
+                                         data,
+                                         theta_hat,
+                                         ks_prep = NULL,
+                                         cvm_prep = NULL,
+                                         control = list()) {
+  if (!is.function(spec$fast_multiplier_prepare)) {
+    return(NULL)
+  }
+
+  spec$fast_multiplier_prepare(
+    data = data,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = cvm_prep,
+    control = control
+  )
+}
+
+fast_multiplier_numeric_jacobian <- function(fun,
+                                             x0,
+                                             step = NULL) {
+  x0 <- as.numeric(x0)
+  p <- length(x0)
+  f0 <- as.numeric(fun(x0))
+  m <- length(f0)
+
+  if (is.null(step)) {
+    step <- pmax(1e-6, abs(x0) * 1e-4)
+  }
+  step <- as.numeric(step)
+  if (length(step) == 1L) {
+    step <- rep.int(step, p)
+  }
+  if (length(step) != p || any(!is.finite(step)) || any(step <= 0)) {
+    stop("`step` must be a strictly positive finite scalar or vector of length `length(x0)`.")
+  }
+
+  jacobian <- matrix(0, nrow = m, ncol = p)
+  for (j in seq_len(p)) {
+    delta <- rep.int(0, p)
+    delta[[j]] <- step[[j]]
+    f_plus <- as.numeric(fun(x0 + delta))
+    f_minus <- as.numeric(fun(x0 - delta))
+    if (length(f_plus) != m || length(f_minus) != m) {
+      stop("The Jacobian target returned values of inconsistent length.")
+    }
+    jacobian[, j] <- (f_plus - f_minus) / (2 * step[[j]])
+  }
+
+  jacobian
+}
+
+fast_multiplier_parse_derivative_control <- function(control = list()) {
+  derivative_method <- tolower(as.character(control$derivative_method %||% "score_mc"))
+  if (!identical(derivative_method, "score_mc")) {
+    stop("The fast multiplier bootstrap currently supports only `control$derivative_method = 'score_mc'`.")
+  }
+
+  derivative_mc_size <- as.integer(control$derivative_mc_size %||% 1000L)
+  if (!is.finite(derivative_mc_size) || derivative_mc_size <= 0L) {
+    stop("`control$derivative_mc_size` must be a strictly positive integer.")
+  }
+
+  derivative_mc_seed <- control$derivative_mc_seed %||% control$seed %||% NULL
+
+  list(
+    derivative_method = derivative_method,
+    derivative_mc_size = derivative_mc_size,
+    derivative_mc_seed = if (is.null(derivative_mc_seed)) NULL else as.integer(derivative_mc_seed)
+  )
+}
+
+fast_multiplier_parse_vhat_control <- function(control = list()) {
+  vhat_method <- tolower(as.character(control$fast_multiplier_vhat_method %||% "score_outer_product"))
+  supported_methods <- c("score_outer_product", "numeric_jacobian")
+  if (!vhat_method %in% supported_methods) {
+    stop(sprintf(
+      "`control$fast_multiplier_vhat_method` must be one of %s.",
+      paste(sprintf("'%s'", supported_methods), collapse = ", ")
+    ))
+  }
+
+  rcond_tol <- as.numeric(control$fast_multiplier_vhat_rcond_tol %||% 1e-12)
+  if (!is.finite(rcond_tol) || rcond_tol <= 0) {
+    stop("`control$fast_multiplier_vhat_rcond_tol` must be a strictly positive finite number.")
+  }
+
+  list(
+    vhat_method = vhat_method,
+    rcond_tol = rcond_tol
+  )
+}
+
+fast_multiplier_vhat_diagnostics <- function(S_obs,
+                                             Psi_aux,
+                                             Vhat,
+                                             par0) {
+  S_obs <- as.matrix(S_obs)
+  Psi_aux <- as.matrix(Psi_aux)
+  Vhat <- as.matrix(Vhat)
+  score_mean_aux <- colMeans(Psi_aux)
+  eigenvalues <- tryCatch(
+    eigen((Vhat + t(Vhat)) / 2, symmetric = TRUE, only.values = TRUE)$values,
+    error = function(e) rep.int(NA_real_, ncol(Vhat))
+  )
+  rcond_value <- tryCatch(rcond(Vhat), error = function(e) NA_real_)
+  condition_number <- if (is.finite(rcond_value) && rcond_value > 0) {
+    1 / rcond_value
+  } else {
+    Inf
+  }
+
+  list(
+    S_obs_dim = dim(S_obs),
+    Psi_aux_dim = dim(Psi_aux),
+    Vhat_dim = dim(Vhat),
+    score_mean_aux = score_mean_aux,
+    score_mean_aux_norm = sqrt(sum(score_mean_aux^2)),
+    Vhat_eigenvalues = as.numeric(eigenvalues),
+    Vhat_rcond = as.numeric(rcond_value),
+    Vhat_condition_number = as.numeric(condition_number),
+    par0 = as.numeric(par0)
+  )
+}
+
+fast_multiplier_validate_vhat <- function(Vhat,
+                                          diagnostics,
+                                          label = "fast multiplier preparation",
+                                          rcond_tol = 1e-12) {
+  if (any(!is.finite(Vhat))) {
+    stop(sprintf(
+      "The %s produced a non-finite `Vhat`. par0 = %s",
+      label,
+      paste(signif(diagnostics$par0, 8), collapse = ", ")
+    ))
+  }
+
+  if (any(!is.finite(diagnostics$Vhat_eigenvalues))) {
+    stop(sprintf(
+      "The %s produced non-finite eigenvalues for `Vhat`. par0 = %s",
+      label,
+      paste(signif(diagnostics$par0, 8), collapse = ", ")
+    ))
+  }
+
+  min_eig <- min(diagnostics$Vhat_eigenvalues)
+  if (min_eig <= 0) {
+    stop(sprintf(
+      paste(
+        "The %s produced a singular or indefinite `Vhat`.",
+        "min_eigenvalue = %.6e, rcond = %.6e, condition_number = %.6e,",
+        "score_mean_norm = %.6e, par0 = %s"
+      ),
+      label,
+      min_eig,
+      diagnostics$Vhat_rcond,
+      diagnostics$Vhat_condition_number,
+      diagnostics$score_mean_aux_norm,
+      paste(signif(diagnostics$par0, 8), collapse = ", ")
+    ))
+  }
+
+  if (!is.finite(diagnostics$Vhat_rcond) || diagnostics$Vhat_rcond <= rcond_tol) {
+    stop(sprintf(
+      paste(
+        "The %s produced an ill-conditioned `Vhat`.",
+        "rcond = %.6e <= %.6e, min_eigenvalue = %.6e, condition_number = %.6e,",
+        "score_mean_norm = %.6e, par0 = %s"
+      ),
+      label,
+      diagnostics$Vhat_rcond,
+      rcond_tol,
+      min_eig,
+      diagnostics$Vhat_condition_number,
+      diagnostics$score_mean_aux_norm,
+      paste(signif(diagnostics$par0, 8), collapse = ", ")
+    ))
+  }
+}
+
+fast_multiplier_solve_vhat <- function(Vhat,
+                                       rhs,
+                                       label = "fast multiplier correction") {
+  tryCatch(
+    solve(Vhat, rhs),
+    error = function(e) {
+      stop(sprintf(
+        "Could not invert `Vhat` while computing %s: %s",
+        label,
+        conditionMessage(e)
+      ))
+    }
+  )
+}
+
+fast_multiplier_vech <- function(mat) {
+  mat <- as.matrix(mat)
+  mat[lower.tri(mat, diag = TRUE)]
+}
+
+fast_multiplier_ivech <- function(values, dim_size) {
+  dim_size <- as.integer(dim_size)
+  values <- as.numeric(values)
+  expected <- dim_size * (dim_size + 1L) / 2L
+  if (length(values) != expected) {
+    stop("`values` has incompatible length for the requested symmetric dimension.")
+  }
+
+  out <- matrix(0, nrow = dim_size, ncol = dim_size)
+  out[lower.tri(out, diag = TRUE)] <- values
+  out[upper.tri(out)] <- t(out)[upper.tri(out)]
+  out
+}
+
+fast_multiplier_sym_score_to_vech <- function(mat) {
+  mat <- as.matrix(mat)
+  idx <- which(lower.tri(mat, diag = TRUE), arr.ind = TRUE)
+  out <- numeric(nrow(idx))
+  for (i in seq_len(nrow(idx))) {
+    row_idx <- idx[i, 1L]
+    col_idx <- idx[i, 2L]
+    factor <- if (row_idx == col_idx) 1 else 2
+    out[[i]] <- factor * mat[row_idx, col_idx]
+  }
+  out
+}
+
+fast_multiplier_sphere_chart <- function(mu) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  list(
+    mu0 = mu,
+    basis = jp_orthonormal_complement(mu),
+    ambient_dim = length(mu)
+  )
+}
+
+fast_multiplier_sphere_chart_map <- function(chart,
+                                             a) {
+  a <- as.numeric(a)
+  if (length(a) != ncol(chart$basis)) {
+    stop("Sphere chart coordinates have incompatible dimension.")
+  }
+
+  u <- chart$mu0 + drop(chart$basis %*% a)
+  norm_u <- sqrt(sum(u^2))
+  if (!is.finite(norm_u) || norm_u <= 0) {
+    stop("The local spherical chart produced an invalid nonpositive norm.")
+  }
+
+  list(
+    mu = u / norm_u,
+    u = u,
+    norm_u = norm_u
+  )
+}
+
+fast_multiplier_sphere_chart_jacobian <- function(chart,
+                                                  a) {
+  mapped <- fast_multiplier_sphere_chart_map(chart, a)
+  mu <- mapped$mu
+  projector <- diag(length(mu)) - tcrossprod(mu)
+  (projector %*% chart$basis) / mapped$norm_u
+}
+
+fast_multiplier_compute_D_ks <- function(spec,
+                                         aux_sample,
+                                         Psi_aux,
+                                         ks_prep,
+                                         control = list()) {
+  if (is.null(ks_prep)) {
+    return(NULL)
+  }
+
+  aux_distance_matrix <- spec$distance_matrix(aux_sample, ks_prep$omega_grid, control)
+  n_aux <- nrow(aux_distance_matrix)
+  threshold_matrix <- matrix(
+    rep(as.numeric(ks_prep$t_grid), each = n_aux),
+    nrow = n_aux,
+    ncol = length(ks_prep$t_grid)
+  )
+  indicator_blocks <- lapply(seq_len(ncol(aux_distance_matrix)), function(k) {
+    distance_block <- matrix(
+      rep.int(aux_distance_matrix[, k], length(ks_prep$t_grid)),
+      nrow = n_aux,
+      ncol = length(ks_prep$t_grid),
+      byrow = FALSE
+    )
+    (distance_block <= threshold_matrix) * 1
+  })
+
+  crossprod(do.call(cbind, indicator_blocks), Psi_aux) / nrow(Psi_aux)
+}
+
+fast_multiplier_compute_D_cvm <- function(spec,
+                                          aux_sample,
+                                          Psi_aux,
+                                          data,
+                                          cvm_prep,
+                                          control = list()) {
+  if (is.null(cvm_prep)) {
+    return(NULL)
+  }
+
+  data_normalized <- spec_normalize_data(spec, data, control)
+  aux_distance_matrix <- spec$distance_matrix(aux_sample, data_normalized, control)
+  observed_distance_matrix <- cvm_prep$distance_matrix
+  if (is.null(observed_distance_matrix)) {
+    observed_distance_matrix <- spec$distance_matrix(data_normalized, data_normalized, control)
+  }
+  observed_distance_matrix <- as.matrix(observed_distance_matrix)
+  n <- nrow(observed_distance_matrix)
+  p <- ncol(Psi_aux)
+  block_size <- as.integer(control$fast_multiplier_cvm_block_size %||% n)
+  if (!is.finite(block_size) || block_size <= 0L) {
+    stop("`control$fast_multiplier_cvm_block_size` must be a strictly positive integer.")
+  }
+
+  D_cvm <- matrix(0, nrow = n * n, ncol = p)
+  for (block_start in seq.int(1L, n, by = block_size)) {
+    block_end <- min(block_start + block_size - 1L, n)
+    block_rows <- block_end - block_start + 1L
+    D_block <- matrix(0, nrow = block_rows * n, ncol = p)
+
+    for (offset in seq_len(block_rows)) {
+      center_idx <- block_start + offset - 1L
+      indicator_block <- (
+        matrix(
+          rep.int(aux_distance_matrix[, center_idx], n),
+          nrow = nrow(aux_distance_matrix),
+          ncol = n,
+          byrow = FALSE
+        ) <= matrix(
+          observed_distance_matrix[center_idx, ],
+          nrow = nrow(aux_distance_matrix),
+          ncol = n,
+          byrow = TRUE
+        )
+      ) * 1
+      D_block[((offset - 1L) * n + 1L):(offset * n), ] <- crossprod(indicator_block, Psi_aux) / nrow(Psi_aux)
+    }
+
+    idx_flat <- ((block_start - 1L) * n + 1L):(block_end * n)
+    D_cvm[idx_flat, ] <- D_block
+  }
+
+  D_cvm
+}
+
+prepare_fast_multiplier_score_model <- function(spec,
+                                                data,
+                                                theta_hat,
+                                                ks_prep = NULL,
+                                                cvm_prep = NULL,
+                                                control = list(),
+                                                par0,
+                                                score_matrix_fn,
+                                                sample_fn,
+                                                vhat_fn = NULL) {
+  derivative_control <- fast_multiplier_parse_derivative_control(control)
+  vhat_control <- fast_multiplier_parse_vhat_control(control)
+  allow_invalid_vhat_diagnostics <- isTRUE(control$fast_multiplier_allow_singular_vhat_diagnostics %||% FALSE)
+  data_normalized <- spec_normalize_data(spec, data, control)
+  par0 <- as.numeric(par0)
+
+  S_obs <- as.matrix(score_matrix_fn(data_normalized, par0))
+  if (nrow(S_obs) != spec_n_obs(spec, data_normalized, control)) {
+    stop("The fast multiplier observed score matrix has incompatible dimensions.")
+  }
+
+  if (!is.null(derivative_control$derivative_mc_seed)) {
+    set.seed(derivative_control$derivative_mc_seed)
+  }
+  aux_sample <- sample_fn(derivative_control$derivative_mc_size, par0)
+  Psi_aux <- as.matrix(score_matrix_fn(aux_sample, par0))
+  if (ncol(S_obs) != ncol(Psi_aux)) {
+    stop("The fast multiplier observed and auxiliary score matrices have incompatible column dimensions.")
+  }
+
+  Vhat <- if (is.function(vhat_fn)) {
+    as.matrix(vhat_fn(
+      data = data_normalized,
+      par0 = par0,
+      S_obs = S_obs,
+      aux_sample = aux_sample,
+      Psi_aux = Psi_aux
+    ))
+  } else if (identical(vhat_control$vhat_method, "numeric_jacobian")) {
+    -fast_multiplier_numeric_jacobian(
+      fun = function(par) {
+        colMeans(score_matrix_fn(data_normalized, par))
+      },
+      x0 = par0
+    )
+  } else {
+    crossprod(Psi_aux) / nrow(Psi_aux)
+  }
+  if (!identical(dim(Vhat), c(ncol(S_obs), ncol(S_obs)))) {
+    stop("The fast multiplier preparation produced a `Vhat` with incompatible dimensions.")
+  }
+
+  vhat_diagnostics <- fast_multiplier_vhat_diagnostics(
+    S_obs = S_obs,
+    Psi_aux = Psi_aux,
+    Vhat = Vhat,
+    par0 = par0
+  )
+  if (!allow_invalid_vhat_diagnostics) {
+    fast_multiplier_validate_vhat(
+      Vhat = Vhat,
+      diagnostics = vhat_diagnostics,
+      label = sprintf("fast multiplier preparation for model '%s'", spec$name),
+      rcond_tol = vhat_control$rcond_tol
+    )
+  }
+  observed_cvm_distance_matrix <- NULL
+  if (!is.null(cvm_prep)) {
+    observed_cvm_distance_matrix <- cvm_prep$distance_matrix
+    if (is.null(observed_cvm_distance_matrix)) {
+      observed_cvm_distance_matrix <- spec$distance_matrix(data_normalized, data_normalized, control)
+    }
+    observed_cvm_distance_matrix <- as.matrix(observed_cvm_distance_matrix)
+  }
+
+  list(
+    S_obs = S_obs,
+    Vhat = Vhat,
+    Psi_aux = Psi_aux,
+    vhat_method = if (is.function(vhat_fn)) "custom" else vhat_control$vhat_method,
+    vhat_diagnostics = vhat_diagnostics,
+    observed_cvm_distance_matrix = observed_cvm_distance_matrix,
+    derivative_method = derivative_control$derivative_method,
+    derivative_mc_size = derivative_control$derivative_mc_size,
+    derivative_mc_seed = if (is.null(derivative_control$derivative_mc_seed)) NA_integer_ else derivative_control$derivative_mc_seed,
+    D_ks = fast_multiplier_compute_D_ks(
+      spec = spec,
+      aux_sample = aux_sample,
+      Psi_aux = Psi_aux,
+      ks_prep = ks_prep,
+      control = control
+    ),
+    D_cvm = fast_multiplier_compute_D_cvm(
+      spec = spec,
+      aux_sample = aux_sample,
+      Psi_aux = Psi_aux,
+      data = data_normalized,
+      cvm_prep = cvm_prep,
+      control = control
+    )
+  )
+}
+
 spec_cvm_bootstrap_stat <- function(spec,
                                     data,
                                     normalized_weights,
@@ -321,6 +773,75 @@ fit_normal_theta <- function(data,
   stop("Unsupported `unknown_param` for the normal model.")
 }
 
+prepare_normal_fast_multiplier <- function(spec,
+                                           data,
+                                           theta_hat,
+                                           ks_prep = NULL,
+                                           cvm_prep = NULL,
+                                           control = list(),
+                                           unknown_param = "both") {
+  x <- normalize_normal_data(data, control)
+  theta_hat <- normalize_normal_theta(theta_hat)
+  unknown_param <- tolower(as.character(unknown_param %||% "both"))
+
+  if (!unknown_param %in% c("mu", "sigma", "both")) {
+    stop("Unsupported `unknown_param` for the fast normal multiplier bootstrap.")
+  }
+
+  par0 <- switch(
+    unknown_param,
+    mu = c(theta_hat$mu),
+    sigma = c(log(theta_hat$sigma)),
+    both = c(theta_hat$mu, log(theta_hat$sigma))
+  )
+
+  state_from_par <- function(par) {
+    if (identical(unknown_param, "mu")) {
+      normalize_normal_theta(list(mu = par[[1L]], sigma = theta_hat$sigma))
+    } else if (identical(unknown_param, "sigma")) {
+      normalize_normal_theta(list(mu = theta_hat$mu, sigma = exp(par[[1L]])))
+    } else {
+      normalize_normal_theta(list(mu = par[[1L]], sigma = exp(par[[2L]])))
+    }
+  }
+
+  score_matrix_fn <- function(sample, par) {
+    theta <- state_from_par(par)
+    sample <- normalize_normal_data(sample)
+    centered <- sample - theta$mu
+    sigma_sq <- theta$sigma^2
+
+    if (identical(unknown_param, "mu")) {
+      return(matrix(centered / sigma_sq, ncol = 1L))
+    }
+    if (identical(unknown_param, "sigma")) {
+      return(matrix(-1 + (centered^2) / sigma_sq, ncol = 1L))
+    }
+
+    cbind(
+      centered / sigma_sq,
+      -1 + (centered^2) / sigma_sq
+    )
+  }
+
+  sample_fn <- function(n_aux, par) {
+    theta <- state_from_par(par)
+    stats::rnorm(n_aux, mean = theta$mu, sd = theta$sigma)
+  }
+
+  prepare_fast_multiplier_score_model(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = cvm_prep,
+    control = control,
+    par0 = par0,
+    score_matrix_fn = score_matrix_fn,
+    sample_fn = sample_fn
+  )
+}
+
 make_normal_spec <- function(unknown_param = NULL) {
   new_model_spec(
     name = "normal",
@@ -357,7 +878,27 @@ make_normal_spec <- function(unknown_param = NULL) {
     observation_at = function(data, idx, control = list()) {
       normalize_normal_data(data, control)[[idx]]
     },
-    extras = list(unknown_param = unknown_param)
+    extras = list(
+      unknown_param = unknown_param,
+      fast_multiplier_prepare = function(data,
+                                         theta_hat,
+                                         ks_prep = NULL,
+                                         cvm_prep = NULL,
+                                         control = list()) {
+        if (is.null(unknown_param)) {
+          stop("The fast normal multiplier bootstrap requires `unknown_param` in the model spec.")
+        }
+        prepare_normal_fast_multiplier(
+          spec = make_normal_spec(unknown_param = unknown_param),
+          data = data,
+          theta_hat = theta_hat,
+          ks_prep = ks_prep,
+          cvm_prep = cvm_prep,
+          control = control,
+          unknown_param = unknown_param
+        )
+      }
+    )
   )
 }
 
@@ -598,26 +1139,37 @@ evaluate_mvnorm_distance_profile <- function(shift,
     lambda_pos <- eigenvalues_full[positive_idx]
     nu_pos <- nu[positive_idx]
     delta <- nu_pos^2 / lambda_pos
-    output[positive_threshold] <- vapply(
-      positive_values,
-      function(threshold) {
-        if (!is.finite(threshold)) {
-          return(NA_real_)
-        }
-        if (threshold <= 0) {
-          return(0)
-        }
+    method <- tolower(as.character(control$logistic_gaussian_quadform_method %||% "auto"))
+    if (identical(method, "hbe")) {
+      output[positive_threshold] <- sphunif::p_wschisq(
+        x = positive_values,
+        weights = lambda_pos,
+        dfs = rep.int(1, length(lambda_pos)),
+        ncps = delta,
+        method = "HBE"
+      )
+    } else {
+      output[positive_threshold] <- vapply(
+        positive_values,
+        function(threshold) {
+          if (!is.finite(threshold)) {
+            return(NA_real_)
+          }
+          if (threshold <= 0) {
+            return(0)
+          }
 
-        logistic_gaussian_quadform_tail_probability(
-          q = threshold,
-          lambda = lambda_pos,
-          h = rep.int(1, length(lambda_pos)),
-          delta = delta,
-          control = control
-        )
-      },
-      numeric(1)
-    )
+          logistic_gaussian_quadform_tail_probability(
+            q = threshold,
+            lambda = lambda_pos,
+            h = rep.int(1, length(lambda_pos)),
+            delta = delta,
+            control = control
+          )
+        },
+        numeric(1)
+      )
+    }
   }
 
   pmax(pmin(output, 1), 0)
@@ -635,8 +1187,8 @@ logistic_gaussian_quadform_tail_probability <- function(q,
   # showed that:
   # - `farebrother` is typically the fastest accurate exact route in the
   #   regular regime;
-  # - highly ill-conditioned spectra and strongly noncentral medium/high-
-  #   dimensional cases are the main regimes where `farebrother` becomes
+  # - highly ill-conditioned spectra and strongly noncentral cases are the main
+  #   regimes where `farebrother` becomes
   #   unreliable or expensive;
   # - in those ill-conditioned regimes `imhof` preserved accuracy well;
   # - if `imhof` also fails, `HBE` is the most accurate approximation among the
@@ -644,7 +1196,8 @@ logistic_gaussian_quadform_tail_probability <- function(q,
   #
   # The ill-conditioning rule is empirical, not theoretical:
   #   cond(lambda) > 1e4, or
-  #   length(lambda) >= 5, max(delta) > 10, and q / E(Q) > 0.1
+  #   length(lambda) >= 5, max(delta) > 10, and q / E(Q) > 0.1, or
+  #   max(delta) > 1e3 and q / E(Q) > 1
   # with E(Q) = sum_j lambda_j (h_j + delta_j).
   method <- tolower(as.character(control$logistic_gaussian_quadform_method %||% "auto"))
   if (!method %in% c("auto", "farebrother", "imhof", "hbe", "davies")) {
@@ -655,6 +1208,8 @@ logistic_gaussian_quadform_tail_probability <- function(q,
   dim_threshold <- as.integer(control$logistic_gaussian_ill_conditioned_dim_threshold %||% 5L)
   delta_threshold <- as.numeric(control$logistic_gaussian_ill_conditioned_delta_threshold %||% 10)
   q_ratio_threshold <- as.numeric(control$logistic_gaussian_ill_conditioned_q_ratio_threshold %||% 0.1)
+  extreme_delta_threshold <- as.numeric(control$logistic_gaussian_ill_conditioned_extreme_delta_threshold %||% 1e3)
+  extreme_q_ratio_threshold <- as.numeric(control$logistic_gaussian_ill_conditioned_extreme_q_ratio_threshold %||% 1)
   q_mean <- sum(lambda * (h + delta))
   q_ratio <- if (is.finite(q_mean) && q_mean > 0) q / q_mean else Inf
   cond_number <- max(lambda) / min(lambda)
@@ -662,7 +1217,8 @@ logistic_gaussian_quadform_tail_probability <- function(q,
   is_ill_conditioned <- is.finite(cond_number) &&
     (
       cond_number > cond_threshold ||
-        (length(lambda) >= dim_threshold && max(delta) > delta_threshold && q_ratio > q_ratio_threshold)
+        (length(lambda) >= dim_threshold && max(delta) > delta_threshold && q_ratio > q_ratio_threshold) ||
+        (max(delta) > extreme_delta_threshold && q_ratio > extreme_q_ratio_threshold)
     )
 
   auto_selected_method <- if (identical(method, "auto")) {
@@ -844,26 +1400,37 @@ evaluate_mvnorm_distance_profile_matrix <- function(shift_matrix,
     }
 
     positive_values <- threshold_sq[i, positive_i]
-    output[i, positive_i] <- vapply(
-      positive_values,
-      function(threshold) {
-        if (!is.finite(threshold)) {
-          return(NA_real_)
-        }
-        if (threshold <= 0) {
-          return(0)
-        }
+    method <- tolower(as.character(control$logistic_gaussian_quadform_method %||% "auto"))
+    if (identical(method, "hbe")) {
+      output[i, positive_i] <- sphunif::p_wschisq(
+        x = positive_values,
+        weights = lambda_pos,
+        dfs = df_vec,
+        ncps = delta_matrix[i, ],
+        method = "HBE"
+      )
+    } else {
+      output[i, positive_i] <- vapply(
+        positive_values,
+        function(threshold) {
+          if (!is.finite(threshold)) {
+            return(NA_real_)
+          }
+          if (threshold <= 0) {
+            return(0)
+          }
 
-        logistic_gaussian_quadform_tail_probability(
-          q = threshold,
-          lambda = lambda_pos,
-          h = df_vec,
-          delta = delta_matrix[i, ],
-          control = control
-        )
-      },
-      numeric(1)
-    )
+          logistic_gaussian_quadform_tail_probability(
+            q = threshold,
+            lambda = lambda_pos,
+            h = df_vec,
+            delta = delta_matrix[i, ],
+            control = control
+          )
+        },
+        numeric(1)
+      )
+    }
   }
   pmax(pmin(output, 1), 0)
 }
@@ -949,6 +1516,126 @@ fit_logistic_gaussian_theta <- function(data,
     Sigma_ilr = logistic_gaussian_weighted_covariance(z, prob_weights, weighted_mean)
   )
   normalize_logistic_gaussian_theta(theta_out, ambient_dim = normalized$ambient_dim, control = control)
+}
+
+prepare_logistic_gaussian_fast_multiplier <- function(spec,
+                                                      data,
+                                                      theta_hat,
+                                                      ks_prep = NULL,
+                                                      cvm_prep = NULL,
+                                                      control = list(),
+                                                      unknown_param = "both") {
+  normalized <- normalize_logistic_gaussian_data(data, control)
+  theta_hat <- normalize_logistic_gaussian_theta(theta_hat, ambient_dim = normalized$ambient_dim, control = control)
+  d <- theta_hat$ilr_dim
+  sigma_vech_hat <- fast_multiplier_vech(theta_hat$Sigma_ilr)
+  unknown_param <- tolower(as.character(unknown_param %||% "both"))
+
+  if (!unknown_param %in% c("mu", "sigma", "both")) {
+    stop("Unsupported `unknown_param` for the fast Logistic Gaussian multiplier bootstrap.")
+  }
+
+  par0 <- switch(
+    unknown_param,
+    mu = theta_hat$mu_ilr,
+    sigma = sigma_vech_hat,
+    both = c(theta_hat$mu_ilr, sigma_vech_hat)
+  )
+
+  gaussian_score_matrix_from_ilr <- function(z, theta) {
+    Sigma_inv <- solve(theta$Sigma_ilr)
+    centered <- sweep(z, 2L, theta$mu_ilr, FUN = "-")
+    score_mu <- centered %*% t(Sigma_inv)
+    score_sigma <- t(vapply(seq_len(nrow(z)), function(i) {
+      rr <- centered[i, , drop = FALSE]
+      matrix_score <- 0.5 * (Sigma_inv %*% crossprod(rr) %*% Sigma_inv - Sigma_inv)
+      fast_multiplier_sym_score_to_vech(matrix_score)
+    }, numeric(d * (d + 1L) / 2L)))
+
+    if (identical(unknown_param, "mu")) {
+      return(score_mu)
+    }
+    if (identical(unknown_param, "sigma")) {
+      return(score_sigma)
+    }
+    cbind(score_mu, score_sigma)
+  }
+
+  gaussian_influence_matrix_from_ilr <- function(z, theta) {
+    centered <- sweep(z, 2L, theta$mu_ilr, FUN = "-")
+    if_mu <- centered
+    if_sigma <- t(vapply(seq_len(nrow(z)), function(i) {
+      rr <- centered[i, , drop = FALSE]
+      fast_multiplier_vech(crossprod(rr) - theta$Sigma_ilr)
+    }, numeric(d * (d + 1L) / 2L)))
+
+    if (identical(unknown_param, "mu")) {
+      return(if_mu)
+    }
+    if (identical(unknown_param, "sigma")) {
+      return(if_sigma)
+    }
+    cbind(if_mu, if_sigma)
+  }
+
+  derivative_control <- fast_multiplier_parse_derivative_control(control)
+  z_obs <- normalized$ilr
+  S_obs <- gaussian_influence_matrix_from_ilr(z_obs, theta_hat)
+
+  if (!is.null(derivative_control$derivative_mc_seed)) {
+    set.seed(derivative_control$derivative_mc_seed)
+  }
+  aux_sample <- rlogistic_gaussian_simplex(
+    n = derivative_control$derivative_mc_size,
+    mu_ilr = theta_hat$mu_ilr,
+    Sigma_ilr = theta_hat$Sigma_ilr,
+    control = control
+  )
+  z_aux <- logistic_gaussian_ilr_matrix(aux_sample, control)
+  Psi_aux <- gaussian_score_matrix_from_ilr(z_aux, theta_hat)
+  Vhat <- diag(ncol(S_obs))
+  vhat_diagnostics <- fast_multiplier_vhat_diagnostics(
+    S_obs = S_obs,
+    Psi_aux = Psi_aux,
+    Vhat = Vhat,
+    par0 = par0
+  )
+
+  observed_cvm_distance_matrix <- NULL
+  if (!is.null(cvm_prep)) {
+    observed_cvm_distance_matrix <- cvm_prep$distance_matrix
+    if (is.null(observed_cvm_distance_matrix)) {
+      observed_cvm_distance_matrix <- spec$distance_matrix(normalized, normalized, control)
+    }
+    observed_cvm_distance_matrix <- as.matrix(observed_cvm_distance_matrix)
+  }
+
+  list(
+    S_obs = S_obs,
+    Vhat = Vhat,
+    Psi_aux = Psi_aux,
+    vhat_method = "gaussian_mle_influence_identity",
+    vhat_diagnostics = vhat_diagnostics,
+    observed_cvm_distance_matrix = observed_cvm_distance_matrix,
+    derivative_method = derivative_control$derivative_method,
+    derivative_mc_size = derivative_control$derivative_mc_size,
+    derivative_mc_seed = if (is.null(derivative_control$derivative_mc_seed)) NA_integer_ else derivative_control$derivative_mc_seed,
+    D_ks = fast_multiplier_compute_D_ks(
+      spec = spec,
+      aux_sample = aux_sample,
+      Psi_aux = Psi_aux,
+      ks_prep = ks_prep,
+      control = control
+    ),
+    D_cvm = fast_multiplier_compute_D_cvm(
+      spec = spec,
+      aux_sample = aux_sample,
+      Psi_aux = Psi_aux,
+      data = normalized,
+      cvm_prep = cvm_prep,
+      control = control
+    )
+  )
 }
 
 make_logistic_gaussian_spec <- function(unknown_param = "both") {
@@ -1049,7 +1736,22 @@ make_logistic_gaussian_spec <- function(unknown_param = "both") {
       },
       unknown_param = unknown_param,
       distance_type = "aitchison",
-      weighted_mle = TRUE
+      weighted_mle = TRUE,
+      fast_multiplier_prepare = function(data,
+                                         theta_hat,
+                                         ks_prep = NULL,
+                                         cvm_prep = NULL,
+                                         control = list()) {
+        prepare_logistic_gaussian_fast_multiplier(
+          spec = make_logistic_gaussian_spec(unknown_param = unknown_param),
+          data = data,
+          theta_hat = theta_hat,
+          ks_prep = ks_prep,
+          cvm_prep = cvm_prep,
+          control = control,
+          unknown_param = unknown_param
+        )
+      }
     )
   )
 }
@@ -1223,6 +1925,66 @@ fit_vmf_theta <- function(data,
   )
 }
 
+prepare_vmf_fast_multiplier <- function(data,
+                                        theta_hat,
+                                        spec,
+                                        ks_prep = NULL,
+                                        cvm_prep = NULL,
+                                        control = list(),
+                                        distance_type = "geodesic") {
+  x <- normalize_vmf_data(data, control)
+  theta_hat <- normalize_vmf_theta(theta_hat, ambient_dim = ncol(x))
+  p <- length(theta_hat$xi)
+  q <- theta_hat$q
+  derivative_control <- fast_multiplier_parse_derivative_control(control)
+
+  S_obs <- t(vapply(seq_len(nrow(x)), function(i) {
+    psi_xi(x[i, ], theta_hat$xi, q)
+  }, numeric(p)))
+  Vhat <- -dot_psi_xi(theta_hat$xi, q)
+
+  if (isTRUE(any(!is.finite(Vhat)))) {
+    stop("The vMF fast multiplier preparation produced a non-finite `Vhat`.")
+  }
+
+  if (!is.null(derivative_control$derivative_mc_seed)) {
+    set.seed(derivative_control$derivative_mc_seed)
+  }
+  aux_sample <- rotasym::r_vMF(
+    derivative_control$derivative_mc_size,
+    mu = theta_hat$mu,
+    kappa = theta_hat$kappa
+  )
+  aux_sample <- normalize_vmf_data(aux_sample, control)
+  Psi_aux <- t(vapply(seq_len(nrow(aux_sample)), function(i) {
+    psi_xi(aux_sample[i, ], theta_hat$xi, q)
+  }, numeric(p)))
+
+  list(
+    S_obs = S_obs,
+    Vhat = Vhat,
+    Psi_aux = Psi_aux,
+    derivative_method = derivative_control$derivative_method,
+    derivative_mc_size = derivative_control$derivative_mc_size,
+    derivative_mc_seed = if (is.null(derivative_control$derivative_mc_seed)) NA_integer_ else derivative_control$derivative_mc_seed,
+    D_ks = fast_multiplier_compute_D_ks(
+      spec = spec,
+      aux_sample = aux_sample,
+      Psi_aux = Psi_aux,
+      ks_prep = ks_prep,
+      control = control
+    ),
+    D_cvm = fast_multiplier_compute_D_cvm(
+      spec = spec,
+      aux_sample = aux_sample,
+      Psi_aux = Psi_aux,
+      data = x,
+      cvm_prep = cvm_prep,
+      control = control
+    )
+  )
+}
+
 make_vmf_spec <- function(distance_type = c("chordal", "geodesic"),
                           unknown_param = "xi") {
   distance_type <- match.arg(distance_type)
@@ -1321,6 +2083,25 @@ make_vmf_spec <- function(distance_type = c("chordal", "geodesic"),
 
         NULL
       },
+      fast_multiplier_prepare = function(data,
+                                         theta_hat,
+                                         ks_prep = NULL,
+                                         cvm_prep = NULL,
+                                         control = list()) {
+        if (!identical(unknown_param, "xi")) {
+          stop("The fast vMF multiplier bootstrap currently supports only `unknown_param = 'xi'`.")
+        }
+
+        prepare_vmf_fast_multiplier(
+          data = data,
+          theta_hat = theta_hat,
+          spec = make_vmf_spec(distance_type = distance_type, unknown_param = unknown_param),
+          ks_prep = ks_prep,
+          cvm_prep = cvm_prep,
+          control = control,
+          distance_type = distance_type
+        )
+      },
       distance_type = distance_type,
       unknown_param = unknown_param
     )
@@ -1390,6 +2171,297 @@ normalize_jp_theta <- function(theta, ambient_dim = NULL) {
     alpha = if (psi == 0) 0 else tanh(kappa * psi),
     beta = if (psi == 0) NA_real_ else 1 / psi,
     q = q
+  )
+}
+
+fast_multiplier_small_circle_norm_constant <- function(kappa, nu) {
+  root_kappa <- sqrt(as.numeric(kappa))
+  (sqrt(pi) / (2 * root_kappa)) * (
+    small_circle_erf(root_kappa * (1 - nu)) +
+      small_circle_erf(root_kappa * (1 + nu))
+  )
+}
+
+fast_multiplier_small_circle_dlogc_dkappa <- function(kappa, nu) {
+  c_value <- fast_multiplier_small_circle_norm_constant(kappa, nu)
+  -1 / (2 * kappa) +
+    (
+      (1 - nu) * exp(-kappa * (1 - nu)^2) +
+        (1 + nu) * exp(-kappa * (1 + nu)^2)
+    ) / (2 * kappa * c_value)
+}
+
+fast_multiplier_small_circle_dlogc_dnu <- function(kappa, nu) {
+  c_value <- fast_multiplier_small_circle_norm_constant(kappa, nu)
+  (
+    exp(-kappa * (1 + nu)^2) -
+      exp(-kappa * (1 - nu)^2)
+  ) / c_value
+}
+
+fast_multiplier_small_circle_component_scores_natural <- function(s,
+                                                                  kappa,
+                                                                  nu) {
+  cbind(
+    -fast_multiplier_small_circle_dlogc_dkappa(kappa, nu) - (s - nu)^2,
+    -fast_multiplier_small_circle_dlogc_dnu(kappa, nu) + 2 * kappa * (s - nu)
+  )
+}
+
+fast_multiplier_small_circle_component_log_density <- function(s,
+                                                               kappa,
+                                                               nu) {
+  -log(fast_multiplier_small_circle_norm_constant(kappa, nu)) -
+    kappa * (s - nu)^2
+}
+
+fast_multiplier_cardioid_legendre <- function(z, k) {
+  z <- as.numeric(z)
+  switch(
+    as.character(as.integer(k)),
+    `1` = z,
+    `2` = (3 * z^2 - 1) / 2,
+    `3` = (5 * z^3 - 3 * z) / 2,
+    `4` = (35 * z^4 - 30 * z^2 + 3) / 8,
+    stop("Fast cardioid support currently covers only k = 1, 2, 3, 4.")
+  )
+}
+
+fast_multiplier_cardioid_legendre_prime <- function(z, k) {
+  z <- as.numeric(z)
+  switch(
+    as.character(as.integer(k)),
+    `1` = rep.int(1, length(z)),
+    `2` = 3 * z,
+    `3` = (15 * z^2 - 3) / 2,
+    `4` = (35 * z^3 - 15 * z) / 2,
+    stop("Fast cardioid support currently covers only k = 1, 2, 3, 4.")
+  )
+}
+
+fast_multiplier_jp_axial_expectations <- function(alpha,
+                                                  beta,
+                                                  quad_n = 1024L) {
+  quad <- rotational_gauss_legendre(as.integer(quad_n))
+  term <- 1 + alpha * quad$nodes
+  if (any(!is.finite(term)) || any(term <= 0)) {
+    stop("JP axial expectation quadrature encountered nonpositive support.")
+  }
+
+  weights <- quad$weights * term^beta
+  denom <- sum(weights)
+  if (!is.finite(denom) || denom <= 0) {
+    stop("JP axial expectation quadrature produced a nonpositive normalizing constant.")
+  }
+
+  list(
+    e_t_over_one_plus_alpha_t = sum(weights * (quad$nodes / term)) / denom,
+    e_log_one_plus_alpha_t = sum(weights * log(term)) / denom
+  )
+}
+
+prepare_jp_fast_multiplier <- function(spec,
+                                       data,
+                                       theta_hat,
+                                       ks_prep = NULL,
+                                       cvm_prep = NULL,
+                                       control = list(),
+                                       distance_type = "geodesic") {
+  x <- normalize_jp_data(data, control)
+  theta_hat <- normalize_jp_theta(theta_hat, ambient_dim = ncol(x))
+
+  if (jp_is_near_zero_vmf_s2(
+    ambient_dim = length(theta_hat$mu),
+    kappa = theta_hat$kappa,
+    psi = theta_hat$psi,
+    abs_kappa_psi_tol = as.numeric(control$jp_vmf_switch_abs_kappa_psi %||% jp_vmf_near_zero_abs_kappa_psi_default)
+  )) {
+    theta_vmf <- normalize_vmf_theta(list(mu = theta_hat$mu, kappa = theta_hat$kappa))
+    return(prepare_vmf_fast_multiplier(
+      data = x,
+      theta_hat = theta_vmf,
+      spec = make_vmf_spec(distance_type = distance_type, unknown_param = "xi"),
+      ks_prep = ks_prep,
+      cvm_prep = cvm_prep,
+      control = control,
+      distance_type = distance_type
+    ))
+  }
+
+  jp_alpha_boundary_eps <- as.numeric(control$jp_fast_alpha_boundary_eps %||% 1e-8)
+  if (abs(theta_hat$alpha) >= 1 - jp_alpha_boundary_eps) {
+    return(list(
+      fallback_to_reestimated = TRUE,
+      fallback_reason = "jp_alpha_boundary",
+      derivative_method = NA_character_,
+      derivative_mc_size = NA_integer_,
+      derivative_mc_seed = NA_integer_
+    ))
+  }
+
+  chart <- fast_multiplier_sphere_chart(theta_hat$mu)
+  par0 <- c(0, 0, theta_hat$kappa, theta_hat$psi)
+
+  state_from_par <- function(par) {
+    mapped <- fast_multiplier_sphere_chart_map(chart, par[1:2])
+    normalize_jp_theta(
+      list(mu = mapped$mu, kappa = par[[3L]], psi = par[[4L]]),
+      ambient_dim = ncol(x)
+    )
+  }
+
+  score_matrix_fn <- function(sample, par) {
+    theta_state <- state_from_par(par)
+    sample <- normalize_jp_data(sample, control)
+    jac_mu <- fast_multiplier_sphere_chart_jacobian(chart, par[1:2])
+    z <- pmin(pmax(as.numeric(sample %*% theta_state$mu), -1), 1)
+    alpha <- theta_state$alpha
+    beta <- theta_state$beta
+    term <- 1 + alpha * z
+    axial <- fast_multiplier_jp_axial_expectations(
+      alpha = alpha,
+      beta = beta,
+      quad_n = as.integer(control$jp_fast_axial_quad_n %||% 1024L)
+    )
+
+    coeff_mu <- alpha * beta / term
+    score_mu <- t(vapply(seq_len(nrow(sample)), function(i) {
+      drop(t(jac_mu) %*% (coeff_mu[[i]] * sample[i, ]))
+    }, numeric(2L)))
+    psi_alpha <- beta * (z / term - axial$e_t_over_one_plus_alpha_t)
+    psi_beta <- log(term) - axial$e_log_one_plus_alpha_t
+
+    cbind(
+      score_mu,
+      theta_state$psi * (1 - alpha^2) * psi_alpha,
+      theta_state$kappa * (1 - alpha^2) * psi_alpha - (theta_state$psi^-2) * psi_beta
+    )
+  }
+
+  sample_fn <- function(n_aux, par) {
+    theta_state <- state_from_par(par)
+    r_sph_jp(
+      n = n_aux,
+      mu = theta_state$mu,
+      kappa = theta_state$kappa,
+      psi = theta_state$psi
+    )
+  }
+
+  prepare_fast_multiplier_score_model(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = cvm_prep,
+    control = control,
+    par0 = par0,
+    score_matrix_fn = score_matrix_fn,
+    sample_fn = sample_fn
+  )
+}
+
+prepare_beta_mixture2_fast_multiplier <- function(spec,
+                                                  data,
+                                                  theta_hat,
+                                                  ks_prep = NULL,
+                                                  cvm_prep = NULL,
+                                                  control = list()) {
+  x <- normalize_beta_mixture2_data(data, control)
+  theta_hat <- normalize_beta_mixture2_theta(theta_hat, ambient_dim = ncol(x))
+  chart <- fast_multiplier_sphere_chart(theta_hat$mu)
+  par0 <- c(
+    0,
+    0,
+    stats::qlogis(theta_hat$weight1),
+    log(theta_hat$alpha1),
+    log(theta_hat$beta1),
+    log(theta_hat$alpha2),
+    log(theta_hat$beta2)
+  )
+  weight_eps <- as.numeric(control$beta_mixture2_weight_eps %||% 0.01)
+  shape_lower <- as.numeric(control$beta_mixture2_shape_lower %||% 0.05)
+  shape_upper <- as.numeric(control$beta_mixture2_shape_upper %||% 1e3)
+  y_eps <- as.numeric(control$beta_mixture2_eps %||% 1e-12)
+
+  state_from_par <- function(par) {
+    mapped <- fast_multiplier_sphere_chart_map(chart, par[1:2])
+    normalize_beta_mixture2_theta(
+      list(
+        mu = mapped$mu,
+        weight1 = rotational_bounded_weight(par[[3L]], weight_eps = weight_eps),
+        alpha1 = rotational_positive_parameter(par[[4L]], lower = shape_lower, upper = shape_upper),
+        beta1 = rotational_positive_parameter(par[[5L]], lower = shape_lower, upper = shape_upper),
+        alpha2 = rotational_positive_parameter(par[[6L]], lower = shape_lower, upper = shape_upper),
+        beta2 = rotational_positive_parameter(par[[7L]], lower = shape_lower, upper = shape_upper)
+      ),
+      ambient_dim = ncol(x)
+    )
+  }
+
+  score_matrix_fn <- function(sample, par) {
+    theta_state <- state_from_par(par)
+    sample <- normalize_beta_mixture2_data(sample, control)
+    jac_mu <- fast_multiplier_sphere_chart_jacobian(chart, par[1:2])
+    z <- pmin(pmax(as.numeric(sample %*% theta_state$mu), -1), 1)
+    y <- rotational_clamp_unit_interval((z + 1) / 2, eps = y_eps)
+    log_b1 <- stats::dbeta(y, theta_state$alpha1, theta_state$beta1, log = TRUE)
+    log_b2 <- stats::dbeta(y, theta_state$alpha2, theta_state$beta2, log = TRUE)
+    log_m <- rotational_logsumexp2(
+      log(theta_state$weight1) + log_b1,
+      log1p(-theta_state$weight1) + log_b2
+    )
+    r1 <- exp(log(theta_state$weight1) + log_b1 - log_m)
+    r2 <- 1 - r1
+
+    g1 <- (theta_state$alpha1 - 1) / y - (theta_state$beta1 - 1) / (1 - y)
+    g2 <- (theta_state$alpha2 - 1) / y - (theta_state$beta2 - 1) / (1 - y)
+    coeff_mu <- 0.5 * (r1 * g1 + r2 * g2)
+    score_mu <- t(vapply(seq_len(nrow(sample)), function(i) {
+      drop(t(jac_mu) %*% (coeff_mu[[i]] * sample[i, ]))
+    }, numeric(2L)))
+
+    cbind(
+      score_mu,
+      r1 - theta_state$weight1,
+      theta_state$alpha1 * r1 * (
+        log(y) - digamma(theta_state$alpha1) + digamma(theta_state$alpha1 + theta_state$beta1)
+      ),
+      theta_state$beta1 * r1 * (
+        log1p(-y) - digamma(theta_state$beta1) + digamma(theta_state$alpha1 + theta_state$beta1)
+      ),
+      theta_state$alpha2 * r2 * (
+        log(y) - digamma(theta_state$alpha2) + digamma(theta_state$alpha2 + theta_state$beta2)
+      ),
+      theta_state$beta2 * r2 * (
+        log1p(-y) - digamma(theta_state$beta2) + digamma(theta_state$alpha2 + theta_state$beta2)
+      )
+    )
+  }
+
+  sample_fn <- function(n_aux, par) {
+    theta_state <- state_from_par(par)
+    r_sph_beta_mixture2(
+      n = n_aux,
+      mu = theta_state$mu,
+      weight1 = theta_state$weight1,
+      alpha1 = theta_state$alpha1,
+      beta1 = theta_state$beta1,
+      alpha2 = theta_state$alpha2,
+      beta2 = theta_state$beta2
+    )
+  }
+
+  prepare_fast_multiplier_score_model(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = cvm_prep,
+    control = control,
+    par0 = par0,
+    score_matrix_fn = score_matrix_fn,
+    sample_fn = sample_fn
   )
 }
 
@@ -1524,7 +2596,22 @@ make_jp_spec <- function(distance_type = c("chordal", "geodesic")) {
         )
       },
       distance_type = distance_type,
-      unknown_param = "theta"
+      unknown_param = "theta",
+      fast_multiplier_prepare = function(data,
+                                         theta_hat,
+                                         ks_prep = NULL,
+                                         cvm_prep = NULL,
+                                         control = list()) {
+        prepare_jp_fast_multiplier(
+          spec = make_jp_spec(distance_type = distance_type),
+          data = data,
+          theta_hat = theta_hat,
+          ks_prep = ks_prep,
+          cvm_prep = cvm_prep,
+          control = control,
+          distance_type = distance_type
+        )
+      }
     )
   )
 }
@@ -1599,6 +2686,86 @@ fit_hvmf_theta <- function(data,
   )
 }
 
+prepare_hvmf_fast_multiplier <- function(spec,
+                                         data,
+                                         theta_hat,
+                                         ks_prep = NULL,
+                                         cvm_prep = NULL,
+                                         control = list(),
+                                         unknown_param = "both") {
+  if (!identical(unknown_param, "both")) {
+    stop("The fast HvMF multiplier bootstrap currently supports only `unknown_param = 'both'`.")
+  }
+
+  x <- normalize_hvmf_data(data, control)
+  theta_hat <- normalize_hvmf_theta(theta_hat, control = control)
+  par0 <- c(theta_hat$chi, theta_hat$theta, theta_hat$kappa)
+
+  state_from_par <- function(par) {
+    chi <- as.numeric(par[[1L]])
+    theta_angle <- as.numeric(par[[2L]])
+    kappa <- as.numeric(par[[3L]])
+    mu <- c(
+      cosh(chi),
+      sinh(chi) * cos(theta_angle),
+      sinh(chi) * sin(theta_angle)
+    )
+    normalize_hvmf_theta(list(mu = mu, kappa = kappa), control = control)
+  }
+
+  dmu_dchi <- function(chi, theta_angle) {
+    c(
+      sinh(chi),
+      cosh(chi) * cos(theta_angle),
+      cosh(chi) * sin(theta_angle)
+    )
+  }
+
+  dmu_dtheta <- function(chi, theta_angle) {
+    c(
+      0,
+      -sinh(chi) * sin(theta_angle),
+      sinh(chi) * cos(theta_angle)
+    )
+  }
+
+  score_matrix_fn <- function(sample, par) {
+    theta_state <- state_from_par(par)
+    sample <- normalize_hvmf_data(sample, control)
+    chi <- theta_state$chi
+    theta_angle <- theta_state$theta
+    mu <- theta_state$mu
+    kappa <- theta_state$kappa
+    dchi_vec <- dmu_dchi(chi, theta_angle)
+    dtheta_vec <- dmu_dtheta(chi, theta_angle)
+    mink_mu <- apply(sample, 1L, function(row) minkowski_inner_product(row, mu))
+    score_loc_chi <- kappa * apply(sample, 1L, function(row) minkowski_inner_product(row, dchi_vec))
+    score_loc_theta <- kappa * apply(sample, 1L, function(row) minkowski_inner_product(row, dtheta_vec))
+    cbind(
+      score_loc_chi,
+      score_loc_theta,
+      1 / kappa + 1 + mink_mu
+    )
+  }
+
+  sample_fn <- function(n_aux, par) {
+    theta_state <- state_from_par(par)
+    rhvmf_h2_gig(n_aux, mu = theta_state$mu, kappa = theta_state$kappa)
+  }
+
+  prepare_fast_multiplier_score_model(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = cvm_prep,
+    control = control,
+    par0 = par0,
+    score_matrix_fn = score_matrix_fn,
+    sample_fn = sample_fn
+  )
+}
+
 make_hvmf_spec <- function(unknown_param = "both") {
   new_model_spec(
     name = "hvmf_geodesic",
@@ -1660,7 +2827,22 @@ make_hvmf_spec <- function(unknown_param = "both") {
         NULL
       },
       distance_type = "geodesic",
-      unknown_param = unknown_param
+      unknown_param = unknown_param,
+      fast_multiplier_prepare = function(data,
+                                         theta_hat,
+                                         ks_prep = NULL,
+                                         cvm_prep = NULL,
+                                         control = list()) {
+        prepare_hvmf_fast_multiplier(
+          spec = make_hvmf_spec(unknown_param = unknown_param),
+          data = data,
+          theta_hat = theta_hat,
+          ks_prep = ks_prep,
+          cvm_prep = cvm_prep,
+          control = control,
+          unknown_param = unknown_param
+        )
+      }
     )
   )
 }
@@ -1706,6 +2888,72 @@ fit_spherical_cauchy_theta <- function(data,
   )
 
   normalize_spherical_cauchy_theta(fit, ambient_dim = ncol(x))
+}
+
+prepare_spherical_cauchy_fast_multiplier <- function(spec,
+                                                     data,
+                                                     theta_hat,
+                                                     ks_prep = NULL,
+                                                     cvm_prep = NULL,
+                                                     control = list()) {
+  x <- normalize_spherical_cauchy_data(data, control)
+  theta_hat <- normalize_spherical_cauchy_theta(theta_hat, ambient_dim = ncol(x))
+  rho_zero_eps <- as.numeric(control$spherical_cauchy_fast_boundary_eps %||%
+    control$spherical_cauchy_fast_zero_eps %||% 1e-8)
+  if (theta_hat$rho <= rho_zero_eps) {
+    return(list(
+      fallback_to_reestimated = TRUE,
+      fallback_reason = "spherical_cauchy_rho_zero_nonidentification",
+      derivative_method = NA_character_,
+      derivative_mc_size = NA_integer_,
+      derivative_mc_seed = NA_integer_
+    ))
+  }
+  par0 <- as.numeric(theta_hat$phi)
+
+  state_from_par <- function(par) {
+    normalize_spherical_cauchy_theta(list(phi = par), ambient_dim = ncol(x))
+  }
+
+  score_matrix_fn <- function(sample, par) {
+    theta_state <- state_from_par(par)
+    sample <- normalize_spherical_cauchy_data(sample, control)
+    phi <- as.numeric(theta_state$phi)
+    phi_norm_sq <- sum(phi^2)
+    denom <- as.numeric(1 - 2 * (sample %*% phi) + phi_norm_sq)
+    const_term <- matrix(
+      rep(-2 * phi / (1 - phi_norm_sq), each = nrow(sample)),
+      nrow = nrow(sample),
+      ncol = length(phi)
+    )
+    phi_matrix <- matrix(
+      rep(phi, each = nrow(sample)),
+      nrow = nrow(sample),
+      ncol = length(phi)
+    )
+    const_term + 3 * sample / denom - sweep(phi_matrix, 1L, 3 / denom, FUN = "*")
+  }
+
+  sample_fn <- function(n_aux, par) {
+    theta_state <- state_from_par(par)
+    r_sph_spherical_cauchy(
+      n = n_aux,
+      mu = theta_state$mu,
+      rho = theta_state$rho
+    )
+  }
+
+  prepare_fast_multiplier_score_model(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = cvm_prep,
+    control = control,
+    par0 = par0,
+    score_matrix_fn = score_matrix_fn,
+    sample_fn = sample_fn
+  )
 }
 
 make_spherical_cauchy_spec <- function(distance_type = c("chordal", "geodesic")) {
@@ -1817,7 +3065,21 @@ make_spherical_cauchy_spec <- function(distance_type = c("chordal", "geodesic"))
         )
       },
       distance_type = distance_type,
-      unknown_param = "theta"
+      unknown_param = "theta",
+      fast_multiplier_prepare = function(data,
+                                         theta_hat,
+                                         ks_prep = NULL,
+                                         cvm_prep = NULL,
+                                         control = list()) {
+        prepare_spherical_cauchy_fast_multiplier(
+          spec = make_spherical_cauchy_spec(distance_type = distance_type),
+          data = data,
+          theta_hat = theta_hat,
+          ks_prep = ks_prep,
+          cvm_prep = cvm_prep,
+          control = control
+        )
+      }
     )
   )
 }
@@ -1957,7 +3219,21 @@ make_beta_mixture2_spec <- function(distance_type = c("chordal", "geodesic")) {
       },
       distance_type = distance_type,
       unknown_param = "theta",
-      weighted_mle = TRUE
+      weighted_mle = TRUE,
+      fast_multiplier_prepare = function(data,
+                                         theta_hat,
+                                         ks_prep = NULL,
+                                         cvm_prep = NULL,
+                                         control = list()) {
+        prepare_beta_mixture2_fast_multiplier(
+          spec = make_beta_mixture2_spec(distance_type = distance_type),
+          data = data,
+          theta_hat = theta_hat,
+          ks_prep = ks_prep,
+          cvm_prep = cvm_prep,
+          control = control
+        )
+      }
     )
   )
 }
@@ -2329,17 +3605,70 @@ axial_truncnorm_decode_theta <- function(par) {
   )
 }
 
-axial_truncnorm_default_theta_start <- function(data) {
+axial_truncnorm_default_theta_start <- function(data,
+                                                weights = NULL,
+                                                prob_eps = 1e-4,
+                                                kappa_min = 1e-8,
+                                                kappa_max = 1e8) {
   z <- normalize_axial_truncnorm_mixture2_data(data)
-  z_pos <- z[z >= 0]
-  z_neg <- -z[z < 0]
+  obs_weights <- if (is.null(weights)) {
+    rep.int(1 / length(z), length(z))
+  } else {
+    normalize_probability_weights(weights, length(z))
+  }
+
+  weighted_mean <- function(values, value_weights, fallback) {
+    if (length(values) == 0L || sum(value_weights) <= 0) {
+      return(fallback)
+    }
+    sum(value_weights * values) / sum(value_weights)
+  }
+
+  weighted_variance <- function(values, value_weights, center, fallback) {
+    if (length(values) <= 1L || sum(value_weights) <= 0) {
+      return(fallback)
+    }
+    sum(value_weights * (values - center)^2) / sum(value_weights)
+  }
+
+  moment_kappa <- function(values, value_weights, center, fallback_var = 0.05^2) {
+    variance_value <- weighted_variance(values, value_weights, center = center, fallback = fallback_var)
+    clip_axial_truncnorm_kappa(1 / (2 * max(variance_value, 1 / (2 * kappa_max))), min_value = kappa_min, max_value = kappa_max)
+  }
+
+  north_idx <- z >= 0
+  south_idx <- !north_idx
+
+  north_mass <- sum(obs_weights[north_idx])
+  south_mass <- sum(obs_weights[south_idx])
+  total_mass <- north_mass + south_mass
+  if (!is.finite(total_mass) || total_mass <= 0) {
+    stop("Failed to construct a valid weighted start for the axial truncated-normal mixture.")
+  }
+
+  pi0 <- clip_axial_truncnorm_prob(north_mass / total_mass, eps = prob_eps)
+
+  z_pos <- z[north_idx]
+  w_pos <- obs_weights[north_idx]
+  z_neg <- -z[south_idx]
+  w_neg <- obs_weights[south_idx]
+
+  fallback_center <- clip_axial_truncnorm_prob(sum(obs_weights * abs(z)), eps = prob_eps)
+  nu1 <- clip_axial_truncnorm_prob(
+    weighted_mean(z_pos, w_pos, fallback = fallback_center),
+    eps = prob_eps
+  )
+  nu2 <- clip_axial_truncnorm_prob(
+    weighted_mean(z_neg, w_neg, fallback = fallback_center),
+    eps = prob_eps
+  )
 
   list(
-    pi = 0.5,
-    kappa1 = 10,
-    nu1 = if (length(z_pos) > 0L) clip_axial_truncnorm_prob(mean(z_pos), eps = 1e-4) else 0.25,
-    kappa2 = 10,
-    nu2 = if (length(z_neg) > 0L) clip_axial_truncnorm_prob(mean(z_neg), eps = 1e-4) else 0.25
+    pi = pi0,
+    kappa1 = moment_kappa(z_pos, w_pos, center = nu1),
+    nu1 = nu1,
+    kappa2 = moment_kappa(z_neg, w_neg, center = nu2),
+    nu2 = nu2
   )
 }
 
@@ -2366,7 +3695,10 @@ fit_axial_truncnorm_mixture2_theta <- function(data,
     stop("`weights` must be NULL or a nonnegative finite vector with positive sum and length equal to `data`.")
   }
 
-  theta_start <- control$axial_truncnorm_mixture2_start_theta %||% axial_truncnorm_default_theta_start(z)
+  theta_start <- control$axial_truncnorm_mixture2_start_theta %||% axial_truncnorm_default_theta_start(
+    data = z,
+    weights = obs_weights
+  )
   theta_start <- normalize_axial_truncnorm_mixture2_theta(theta_start)
   start_par <- axial_truncnorm_encode_theta(theta_start)
 

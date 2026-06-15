@@ -255,6 +255,7 @@ rotmix_theta_summary_row <- function(model_name, theta) {
       param2 = theta$beta1,
       param3 = theta$alpha2,
       param4 = theta$beta2,
+      min_shape_hat = min(theta$alpha1, theta$beta1, theta$alpha2, theta$beta2),
       stringsAsFactors = FALSE
     ))
   }
@@ -283,6 +284,7 @@ run_single_rotmix_comet_fit <- function(data_matrix,
                                         seed = 20260601L,
                                         M_value = 60L,
                                         ks_t_points = 200L,
+                                        bootstrap_method = "reestimated",
                                         distance_type = "geodesic",
                                         control = list()) {
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
@@ -336,6 +338,7 @@ run_single_rotmix_comet_fit <- function(data_matrix,
       alpha = 0.05,
       n_cores = as.integer(n_cores),
       seed = as.integer(statistic_seed),
+      bootstrap_method = bootstrap_method,
       keep = list(
         observed_process = FALSE,
         bootstrap_statistics = FALSE,
@@ -383,7 +386,22 @@ run_single_rotmix_comet_fit <- function(data_matrix,
         gof_parts,
         function(part) as.numeric(part$diagnostics$elapsed_seconds %||% NA_real_),
         numeric(1)
-      )
+      ),
+      bootstrap_method = unique(vapply(
+        gof_parts,
+        function(part) as.character(part$diagnostics$bootstrap_method %||% NA_character_),
+        character(1)
+      )),
+      effective_bootstrap_method = unique(vapply(
+        gof_parts,
+        function(part) as.character(part$diagnostics$effective_bootstrap_method %||% NA_character_),
+        character(1)
+      )),
+      fallback_reason = unique(vapply(
+        gof_parts,
+        function(part) as.character(part$diagnostics$fallback_reason %||% NA_character_),
+        character(1)
+      ))
     )
   )
   rm(gof_parts)
@@ -425,6 +443,10 @@ run_single_rotmix_comet_fit <- function(data_matrix,
     B = as.integer(B),
     M = as.integer(M_value),
     n_cores = as.integer(n_cores),
+    bootstrap_method = paste(gof_result$diagnostics$bootstrap_method, collapse = ";"),
+    effective_bootstrap_method = paste(gof_result$diagnostics$effective_bootstrap_method, collapse = ";"),
+    fallback_reason = paste(gof_result$diagnostics$fallback_reason[!is.na(gof_result$diagnostics$fallback_reason) &
+      nzchar(gof_result$diagnostics$fallback_reason)], collapse = ";"),
     elapsed_seconds = gof_result$diagnostics$elapsed_seconds,
     stringsAsFactors = FALSE
   )
@@ -464,7 +486,19 @@ run_comets_mixtures_short_long <- function(
   seed = 20260601L,
   M_value = 60L,
   ks_t_points = 200L,
-  distance_type = "geodesic"
+  bootstrap_method = "reestimated",
+  distance_type = "geodesic",
+  control_beta = list(
+    beta_mixture2_profile_method = "legendre",
+    beta_mixture2_quad_n = 100L,
+    beta_mixture2_shape_lower = 1.001,
+    beta_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9)
+  ),
+  control_logit = list(
+    logitnormal_mixture2_profile_method = "legendre",
+    logitnormal_mixture2_quad_n = 400L,
+    logitnormal_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9)
+  )
 ) {
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   comets_data <- load_comets_distance_profile_data_rotmix()
@@ -475,17 +509,6 @@ run_comets_mixtures_short_long <- function(
 
   summary_rows <- list()
   counter <- 0L
-
-  control_beta <- list(
-    beta_mixture2_profile_method = "legendre",
-    beta_mixture2_quad_n = 100L,
-    beta_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9)
-  )
-  control_logit <- list(
-    logitnormal_mixture2_profile_method = "legendre",
-    logitnormal_mixture2_quad_n = 400L,
-    logitnormal_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9)
-  )
 
   for (dataset_name in datasets) {
     data_matrix <- if (identical(dataset_name, "short")) {
@@ -501,11 +524,12 @@ run_comets_mixtures_short_long <- function(
       control <- if (identical(model_name, "beta_mixture2")) control_beta else control_logit
 
       message(sprintf(
-        "[Comets] %s / %s with B = %d, n_cores = %d",
+        "[Comets] %s / %s with B = %d, n_cores = %d, bootstrap_method = %s",
         dataset_label,
         model_name,
         as.integer(B),
-        as.integer(n_cores)
+        as.integer(n_cores),
+        bootstrap_method
       ))
 
       summary_rows[[length(summary_rows) + 1L]] <- run_single_rotmix_comet_fit(
@@ -519,6 +543,7 @@ run_comets_mixtures_short_long <- function(
         seed = as.integer(seed) + counter,
         M_value = as.integer(M_value),
         ks_t_points = as.integer(ks_t_points),
+        bootstrap_method = bootstrap_method,
         distance_type = distance_type,
         control = control
       )
@@ -584,7 +609,15 @@ if (sys.nframe() == 0L) {
     seed = if (!is.null(args$seed)) as.integer(args$seed) else 20260601L,
     M_value = if (!is.null(args$M)) as.integer(args$M) else 60L,
     ks_t_points = if (!is.null(args$ks_t_points)) as.integer(args$ks_t_points) else 200L,
-    distance_type = args$distance_type %||% "geodesic"
+    bootstrap_method = args$bootstrap_method %||% "reestimated",
+    distance_type = args$distance_type %||% "geodesic",
+    control_beta = list(
+      beta_mixture2_profile_method = "legendre",
+      beta_mixture2_quad_n = 100L,
+      beta_mixture2_shape_lower = if (!is.null(args$beta_mixture2_shape_lower)) as.numeric(args$beta_mixture2_shape_lower) else 1.001,
+      beta_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9),
+      fast_bootstrap_chunk_size = if (!is.null(args$fast_bootstrap_chunk_size)) as.integer(args$fast_bootstrap_chunk_size) else NULL
+    )
   )
 
   message(sprintf("Summary CSV: %s", file.path(result$output_root, "comets_rotational_mixtures_summary.csv")))

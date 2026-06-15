@@ -223,6 +223,10 @@ summarize_cardioid_model_result <- function(result,
     model = model$label,
     k = as.integer(model$k),
     null_type = model$null$type,
+    requested_bootstrap_method = result$diagnostics$requested_bootstrap_method %||% result$diagnostics$bootstrap_method,
+    bootstrap_method = result$diagnostics$bootstrap_method,
+    effective_bootstrap_method = result$diagnostics$effective_bootstrap_method %||% result$diagnostics$bootstrap_method,
+    fallback_reason = result$diagnostics$fallback_reason %||% NA_character_,
     statistic = statistic,
     spec_name = result$diagnostics$spec_name,
     engine = result$diagnostics$engine,
@@ -254,6 +258,7 @@ run_single_cardioid_comet_model <- function(data_matrix,
                                             B,
                                             n_cores,
                                             seed,
+                                            bootstrap_method = "reestimated",
                                             ks_grid = NULL,
                                             distance_type = "geodesic",
                                             control = list()) {
@@ -263,7 +268,13 @@ run_single_cardioid_comet_model <- function(data_matrix,
     unknown_param = "both"
   )
 
-  multiplier_bootstrap_gof(
+  effective_bootstrap_method <- if (identical(model$null$type, "simple")) {
+    "reestimated"
+  } else {
+    bootstrap_method
+  }
+
+  result <- multiplier_bootstrap_gof(
     data = data_matrix,
     spec = spec,
     null = model$null,
@@ -273,6 +284,7 @@ run_single_cardioid_comet_model <- function(data_matrix,
     alpha = 0.05,
     n_cores = as.integer(n_cores),
     seed = as.integer(seed),
+    bootstrap_method = effective_bootstrap_method,
     keep = list(
       observed_process = TRUE,
       bootstrap_statistics = TRUE,
@@ -280,6 +292,9 @@ run_single_cardioid_comet_model <- function(data_matrix,
     ),
     control = control
   )
+
+  result$diagnostics$requested_bootstrap_method <- bootstrap_method
+  result
 }
 
 run_cardioid_comet_stage <- function(data_matrix,
@@ -290,6 +305,7 @@ run_cardioid_comet_stage <- function(data_matrix,
                                      B,
                                      n_cores,
                                      seed,
+                                     bootstrap_method = "reestimated",
                                      ks_grid = NULL,
                                      distance_type = "geodesic",
                                      control = list()) {
@@ -321,6 +337,7 @@ run_cardioid_comet_stage <- function(data_matrix,
       B = B,
       n_cores = n_cores,
       seed = seed + i,
+      bootstrap_method = bootstrap_method,
       ks_grid = ks_grid,
       distance_type = distance_type,
       control = control
@@ -435,6 +452,7 @@ run_comets_distance_profile_cardioid <- function(output_root = NULL,
                                                  ks_t_points = 50L,
                                                  n_cores = 10L,
                                                  base_seed = 20260524L,
+                                                 bootstrap_method = "reestimated",
                                                  distance_type = "geodesic",
                                                  control = list(
                                                    cardioid_optim_control = list(maxit = 1000)
@@ -545,6 +563,7 @@ run_comets_distance_profile_cardioid <- function(output_root = NULL,
       B = stage$B,
       n_cores = n_cores,
       seed = base_seed + as.integer(stage$stage_id),
+      bootstrap_method = bootstrap_method,
       ks_grid = stage$ks_grid,
       distance_type = distance_type,
       control = control

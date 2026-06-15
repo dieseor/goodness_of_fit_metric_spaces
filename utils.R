@@ -585,6 +585,45 @@ hvmf_tabulate_projection_cdf_h2 <- function(alpha,
 #' @param cdf_table Output of `hvmf_tabulate_projection_cdf_h2()`
 #' @return Interpolated CDF values clipped to [0, 1]
 hvmf_eval_projection_cdf_tabulated <- function(y, cdf_table) {
+  hvmf_eval_projection_cdf_tabulated_spline(y = y, cdf_table = cdf_table)
+}
+
+hvmf_prepare_projection_cdf_interpolator <- function(cdf_table) {
+  if (!is.data.frame(cdf_table) || !all(c("y", "cdf") %in% names(cdf_table))) {
+    stop("`cdf_table` must be a data frame with columns `y` and `cdf`.")
+  }
+
+  y_grid <- as.numeric(cdf_table$y)
+  cdf_grid <- as.numeric(cdf_table$cdf)
+  if (length(y_grid) == 0L) {
+    stop("`cdf_table` cannot be empty.")
+  }
+
+  if (length(y_grid) == 1L) {
+    return(list(
+      type = "constant",
+      x_min = y_grid[[1L]],
+      x_max = y_grid[[1L]],
+      y_min = cdf_grid[[1L]],
+      y_max = cdf_grid[[1L]]
+    ))
+  }
+
+  list(
+    type = "spline",
+    x_min = y_grid[[1L]],
+    x_max = y_grid[[length(y_grid)]],
+    y_min = min(cdf_grid),
+    y_max = max(cdf_grid),
+    fn = stats::splinefun(
+      x = y_grid,
+      y = cdf_grid,
+      method = "monoH.FC"
+    )
+  )
+}
+
+hvmf_eval_projection_cdf_tabulated_linear <- function(y, cdf_table) {
   y <- as.numeric(y)
 
   if (!is.data.frame(cdf_table) || !all(c("y", "cdf") %in% names(cdf_table))) {
@@ -611,6 +650,24 @@ hvmf_eval_projection_cdf_tabulated <- function(y, cdf_table) {
     rule = 2
   )$y
 
+  output[y <= 1] <- 0
+  pmin(pmax(output, 0), 1)
+}
+
+hvmf_eval_projection_cdf_tabulated_spline <- function(y,
+                                                      cdf_table,
+                                                      interpolator = NULL) {
+  y <- as.numeric(y)
+  interpolator <- interpolator %||% hvmf_prepare_projection_cdf_interpolator(cdf_table)
+
+  if (identical(interpolator$type, "constant")) {
+    output <- rep(interpolator$y_min, length(y))
+    output[y <= interpolator$x_min] <- 0
+    return(pmin(pmax(output, 0), 1))
+  }
+
+  y_eval <- pmin(pmax(y, interpolator$x_min), interpolator$x_max)
+  output <- interpolator$fn(y_eval)
   output[y <= 1] <- 0
   pmin(pmax(output, 0), 1)
 }
@@ -661,7 +718,57 @@ hvmf_cvm_profile_matrix_tabulated <- function(data,
       y_max = max(row_y),
       grid_size = grid_size
     )
-    output[i, ] <- hvmf_eval_projection_cdf_tabulated(row_y, cdf_table)
+    cdf_interpolator <- hvmf_prepare_projection_cdf_interpolator(cdf_table)
+    output[i, ] <- hvmf_eval_projection_cdf_tabulated_spline(
+      y = row_y,
+      cdf_table = cdf_table,
+      interpolator = cdf_interpolator
+    )
+  }
+
+  output
+}
+
+hvmf_cvm_profile_matrix_tabulated_linear <- function(data,
+                                                     theta,
+                                                     grid_size = 4097L,
+                                                     distance_matrix = NULL,
+                                                     tol = 1e-10) {
+  x <- normalize_hvmf_h2_data(data, tol = tol)
+  if (!is.list(theta)) {
+    stop("`theta` must be a list containing `mu` and `kappa`.")
+  }
+  mu_matrix <- normalize_hvmf_h2_data(theta$mu, tol = tol)
+  mu <- as.numeric(mu_matrix[1L, , drop = TRUE])
+  kappa <- as.numeric(theta$kappa)
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa <= 0) {
+    stop("HvMF theta requires a strictly positive finite scalar `kappa`.")
+  }
+  n <- nrow(x)
+
+  if (is.null(distance_matrix)) {
+    y_matrix <- pmax(cosh(t(hvmf_distance_matrix(x, x))), 1)
+  } else {
+    distance_matrix <- as.matrix(distance_matrix)
+    if (!all(dim(distance_matrix) == c(n, n))) {
+      stop("`distance_matrix` must be an n x n matrix compatible with `data`.")
+    }
+    y_matrix <- pmax(cosh(distance_matrix), 1)
+  }
+
+  alpha_values <- as.numeric(x %*% c(mu[[1L]], -mu[[2L]], -mu[[3L]]))
+  alpha_values <- pmax(alpha_values, 1)
+
+  output <- matrix(0, nrow = n, ncol = n)
+  for (i in seq_len(n)) {
+    row_y <- pmax(y_matrix[i, ], 1)
+    cdf_table <- hvmf_tabulate_projection_cdf_h2(
+      alpha = alpha_values[[i]],
+      kappa = kappa,
+      y_max = max(row_y),
+      grid_size = grid_size
+    )
+    output[i, ] <- hvmf_eval_projection_cdf_tabulated_linear(row_y, cdf_table)
   }
 
   output
@@ -2767,7 +2874,37 @@ jp_prepare_inverse_cdf_table <- function(u, cdf) {
   )
 }
 
-jp_interpolate_cdf <- function(x, x_grid, cdf_grid) {
+jp_prepare_cdf_interpolator <- function(x_grid,
+                                        cdf_grid) {
+  x_grid <- as.numeric(x_grid)
+  cdf_grid <- as.numeric(cdf_grid)
+  if (length(x_grid) != length(cdf_grid) || length(x_grid) < 2L) {
+    stop("`x_grid` and `cdf_grid` must have the same length >= 2.")
+  }
+
+  list(
+    x_min = x_grid[[1L]],
+    x_max = x_grid[[length(x_grid)]],
+    fn = stats::splinefun(
+      x = x_grid,
+      y = cdf_grid,
+      method = "monoH.FC"
+    )
+  )
+}
+
+jp_prepare_inverse_cdf_interpolator <- function(inverse_table) {
+  if (!is.list(inverse_table) || !all(c("cdf", "u") %in% names(inverse_table))) {
+    stop("`inverse_table` must be a list with entries `cdf` and `u`.")
+  }
+
+  jp_prepare_cdf_interpolator(
+    x_grid = inverse_table$cdf,
+    cdf_grid = inverse_table$u
+  )
+}
+
+jp_interpolate_cdf_linear <- function(x, x_grid, cdf_grid) {
   x <- pmin(pmax(as.numeric(x), min(x_grid)), max(x_grid))
   stats::approx(
     x = x_grid,
@@ -2779,8 +2916,54 @@ jp_interpolate_cdf <- function(x, x_grid, cdf_grid) {
   )$y
 }
 
-jp_interpolate_upper_tail <- function(threshold, x_grid, cdf_grid) {
-  1 - jp_interpolate_cdf(threshold, x_grid = x_grid, cdf_grid = cdf_grid)
+jp_interpolate_cdf <- function(x, x_grid, cdf_grid) {
+  jp_interpolate_cdf_spline(x = x, x_grid = x_grid, cdf_grid = cdf_grid)
+}
+
+jp_interpolate_cdf_spline <- function(x,
+                                      x_grid,
+                                      cdf_grid,
+                                      interpolator = NULL) {
+  interpolator <- interpolator %||% jp_prepare_cdf_interpolator(
+    x_grid = x_grid,
+    cdf_grid = cdf_grid
+  )
+  x_eval <- pmin(pmax(as.numeric(x), interpolator$x_min), interpolator$x_max)
+  pmin(pmax(interpolator$fn(x_eval), 0), 1)
+}
+
+jp_interpolate_upper_tail <- function(threshold,
+                                      x_grid,
+                                      cdf_grid,
+                                      interpolator = NULL) {
+  1 - jp_interpolate_cdf_spline(
+    x = threshold,
+    x_grid = x_grid,
+    cdf_grid = cdf_grid,
+    interpolator = interpolator
+  )
+}
+
+jp_interpolate_upper_tail_linear <- function(threshold,
+                                             x_grid,
+                                             cdf_grid) {
+  1 - jp_interpolate_cdf_linear(
+    x = threshold,
+    x_grid = x_grid,
+    cdf_grid = cdf_grid
+  )
+}
+
+jp_interpolate_upper_tail_spline <- function(threshold,
+                                             x_grid,
+                                             cdf_grid,
+                                             interpolator = NULL) {
+  1 - jp_interpolate_cdf_spline(
+    x = threshold,
+    x_grid = x_grid,
+    cdf_grid = cdf_grid,
+    interpolator = interpolator
+  )
 }
 
 jp_uniform_s2_distance_profile <- function(t_values,
@@ -3920,10 +4103,15 @@ distance_profile_jp <- function(omega,
   )
   thresholds <- sphere_distance_to_dot_threshold(t_values[active], distance_type = distance_type)
   thresholds <- pmin(pmax(thresholds, -1), 1)
+  cdf_interpolator <- jp_prepare_cdf_interpolator(
+    x_grid = cdf_object$u,
+    cdf_grid = cdf_object$cdf[, 1L]
+  )
   output[active] <- jp_interpolate_upper_tail(
     threshold = thresholds,
     x_grid = cdf_object$u,
-    cdf_grid = cdf_object$cdf[, 1L]
+    cdf_grid = cdf_object$cdf[, 1L],
+    interpolator = cdf_interpolator
   )
 
   output
@@ -3969,15 +4157,11 @@ r_sph_jp <- function(n,
     grid_size = grid_size
   )
   inverse_table <- jp_prepare_inverse_cdf_table(u = cdf_table$u, cdf = cdf_table$cdf)
+  inverse_interpolator <- jp_prepare_inverse_cdf_interpolator(inverse_table)
   u_samples <- stats::runif(n)
-  t_samples <- stats::approx(
-    x = inverse_table$cdf,
-    y = inverse_table$u,
-    xout = u_samples,
-    method = "linear",
-    ties = "ordered",
-    rule = 2
-  )$y
+  t_samples <- inverse_interpolator$fn(
+    pmin(pmax(u_samples, inverse_interpolator$x_min), inverse_interpolator$x_max)
+  )
   t_samples <- pmin(pmax(t_samples, -1), 1)
 
   xi <- jp_uniform_sphere(n = n, ambient_dim = params$q)
@@ -4059,12 +4243,19 @@ distance_profile_jp_grid <- function(omega_grid,
   )
   thresholds <- sphere_distance_to_dot_threshold(t_grid, distance_type = distance_type)
   thresholds <- pmin(pmax(thresholds, -1), 1)
-
-  output <- t(vapply(seq_along(rho), function(i) {
-    jp_interpolate_upper_tail(
-      threshold = thresholds,
+  cdf_interpolators <- lapply(seq_along(rho), function(i) {
+    jp_prepare_cdf_interpolator(
       x_grid = cdf_object$u,
       cdf_grid = cdf_object$cdf[, i]
+    )
+  })
+
+  output <- t(vapply(seq_along(rho), function(i) {
+    jp_interpolate_upper_tail_spline(
+      threshold = thresholds,
+      x_grid = cdf_object$u,
+      cdf_grid = cdf_object$cdf[, i],
+      interpolator = cdf_interpolators[[i]]
     )
   }, numeric(length(t_grid))))
 
@@ -4131,12 +4322,19 @@ distance_profile_jp_cvm_grid <- function(X,
     n_u = n_u,
     n_delta = n_delta
   )
-
-  t(vapply(seq_along(rho), function(i) {
-    jp_interpolate_upper_tail(
-      threshold = a_matrix[i, ],
+  cdf_interpolators <- lapply(seq_along(rho), function(i) {
+    jp_prepare_cdf_interpolator(
       x_grid = cdf_object$u,
       cdf_grid = cdf_object$cdf[, i]
+    )
+  })
+
+  t(vapply(seq_along(rho), function(i) {
+    jp_interpolate_upper_tail_spline(
+      threshold = a_matrix[i, ],
+      x_grid = cdf_object$u,
+      cdf_grid = cdf_object$cdf[, i],
+      interpolator = cdf_interpolators[[i]]
     )
   }, numeric(nrow(X))))
 }

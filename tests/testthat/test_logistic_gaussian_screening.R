@@ -5,7 +5,7 @@ skip_if_not_installed("compositions")
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("logistic_gaussian_screening", "utils_logistic_gaussian_screening.R"))
+source(file.path("real_data", "logistic_gaussian", "utils_logistic_gaussian_screening.R"))
 
 test_that("prepare_composition_dataset returns closed positive data", {
   prepared <- prepare_composition_dataset("SkyeAFM")
@@ -36,11 +36,15 @@ test_that("logistic Gaussian composite screening runs on SkyeAFM in smoke size",
   expect_equal(result$screening_type, "logistic_gaussian_composite_or_screening")
   expect_equal(result$bootstrap$mode, "composite_multiplier")
   expect_equal(result$settings$bootstrap_mode, "composite_multiplier")
+  expect_equal(result$settings$quadform_method, "hbe")
   expect_equal(result$bootstrap$engine, "multiplier_bootstrap_logistic_gaussian")
   expect_true(result$inference$ks$p_value >= 0 && result$inference$ks$p_value <= 1)
   expect_true(result$inference$cvm$p_value >= 0 && result$inference$cvm$p_value <= 1)
   expect_true(result$classification$diagnosis %in% c("promising", "borderline", "reject", "problematic"))
-  expect_equal(dim(result$observed$empirical_profile), c(23, length(result$grid$t_grid)))
+  expect_equal(
+    dim(result$observed$empirical_profile),
+    c(nrow(result$grid$omega), length(result$grid$t_grid))
+  )
 })
 
 test_that("default dataset registry includes expanded composite candidates", {
@@ -57,12 +61,6 @@ test_that("default dataset registry includes expanded composite candidates", {
     "ClamEast",
     "ClamWest",
     "ClamCombined",
-    "FerrettiGut",
-    "FerrettiOral",
-    "Shi2015",
-    "HongKongBudgetsA",
-    "HongKongBudgetsB",
-    "HongKongBudgetsCombined"
   ) %in% datasets))
 })
 
