@@ -2369,6 +2369,17 @@ prepare_beta_mixture2_fast_multiplier <- function(spec,
                                                   control = list()) {
   x <- normalize_beta_mixture2_data(data, control)
   theta_hat <- normalize_beta_mixture2_theta(theta_hat, ambient_dim = ncol(x))
+  fast_shape_regular_eps <- as.numeric(control$beta_mixture2_fast_shape_regular_eps %||% 0)
+  shape_values <- c(theta_hat$alpha1, theta_hat$beta1, theta_hat$alpha2, theta_hat$beta2)
+  if (any(!is.finite(shape_values))) {
+    stop("The fitted beta_mixture2 shape parameters are not finite.")
+  }
+  if (min(shape_values) <= 1 + fast_shape_regular_eps) {
+    return(list(
+      fallback_to_reestimated = TRUE,
+      fallback_reason = "beta_mixture2_shape_nonregular"
+    ))
+  }
   chart <- fast_multiplier_sphere_chart(theta_hat$mu)
   par0 <- c(
     0,

@@ -1038,6 +1038,39 @@ test_that("beta mixture weighted MLE respects a user-supplied shape lower bound"
   expect_gte(min(theta_hat$alpha1, theta_hat$beta1, theta_hat$alpha2, theta_hat$beta2), 1.001 - 1e-10)
 })
 
+test_that("beta_mixture2 fast multiplier falls back to slow outside the regular shape region", {
+  x <- r_sph_beta_mixture2(
+    n = 20,
+    mu = c(0, 0, 1),
+    weight1 = 0.5,
+    alpha1 = 0.8,
+    beta1 = 2.2,
+    alpha2 = 3.1,
+    beta2 = 0.9
+  )
+  spec <- make_beta_mixture2_spec(distance_type = "geodesic")
+  theta_hat <- list(
+    mu = c(0, 0, 1),
+    weight1 = 0.5,
+    alpha1 = 0.95,
+    beta1 = 1.4,
+    alpha2 = 2.3,
+    beta2 = 1.8
+  )
+
+  prep <- spec_fast_multiplier_prepare(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = NULL,
+    cvm_prep = NULL,
+    control = list(beta_mixture2_fast_shape_regular_eps = 0)
+  )
+
+  expect_true(isTRUE(prep$fallback_to_reestimated))
+  expect_identical(prep$fallback_reason, "beta_mixture2_shape_nonregular")
+})
+
 test_that("fast bootstrap chunking preserves fast multiplier results", {
   x <- rotasym::r_vMF(12, mu = c(1, 0, 0), kappa = 2)
   ks_grid <- list(

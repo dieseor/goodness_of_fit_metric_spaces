@@ -491,7 +491,6 @@ run_comets_mixtures_short_long <- function(
   control_beta = list(
     beta_mixture2_profile_method = "legendre",
     beta_mixture2_quad_n = 100L,
-    beta_mixture2_shape_lower = 1.001,
     beta_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9)
   ),
   control_logit = list(
@@ -614,8 +613,8 @@ if (sys.nframe() == 0L) {
     control_beta = list(
       beta_mixture2_profile_method = "legendre",
       beta_mixture2_quad_n = 100L,
-      beta_mixture2_shape_lower = if (!is.null(args$beta_mixture2_shape_lower)) as.numeric(args$beta_mixture2_shape_lower) else 1.001,
       beta_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9),
+      beta_mixture2_fast_shape_regular_eps = if (!is.null(args$beta_mixture2_fast_shape_regular_eps)) as.numeric(args$beta_mixture2_fast_shape_regular_eps) else 0,
       fast_bootstrap_chunk_size = if (!is.null(args$fast_bootstrap_chunk_size)) as.integer(args$fast_bootstrap_chunk_size) else NULL
     )
   )

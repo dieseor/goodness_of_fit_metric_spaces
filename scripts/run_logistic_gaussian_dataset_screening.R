@@ -82,9 +82,7 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
   args <- parse_screening_args(args)
 
   dataset_names <- if (is.null(args$datasets)) {
-    default_logistic_gaussian_screening_datasets(
-      include_external = parse_flag(args$include_external, default = TRUE)
-    )
+    default_logistic_gaussian_screening_datasets()
   } else {
     trimws(strsplit(args$datasets, ",", fixed = TRUE)[[1]])
   }

@@ -359,7 +359,7 @@ logistic_gaussian_screening_dataset_registry <- function() {
         "Combined East and West clam color-size compositions.",
         "A site label is retained for ilr diagnostics because the combined sample may be a mixture."
       )
-    ),
+    )
   )
 }
 
@@ -1160,7 +1160,7 @@ build_fixed_simplex_omega_grid <- function(ambient_dim,
     stop("`max_centers` must be strictly positive.")
   }
   if (is.null(boundary_epsilon)) {
-    boundary_epsilon <- 0.5 / ambient_dim
+    boundary_epsilon <- boundary_epsilon <- 0.015 / ambient_dim
   }
   if (!is.finite(boundary_epsilon) || boundary_epsilon <= 0 || boundary_epsilon >= 1 / ambient_dim) {
     stop("`boundary_epsilon` must belong to (0, 1 / ambient_dim).")
