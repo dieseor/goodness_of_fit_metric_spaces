@@ -33,6 +33,7 @@ utils_path_logistic_gaussian_screening <- resolve_logistic_gaussian_screening_ru
   "utils_logistic_gaussian_screening.R"
 )
 source(utils_path_logistic_gaussian_screening)
+source(resolve_logistic_gaussian_screening_runner_path("scripts", "path_helpers.R"))
 
 parse_screening_args <- function(args) {
   output <- list()
@@ -100,7 +101,9 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
   omega_grid_type <- as.character(args$omega_grid_type %||% "fixed_simplex_lattice")
   t_grid_type <- as.character(args$t_grid_type %||% "fixed_fitted_scale")
   quadform_method <- as.character(args$quadform_method %||% "hbe")
-  output_dir <- as.character(args$output_dir %||% file.path("output", "calibration", "bootstrap", "logistic_gaussian", "composite"))
+  output_dir <- as.character(args$output_dir %||% canonical_logistic_gaussian_screening_dir(
+    if (identical(bootstrap_mode, "composite_multiplier")) "fast" else "slow"
+  ))
   make_plots <- parse_flag(args$make_plots, default = TRUE)
   run_seed_sensitivity <- parse_flag(args$run_seed_sensitivity, default = FALSE)
 

@@ -16,6 +16,8 @@ resolve_run_all_fast_path <- function(...) {
   if (is.null(lhs)) rhs else lhs
 }
 
+source(resolve_run_all_fast_path("scripts", "path_helpers.R"))
+
 parse_run_all_args <- function(args) {
   out <- list()
   for (arg in args) {
@@ -95,7 +97,7 @@ run_task <- function(task_index,
 run_all_fast_multiplier_sequential <- function(n_cores = 12L,
                                                derivative_mc_size = 1000L,
                                                derivative_mc_seed = 20260613L,
-                                               output_root = file.path("output", "fast_multiplier"),
+                                               output_root = file.path("output"),
                                                validation_B = 1000L,
                                                validation_M_outer = 5L,
                                                kill_orphans_first = TRUE) {
@@ -104,12 +106,11 @@ run_all_fast_multiplier_sequential <- function(n_cores = 12L,
     kill_orphan_rsock_workers(verbose = TRUE)
   }
 
-  log_dir <- file.path(output_root, "logs")
-  validation_output <- file.path(
-    output_root,
+  log_dir <- canonical_fast_multiplier_logs_dir("sequential")
+  validation_output <- canonical_fast_multiplier_validation_dir(
     sprintf("validation_all_models_12cores_B%d_M%d", as.integer(validation_B), as.integer(validation_M_outer))
   )
-  paper_output <- file.path(output_root, "paper_results")
+  paper_output <- "real_data"
 
   tasks <- list(
     list(
@@ -163,7 +164,7 @@ if (sys.nframe() == 0L) {
     n_cores = as.integer(args$n_cores %||% 12L),
     derivative_mc_size = as.integer(args$derivative_mc_size %||% 1000L),
     derivative_mc_seed = as.integer(args$derivative_mc_seed %||% 20260613L),
-    output_root = args$output_root %||% file.path("output", "fast_multiplier"),
+    output_root = args$output_root %||% file.path("output"),
     validation_B = as.integer(args$validation_B %||% 1000L),
     validation_M_outer = as.integer(args$validation_M_outer %||% 5L),
     kill_orphans_first = !identical(tolower(as.character(args$kill_orphans_first %||% "true")), "false")
@@ -171,29 +172,29 @@ if (sys.nframe() == 0L) {
 }
 
 
-%RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript scripts/run_fast_multiplier_tests.R
-%
-%RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript scripts/run_fast_multiplier_validation_all_models.R \
-%  --output_root=output/fast_multiplier/validation_all_models_12cores_B1000_M5 \
-%  --B=1000 \
-%  --M_outer=5 \
-%  --derivative_mc_size=1000 \
-%  --base_seed=20260613 \
-%  --n_cores=12
-%
-%RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript scripts/run_fast_multiplier_paper_results.R \
-%  --mode=calibration \
-%  --output_root=output/fast_multiplier/paper_results \
-%  --n_cores=12 \
-%  --derivative_mc_size=1000 \
-%  --derivative_mc_seed=20260613
-%
-%RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript scripts/run_logistic_gaussian_dataset_screening.R \
-%  --B=1000 \
-%  --n_cores=12 \
-%  --bootstrap_mode=composite_multiplier \
-%  --output_dir=output/fast_multiplier/paper_results/real_data/logistic_gaussian
-%
-%RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript -e 'source("real_data/wind/run_risoe_125m_screening_ks_cvm.R"); run_risoe_125m_screening_ks_cvm(output_dir="output/fast_multiplier/paper_results/real_data/risoe_125m", B=1000L, n_cores=12L, bootstrap_method="fast_multiplier")'
-%
-%RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript -e 'source("real_data/sunspots/run_sunspots_weighted_mixture_rolling_windows_gof.R"); run_sunspots_weighted_mixture_rolling_windows_gof(output_dir="output/fast_multiplier/paper_results/real_data/sunspots_weighted_mixture", statistics="ks", B=1000L, n_cores=12L, bootstrap_method="fast_multiplier")'
+# RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript scripts/run_fast_multiplier_tests.R
+#
+# RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript scripts/run_fast_multiplier_validation_all_models.R \
+#   --output_root=output/validation/fast_multiplier/validation_all_models_12cores_B1000_M5 \
+#   --B=1000 \
+#   --M_outer=5 \
+#   --derivative_mc_size=1000 \
+#   --base_seed=20260613 \
+#   --n_cores=12
+#
+# RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript scripts/run_fast_multiplier_paper_results.R \
+#   --mode=calibration \
+#   --output_root=real_data \
+#   --n_cores=12 \
+#   --derivative_mc_size=1000 \
+#   --derivative_mc_seed=20260613
+#
+# RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript scripts/run_logistic_gaussian_dataset_screening.R \
+#   --B=1000 \
+#   --n_cores=12 \
+#   --bootstrap_mode=composite_multiplier \
+#   --output_dir=real_data/logistic_gaussian/screening/fast/paper_results
+#
+# RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript -e 'source("real_data/wind/run_risoe_125m_screening_ks_cvm.R"); run_risoe_125m_screening_ks_cvm(output_dir="real_data/wind/month_diagnostics/screening_125m_ks_cvm_b1000/fast", B=1000L, n_cores=12L, bootstrap_method="fast_multiplier")'
+#
+# RENV_CONFIG_SANDBOX_ENABLED=FALSE Rscript -e 'source("real_data/sunspots/run_sunspots_weighted_mixture_rolling_windows_gof.R"); run_sunspots_weighted_mixture_rolling_windows_gof(output_dir="real_data/sunspots/output/cycles21_23_weighted_mixture_rolling_windows_10cr_B1000/fast", statistics="ks", B=1000L, n_cores=12L, bootstrap_method="fast_multiplier")'

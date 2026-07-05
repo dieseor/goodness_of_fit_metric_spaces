@@ -27,6 +27,7 @@ source(utils_script_path_rotmix_comets)
 source(model_specs_script_path_rotmix_comets)
 source(multiplier_bootstrap_script_path_rotmix_comets)
 source(comets_utils_script_path_rotmix_comets)
+source(resolve_rotmix_comets_path("scripts", "path_helpers.R"))
 
 make_beta_mixture2_spec <- get("make_beta_mixture2_spec", mode = "function")
 make_logitnormal_mixture2_spec <- get("make_logitnormal_mixture2_spec", mode = "function")
@@ -473,11 +474,7 @@ run_single_rotmix_comet_fit <- function(data_matrix,
 }
 
 run_comets_mixtures_short_long <- function(
-  output_root = file.path(
-    "output",
-    "comets",
-    paste0("rotational_mixtures_", timestamp_tag_rotmix_comets())
-  ),
+  output_root = NULL,
   datasets = c("short", "long"),
   models = c("beta_mixture2", "logitnormal_mixture2"),
   B = 500L,
@@ -499,6 +496,10 @@ run_comets_mixtures_short_long <- function(
     logitnormal_mixture2_optim_control = list(maxit = 350L, reltol = 1e-9)
   )
 ) {
+  if (is.null(output_root)) {
+    speed_dir <- if (identical(bootstrap_method, "fast_multiplier")) "fast" else "slow"
+    output_root <- canonical_comets_mixture_dir("beta_mixture2_short_long_B1000", speed_dir)
+  }
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
   comets_data <- load_comets_distance_profile_data_rotmix()
   write_lines_if_possible_rotmix_comets(
@@ -583,11 +584,7 @@ if (sys.nframe() == 0L) {
   args <- parse_named_args_rotmix_comets(commandArgs(trailingOnly = TRUE))
 
   result <- run_comets_mixtures_short_long(
-    output_root = args$output_root %||% file.path(
-      "output",
-      "comets",
-      paste0("rotational_mixtures_", timestamp_tag_rotmix_comets())
-    ),
+    output_root = args$output_root %||% NULL,
     datasets = if (!is.null(args$datasets)) {
       strsplit(tolower(args$datasets), ",", fixed = TRUE)[[1L]]
     } else {

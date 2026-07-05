@@ -27,6 +27,7 @@ utils_script_path_cardioid <- resolve_comets_cardioid_path("utils.R")
 source(cardioid_model_spec_script_path)
 source(multiplier_bootstrap_script_path)
 source(utils_script_path_cardioid)
+source(resolve_comets_cardioid_path("scripts", "path_helpers.R"))
 
 timestamp_tag_cardioid_comets <- function() {
   format(Sys.time(), "%Y%m%d_%H%M%S")
@@ -458,11 +459,8 @@ run_comets_distance_profile_cardioid <- function(output_root = NULL,
                                                    cardioid_optim_control = list(maxit = 1000)
                                                  )) {
   if (is.null(output_root)) {
-    output_root <- file.path(
-      "output",
-      "comets_distance_profile_cardioid",
-      paste0("run_", timestamp_tag_cardioid_comets())
-    )
+    speed_dir <- if (identical(bootstrap_method, "fast_multiplier")) "fast" else "slow"
+    output_root <- canonical_comets_cardioid_dir(paste0("run_", timestamp_tag_cardioid_comets()), speed_dir)
   }
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 

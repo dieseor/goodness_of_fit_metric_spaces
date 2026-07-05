@@ -2585,7 +2585,7 @@ run_full_logistic_gaussian_calibration_study <- function(output_dir = NULL,
                                                          verbose = TRUE) {
   run_bootstrap_calibration_study(
     scenarios = default_logistic_gaussian_simple_calibration_scenarios(),
-    n_values = c(50, 100),
+    n_values = c(50, 100, 200),
     M_outer = M_outer,
     B = B,
     alpha_nominal = 0.05,
@@ -2623,13 +2623,30 @@ run_smoke_logistic_gaussian_composite_calibration_study <- function(output_dir =
 run_full_logistic_gaussian_composite_calibration_study <- function(output_dir = NULL,
                                                                    n_cores_outer = 1,
                                                                    seed = 123,
-                                                                   M_outer = 100,
-                                                                   B = 100,
+                                                                   M_outer = 1000,
+                                                                   B = 1000,
+                                                                   derivative_mc_size = 1000L,
+                                                                   derivative_mc_seed = 20260613L,
+                                                                   fast_multiplier_cvm_block_size = 50L,
                                                                    show_progress = FALSE,
                                                                    verbose = TRUE) {
+  scenarios <- lapply(default_logistic_gaussian_composite_calibration_scenarios(), function(scenario) {
+    scenario$bootstrap_method <- "fast_multiplier"
+    scenario$control <- utils::modifyList(
+      scenario$control %||% list(),
+      list(
+        derivative_method = "score_mc",
+        derivative_mc_size = as.integer(derivative_mc_size),
+        derivative_mc_seed = as.integer(derivative_mc_seed),
+        fast_multiplier_cvm_block_size = as.integer(fast_multiplier_cvm_block_size)
+      )
+    )
+    scenario
+  })
+
   run_bootstrap_calibration_study(
-    scenarios = default_logistic_gaussian_composite_calibration_scenarios(),
-    n_values = c(30, 50),
+    scenarios = scenarios,
+    n_values = c(50, 100, 200),
     M_outer = M_outer,
     B = B,
     alpha_nominal = 0.05,

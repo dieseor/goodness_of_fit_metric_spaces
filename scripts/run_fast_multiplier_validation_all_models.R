@@ -35,6 +35,7 @@ rbind_fill_frames <- function(frames) {
 }
 
 source(resolve_fast_validation_path("bootstrap", "multiplier_bootstrap.R"))
+source(resolve_fast_validation_path("scripts", "path_helpers.R"))
 
 make_sample_ks_grid <- function(spec,
                                 data,
@@ -452,7 +453,7 @@ build_validation_summary <- function(raw_df) {
   do.call(rbind, rows)
 }
 
-run_fast_multiplier_validation_all_models <- function(output_root = file.path("output", "fast_multiplier", "validation_all_models"),
+run_fast_multiplier_validation_all_models <- function(output_root = canonical_fast_multiplier_validation_dir("validation_all_models"),
                                                       B = 1000L,
                                                       M_outer = 5L,
                                                       derivative_mc_size = 1000L,
@@ -525,7 +526,7 @@ fast_validation_arg <- function(args, key, default = NULL) {
 if (sys.nframe() == 0L) {
   args <- parse_fast_validation_args(commandArgs(trailingOnly = TRUE))
   result <- run_fast_multiplier_validation_all_models(
-    output_root = fast_validation_arg(args, "output_root", file.path("output", "fast_multiplier", "validation_all_models")),
+    output_root = fast_validation_arg(args, "output_root", canonical_fast_multiplier_validation_dir("validation_all_models")),
     B = as.integer(fast_validation_arg(args, "B", 1000L)),
     M_outer = as.integer(fast_validation_arg(args, "M_outer", 5L)),
     derivative_mc_size = as.integer(fast_validation_arg(args, "derivative_mc_size", 1000L)),
