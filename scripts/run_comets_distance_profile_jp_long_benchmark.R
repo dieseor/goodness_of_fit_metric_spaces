@@ -44,11 +44,8 @@ run_comets_distance_profile_jp_long_benchmark <- function(output_root = NULL,
                                                             jp_mle_max_abs_kappa_psi = 6
                                                           )) {
   if (is.null(output_root)) {
-    output_root <- file.path(
-      "output",
-      "comets_distance_profile_jp",
-      paste0("run_", timestamp_tag_jp_comets(), "_long_", statistic, "_benchmark")
-    )
+    run_name <- if (identical(statistic, "cvm")) "cvm_benchmark_long" else "ks_benchmark_long"
+    output_root <- canonical_comets_jp_dir(run_name, "slow")
   }
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 

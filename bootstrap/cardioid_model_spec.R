@@ -22,6 +22,10 @@ if (!exists("new_model_spec", mode = "function")) {
 }
 
 cardioid_source_path_model_spec <- resolve_cardioid_model_spec_path(
+  "real_data",
+  "comets",
+  "cardioid",
+  "legacy_materials",
   "Comets",
   "unregalitonavideno",
   "cardioid-source.R"

@@ -1,18 +1,19 @@
 source(file.path("real_data", "comets", "utils_comets_data.R"))
+source(file.path("scripts", "path_helpers.R"))
 
 build_comets_audit_summary <- function(output_path = file.path("real_data", "comets", "comets_audit_summary.csv")) {
   comets_data <- load_comets_real_data(finite_normals = "both")
 
   small_circle_short <- utils::read.csv(
-    file.path("real_data", "comets", "small_circle", "short_comets", "benchmark_summary.csv"),
+    canonical_comets_small_circle_dir("short_comets", "slow", "benchmark_summary.csv"),
     stringsAsFactors = FALSE
   )
   small_circle_long <- utils::read.csv(
-    file.path("real_data", "comets", "small_circle", "long_comets", "benchmark_summary.csv"),
+    canonical_comets_small_circle_dir("long_comets", "slow", "benchmark_summary.csv"),
     stringsAsFactors = FALSE
   )
   jp_ks <- utils::read.csv(
-    file.path("real_data", "comets", "jp", "ks_benchmark_main", "benchmark_summary.csv"),
+    canonical_comets_jp_dir("ks_benchmark_main", "slow", "benchmark_summary.csv"),
     stringsAsFactors = FALSE
   )
   jp_cvm <- utils::read.csv(
@@ -20,7 +21,7 @@ build_comets_audit_summary <- function(output_path = file.path("real_data", "com
     stringsAsFactors = FALSE
   )
   beta_mix <- utils::read.csv(
-    file.path("real_data", "comets", "mixture", "beta_mixture2_short_long_B1000", "comets_rotational_mixtures_summary.csv"),
+    canonical_comets_mixture_dir("beta_mixture2_short_long_B1000", "slow", "comets_rotational_mixtures_summary.csv"),
     stringsAsFactors = FALSE
   )
 
@@ -58,7 +59,7 @@ build_comets_audit_summary <- function(output_path = file.path("real_data", "com
       tests_available = "CvM",
       ks_p_value = NA_real_,
       cvm_p_value = latest_small_circle_short$p_value,
-      source_path = "real_data/comets/small_circle/short_comets/benchmark_summary.csv",
+      source_path = "real_data/comets/small_circle/short_comets/slow/benchmark_summary.csv",
       notes = "Only CvM benchmark stored; latest row uses B=M=1000."
     ),
     add_row(
@@ -68,7 +69,7 @@ build_comets_audit_summary <- function(output_path = file.path("real_data", "com
       tests_available = "CvM",
       ks_p_value = NA_real_,
       cvm_p_value = latest_small_circle_long$p_value,
-      source_path = "real_data/comets/small_circle/long_comets/benchmark_summary.csv",
+      source_path = "real_data/comets/small_circle/long_comets/slow/benchmark_summary.csv",
       notes = "Only CvM benchmark stored; latest row uses B=M=1000."
     ),
     add_row(
@@ -78,7 +79,7 @@ build_comets_audit_summary <- function(output_path = file.path("real_data", "com
       tests_available = "KS and CvM",
       ks_p_value = latest_jp_ks$p_value,
       cvm_p_value = latest_jp_cvm$p_value_full_boot_nm,
-      source_path = "real_data/comets/jp/{ks_benchmark_main,short_cvm_nm_full_boot_vs_local_fast_B50_100_200_500_1000_comparison.csv}",
+      source_path = "real_data/comets/jp/{ks_benchmark_main/slow,short_cvm_nm_full_boot_vs_local_fast_B50_100_200_500_1000_comparison.csv}",
       notes = "KS main benchmark exists only for short-period data; CvM comparison file also exists for short-period data."
     ),
     add_row(
@@ -98,7 +99,7 @@ build_comets_audit_summary <- function(output_path = file.path("real_data", "com
       tests_available = "KS and CvM",
       ks_p_value = beta_mix$gof_ks_p_value[beta_mix$dataset == "short_period"][1L],
       cvm_p_value = beta_mix$gof_cvm_p_value[beta_mix$dataset == "short_period"][1L],
-      source_path = "real_data/comets/mixture/beta_mixture2_short_long_B1000/comets_rotational_mixtures_summary.csv",
+      source_path = "real_data/comets/mixture/beta_mixture2_short_long_B1000/slow/comets_rotational_mixtures_summary.csv",
       notes = "Authoritative real_data copy uses B=1000 and M=60."
     ),
     add_row(
@@ -108,8 +109,8 @@ build_comets_audit_summary <- function(output_path = file.path("real_data", "com
       tests_available = "KS and CvM",
       ks_p_value = beta_mix$gof_ks_p_value[beta_mix$dataset == "long_period"][1L],
       cvm_p_value = beta_mix$gof_cvm_p_value[beta_mix$dataset == "long_period"][1L],
-      source_path = "real_data/comets/mixture/beta_mixture2_short_long_B1000/comets_rotational_mixtures_summary.csv",
-      notes = "A stale duplicate exists under output/real_data/comets with B=10 and M=50; do not use it for the AoS table."
+      source_path = "real_data/comets/mixture/beta_mixture2_short_long_B1000/slow/comets_rotational_mixtures_summary.csv",
+      notes = "The authoritative slow copy lives under the canonical real_data tree."
     )
   )
 

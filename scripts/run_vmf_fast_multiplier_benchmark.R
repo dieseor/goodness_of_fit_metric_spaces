@@ -17,6 +17,7 @@ resolve_vmf_fast_multiplier_benchmark_path <- function(...) {
 }
 
 source(resolve_vmf_fast_multiplier_benchmark_path("bootstrap", "calibration_study.R"))
+source(resolve_vmf_fast_multiplier_benchmark_path("scripts", "path_helpers.R"))
 
 build_vmf_fast_multiplier_summary <- function(raw_df) {
   groups <- split(raw_df, list(raw_df$model, raw_df$scenario, raw_df$n, raw_df$statistic), drop = TRUE)
@@ -159,9 +160,9 @@ run_vmf_fast_multiplier_benchmark <- function(mode = c("pilot", "scaling"),
   statistics <- c("ks", "cvm")
   if (is.null(output_root)) {
     output_root <- if (identical(mode, "pilot")) {
-      file.path("output", "calibration", "bootstrap", "vmf_fast_multiplier", "pilot_kappa2_n50_B1000")
+      canonical_calibration_bootstrap_dir("vmf", "fast", "pilot_kappa2_n50_B1000")
     } else {
-      file.path("output", "calibration", "bootstrap", "vmf_fast_multiplier", "scaling_kappa2_n50_B100_300_1000")
+      canonical_calibration_bootstrap_dir("vmf", "fast", "scaling_kappa2_n50_B100_300_1000")
     }
   }
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)

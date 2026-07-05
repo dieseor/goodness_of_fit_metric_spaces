@@ -8,6 +8,9 @@ suppressPackageStartupMessages({
   library(sphunif)     # For vMF sampling and utilities
   library(ggplot2)     # For plotting
   library(dplyr)       # For data manipulation
+  library(grid)
+  library(gridtext)
+  library(gridExtra)
   library(viridis)     # For colors
   library(pracma)      # For special functions (bessel)
   library(rotasym)
@@ -149,6 +152,45 @@ build_bahadur_loglog_limits <- function(pointwise_summary, theoretical_data, y_m
   c(
     min(means_df$log10_diff, theo_df$log10_diff, ci_df$log10_ci_low, na.rm = TRUE),
     log10(y_max)
+  )
+}
+
+build_bahadur_remainder_label <- function(log_scale = FALSE) {
+  if (isTRUE(log_scale)) {
+    return(expression(log[10] * bgroup("(", "Bahadur remainder norm", ")")))
+  }
+
+  "Bahadur remainder norm"
+}
+
+build_bahadur_custom_y_grob <- function(log_scale = FALSE, fontsize = 19, orange_col = "orange") {
+  label_text <- if (isTRUE(log_scale)) {
+    sprintf("log(<span style='color:%s;'>o<sub>P</sub>(1)</span>)", orange_col)
+  } else {
+    sprintf("<span style='color:%s;'>o<sub>P</sub>(1)</span>", orange_col)
+  }
+
+  richtext_grob(
+    label_text,
+    x = 0.52, y = 0.50, rot = 90,
+    gp = gpar(fontsize = fontsize),
+    box_gp = gpar(col = NA, fill = NA),
+    padding = unit(c(0, 0, 0, 0), "pt"),
+    margin = unit(c(0, 0, 0, 0), "pt")
+  )
+}
+
+add_bahadur_custom_y_axis <- function(plot_obj, log_scale = FALSE, orange_col = "orange") {
+  label_grob <- build_bahadur_custom_y_grob(log_scale = log_scale, orange_col = orange_col)
+  left_grob <- arrangeGrob(
+    rectGrob(gp = gpar(fill = "white", col = NA)),
+    label_grob
+  )
+
+  arrangeGrob(
+    plot_obj + theme(axis.title.y = element_blank()),
+    left = left_grob,
+    widths = unit.c(unit(0.85, "in"), unit(1, "null"))
   )
 }
 
@@ -341,7 +383,7 @@ build_bahadur_single_linear_plot <- function(combined_results, mu_index, y_max =
 
   show_legend <- pointwise_summary_mu$show_legend[1]
 
-  ggplot(pointwise_summary_mu, aes(x = n, y = mean_difference_norm)) +
+  base_plot <- ggplot(pointwise_summary_mu, aes(x = n, y = mean_difference_norm)) +
     geom_ribbon(aes(x = n, ymin = ci_low, ymax = ci_high, fill = "95% CI"), alpha = 0.35, inherit.aes = FALSE) +
     geom_line(aes(color = "Mean"),
               linetype = "dashed", linewidth = 0.5) +
@@ -363,7 +405,9 @@ build_bahadur_single_linear_plot <- function(combined_results, mu_index, y_max =
       labels = c("95% CI" = "95% CI"),
       name = NULL
     ) +
-    labs(x = expression("Sample size (" * italic(n) * ")"), y = NULL) +
+    labs(
+      x = expression("Sample size (" * italic(n) * ")")
+    ) +
     coord_cartesian(ylim = c(0, y_max)) +
     theme_minimal() +
     theme(
@@ -373,8 +417,13 @@ build_bahadur_single_linear_plot <- function(combined_results, mu_index, y_max =
       legend.key.size = unit(1.8, "lines"),
       axis.text.x = element_text(size = 19),
       axis.text.y = element_text(size = 19),
-      axis.title.x = element_text(size = 19)
+      axis.title.x = element_text(size = 19),
+      axis.title.y = element_blank(),
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA)
     )
+
+  add_bahadur_custom_y_axis(base_plot, log_scale = FALSE, orange_col = "orange")
 }
 
 #' Build one standalone log-log plot for a fixed mu, without title
@@ -404,7 +453,7 @@ build_bahadur_single_loglog_plot <- function(combined_results, mu_index, y_max =
 
   show_legend <- pointwise_summary_mu$show_legend[1]
 
-  ggplot(means_df, aes(x = log10_n, y = log10_diff)) +
+  base_plot <- ggplot(means_df, aes(x = log10_n, y = log10_diff)) +
     geom_ribbon(data = ci_df, aes(x = log10_n, ymin = log10_ci_low, ymax = log10_ci_high, fill = "95% CI"), alpha = 0.35, inherit.aes = FALSE) +
     geom_line(aes(color = "Mean"),
               linetype = "dashed", linewidth = 0.5) +
@@ -426,7 +475,9 @@ build_bahadur_single_loglog_plot <- function(combined_results, mu_index, y_max =
       labels = c("95% CI" = "95% CI"),
       name = NULL
     ) +
-    labs(x = expression(log[10](n)), y = NULL) +
+    labs(
+      x = expression(log[10](n))
+    ) +
     coord_cartesian(ylim = loglog_limits) +
     theme_minimal() +
     theme(
@@ -436,8 +487,13 @@ build_bahadur_single_loglog_plot <- function(combined_results, mu_index, y_max =
       legend.key.size = unit(1.8, "lines"),
       axis.text.x = element_text(size = 19),
       axis.text.y = element_text(size = 19),
-      axis.title.x = element_text(size = 19)
+      axis.title.x = element_text(size = 19),
+      axis.title.y = element_blank(),
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA)
     )
+
+  add_bahadur_custom_y_axis(base_plot, log_scale = TRUE, orange_col = "orange")
 }
 
 #' Generate all requested plot variants from precomputed combined results
@@ -454,10 +510,10 @@ generate_bahadur_plot_variants <- function(combined_results, output_dir = "outpu
   p_log_010 <- build_bahadur_comparison_plot(combined_results, mu_labels, y_max = 0.10, loglog = TRUE)
   p_log_005 <- build_bahadur_comparison_plot(combined_results, mu_labels, y_max = 0.05, loglog = TRUE)
 
-  ggsave(file.path(output_dir, "vmf_bahadur_comparison_ylim_0p10.png"), p_linear_010, width = 18, height = 6, dpi = 600)
-  ggsave(file.path(output_dir, "vmf_bahadur_comparison_ylim_0p05.png"), p_linear_005, width = 18, height = 6, dpi = 600)
-  ggsave(file.path(output_dir, "vmf_bahadur_comparison_loglog_ymax_0p10.png"), p_log_010, width = 18, height = 6, dpi = 600)
-  ggsave(file.path(output_dir, "vmf_bahadur_comparison_loglog_ymax_0p05.png"), p_log_005, width = 18, height = 6, dpi = 600)
+  ggsave(file.path(output_dir, "vmf_bahadur_comparison_ylim_0p10.png"), p_linear_010, width = 18, height = 6, dpi = 600, bg = "white")
+  ggsave(file.path(output_dir, "vmf_bahadur_comparison_ylim_0p05.png"), p_linear_005, width = 18, height = 6, dpi = 600, bg = "white")
+  ggsave(file.path(output_dir, "vmf_bahadur_comparison_loglog_ymax_0p10.png"), p_log_010, width = 18, height = 6, dpi = 600, bg = "white")
+  ggsave(file.path(output_dir, "vmf_bahadur_comparison_loglog_ymax_0p05.png"), p_log_005, width = 18, height = 6, dpi = 600, bg = "white")
 
   unique_mu_info <- combined_results %>%
     distinct(mu_index, mu_file_suffix)
@@ -480,14 +536,16 @@ generate_bahadur_plot_variants <- function(combined_results, output_dir = "outpu
       p_single_linear,
       width = 6,
       height = 6,
-      dpi = 600
+      dpi = 600,
+      bg = "white"
     )
     ggsave(
       file.path(output_dir, sprintf("vmf_bahadur_loglog_mu_%s.png", mu_file_suffix_current)),
       p_single_loglog,
       width = 6,
       height = 6,
-      dpi = 600
+      dpi = 600,
+      bg = "white"
     )
   }
 

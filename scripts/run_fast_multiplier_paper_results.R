@@ -18,6 +18,7 @@ resolve_fast_paper_path <- function(...) {
 
 source(resolve_fast_paper_path("bootstrap", "calibration_study.R"))
 source(resolve_fast_paper_path("scripts", "run_fast_multiplier_validation_all_models.R"))
+source(resolve_fast_paper_path("scripts", "path_helpers.R"))
 source(resolve_fast_paper_path("real_data", "logistic_gaussian", "utils_logistic_gaussian_screening.R"))
 source(resolve_fast_paper_path("real_data", "wind", "run_risoe_125m_screening_ks_cvm.R"))
 source(resolve_fast_paper_path("real_data", "sunspots", "run_sunspots_weighted_mixture_rolling_windows_gof.R"))
@@ -127,7 +128,7 @@ paper_calibration_jobs <- function(derivative_mc_size = 1000L,
   )
 }
 
-run_fast_paper_calibration <- function(output_root = file.path("output", "fast_multiplier", "paper_results", "calibration"),
+run_fast_paper_calibration <- function(output_root = file.path("output", "calibration", "bootstrap"),
                                        n_cores = 12L,
                                        derivative_mc_size = 1000L,
                                        derivative_mc_seed = 20260613L) {
@@ -141,7 +142,8 @@ run_fast_paper_calibration <- function(output_root = file.path("output", "fast_m
 
   for (i in seq_along(jobs)) {
     job <- jobs[[i]]
-    job_dir <- file.path(output_root, job$id)
+    model_dir <- sub("_composite$", "", job$id)
+    job_dir <- canonical_calibration_bootstrap_dir(model_dir, "fast", job$id)
     message(sprintf("[fast paper calibration] %d/%d %s", i, length(jobs), job$id))
     result <- run_bootstrap_calibration_study(
       scenarios = job$scenarios,
@@ -221,7 +223,7 @@ run_fast_comets_jp_short_long <- function(output_root,
   invisible(summary_df)
 }
 
-run_fast_paper_real_data <- function(output_root = file.path("output", "fast_multiplier", "paper_results", "real_data"),
+run_fast_paper_real_data <- function(output_root = "real_data",
                                      n_cores = 12L,
                                      derivative_mc_size = 1000L,
                                      derivative_mc_seed = 20260613L) {
@@ -229,7 +231,7 @@ run_fast_paper_real_data <- function(output_root = file.path("output", "fast_mul
 
   message("[fast paper real_data] comets cardioid")
   run_comets_distance_profile_cardioid(
-    output_root = file.path(output_root, "comets_cardioid"),
+    output_root = canonical_comets_cardioid_dir("paper_results", "fast"),
     stages = c("oort_cvm", "oort_ks", "short_cvm", "short_ks"),
     cvm_B = 1000L,
     ks_B = 1000L,
@@ -244,8 +246,13 @@ run_fast_paper_real_data <- function(output_root = file.path("output", "fast_mul
   message("[fast paper real_data] comets small circle")
   for (dataset_name in c("short", "long")) {
     for (stat_name in c("ks", "cvm")) {
+      run_name <- if (identical(dataset_name, "short")) {
+        if (identical(stat_name, "ks")) "short_comets_ks" else "short_comets"
+      } else {
+        if (identical(stat_name, "ks")) "long_comets_ks" else "long_comets"
+      }
       run_comets_distance_profile_small_circle_benchmark(
-        output_root = file.path(output_root, sprintf("comets_small_circle_%s_%s", dataset_name, stat_name)),
+        output_root = canonical_comets_small_circle_dir(run_name, "fast"),
         dataset = dataset_name,
         B_values = 1000L,
         statistic = stat_name,
@@ -267,7 +274,7 @@ run_fast_paper_real_data <- function(output_root = file.path("output", "fast_mul
 
   message("[fast paper real_data] comets jp")
   run_fast_comets_jp_short_long(
-    output_root = file.path(output_root, "comets_jp"),
+    output_root = canonical_comets_jp_dir("short_long_summary", "fast"),
     B = 1000L,
     n_cores = as.integer(n_cores),
     bootstrap_method = "fast_multiplier",
@@ -277,7 +284,7 @@ run_fast_paper_real_data <- function(output_root = file.path("output", "fast_mul
 
   message("[fast paper real_data] comets beta mixture")
   run_comets_mixtures_short_long(
-    output_root = file.path(output_root, "comets_beta_mixture2"),
+    output_root = canonical_comets_mixture_dir("beta_mixture2_short_long_B1000", "fast"),
     datasets = c("short", "long"),
     models = "beta_mixture2",
     B = 1000L,
@@ -291,13 +298,13 @@ run_fast_paper_real_data <- function(output_root = file.path("output", "fast_mul
     B = 1000L,
     n_cores = as.integer(n_cores),
     bootstrap_method = "fast_multiplier",
-    output_dir = file.path(output_root, "logistic_gaussian"),
+    output_dir = canonical_logistic_gaussian_screening_dir("fast", "paper_results"),
     control = fast_multiplier_common_control(derivative_mc_size, derivative_mc_seed)
   )
 
   message("[fast paper real_data] Risoe 125m screening")
   run_risoe_125m_screening_ks_cvm(
-    output_dir = file.path(output_root, "risoe_125m"),
+    output_dir = canonical_wind_screening_dir("fast"),
     B = 1000L,
     n_cores = as.integer(n_cores),
     bootstrap_method = "fast_multiplier"
@@ -305,7 +312,7 @@ run_fast_paper_real_data <- function(output_root = file.path("output", "fast_mul
 
   message("[fast paper real_data] sunspots rolling windows")
   run_sunspots_weighted_mixture_rolling_windows_gof(
-    output_dir = file.path(output_root, "sunspots_weighted_mixture"),
+    output_dir = canonical_sunspots_weighted_windows_dir("fast"),
     statistics = "ks",
     B = 1000L,
     n_cores = as.integer(n_cores),
@@ -328,8 +335,8 @@ parse_fast_paper_args <- function(args) {
 }
 
 run_fast_multiplier_paper_results <- function(mode = c("all", "paper_only", "validation", "calibration", "real_data"),
-                                              output_root = file.path("output", "fast_multiplier", "paper_results"),
-                                              validation_output_root = file.path("output", "fast_multiplier", "validation_all_models_12cores_B1000_M5"),
+                                              output_root = "real_data",
+                                              validation_output_root = canonical_fast_multiplier_validation_dir("validation_all_models_12cores_B1000_M5"),
                                               n_cores = 12L,
                                               derivative_mc_size = 1000L,
                                               derivative_mc_seed = 20260613L,
@@ -350,7 +357,7 @@ run_fast_multiplier_paper_results <- function(mode = c("all", "paper_only", "val
 
   if (mode %in% c("all", "paper_only", "calibration")) {
     run_fast_paper_calibration(
-      output_root = file.path(output_root, "calibration"),
+      output_root = file.path("output", "calibration", "bootstrap"),
       n_cores = as.integer(n_cores),
       derivative_mc_size = as.integer(derivative_mc_size),
       derivative_mc_seed = as.integer(derivative_mc_seed)
@@ -359,7 +366,7 @@ run_fast_multiplier_paper_results <- function(mode = c("all", "paper_only", "val
 
   if (mode %in% c("all", "paper_only", "real_data")) {
     run_fast_paper_real_data(
-      output_root = file.path(output_root, "real_data"),
+      output_root = "real_data",
       n_cores = as.integer(n_cores),
       derivative_mc_size = as.integer(derivative_mc_size),
       derivative_mc_seed = as.integer(derivative_mc_seed)
@@ -373,8 +380,8 @@ if (sys.nframe() == 0L) {
   args <- parse_fast_paper_args(commandArgs(trailingOnly = TRUE))
   run_fast_multiplier_paper_results(
     mode = args$mode %||% "all",
-    output_root = args$output_root %||% file.path("output", "fast_multiplier", "paper_results"),
-    validation_output_root = args$validation_output_root %||% file.path("output", "fast_multiplier", "validation_all_models_12cores_B1000_M5"),
+    output_root = args$output_root %||% "real_data",
+    validation_output_root = args$validation_output_root %||% canonical_fast_multiplier_validation_dir("validation_all_models_12cores_B1000_M5"),
     n_cores = as.integer(args$n_cores %||% 12L),
     derivative_mc_size = as.integer(args$derivative_mc_size %||% 1000L),
     derivative_mc_seed = as.integer(args$derivative_mc_seed %||% 20260613L),

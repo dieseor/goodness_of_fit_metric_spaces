@@ -2,6 +2,7 @@ source(file.path("real_data", "wind", "preprocess_risoe_modern_hvmf.R"))
 source(file.path("bootstrap", "model_specs.R"))
 source(file.path("bootstrap", "multiplier_bootstrap.R"))
 source(file.path("bootstrap", "calibration_study.R"))
+source(file.path("scripts", "path_helpers.R"))
 
 select_noon_all_months <- function(df, fixed_tz = "UTC") {
   df$date <- as.Date(df$datetime, tz = fixed_tz)
@@ -348,7 +349,7 @@ write_risoe_125m_latex_table <- function(results_df, output_txt) {
 }
 
 run_risoe_125m_screening_ks_cvm <- function(input_nc = file.path("wind", "risoe_m_all.nc"),
-                                            output_dir = file.path("real_data", "wind", "month_diagnostics", "screening_125m_ks_cvm_b1000"),
+                                            output_dir = canonical_wind_screening_dir("slow"),
                                             B = 1000L,
                                             n_cores = 12L,
                                             bootstrap_method = "reestimated",

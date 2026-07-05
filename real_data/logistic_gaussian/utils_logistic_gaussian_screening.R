@@ -367,7 +367,7 @@ slugify_dataset_name <- function(name) {
   gsub("[^a-z0-9]+", "_", tolower(name))
 }
 
-logistic_gaussian_screening_directories <- function(base_dir = file.path("output", "real_data", "logistic_gaussian", "screening")) {
+logistic_gaussian_screening_directories <- function(base_dir = canonical_logistic_gaussian_screening_dir("slow")) {
   list(
     base = base_dir,
     plots = file.path(base_dir, "plots"),
@@ -375,7 +375,7 @@ logistic_gaussian_screening_directories <- function(base_dir = file.path("output
   )
 }
 
-ensure_logistic_gaussian_screening_directories <- function(base_dir = file.path("output", "real_data", "logistic_gaussian", "screening")) {
+ensure_logistic_gaussian_screening_directories <- function(base_dir = canonical_logistic_gaussian_screening_dir("slow")) {
   dirs <- logistic_gaussian_screening_directories(base_dir = base_dir)
   for (path in unname(unlist(dirs))) {
     dir.create(path, recursive = TRUE, showWarnings = FALSE)
@@ -1801,7 +1801,7 @@ run_logistic_gaussian_screening <- function(dataset_name,
                                             null_mc_size = 20000L,
                                             make_plots = TRUE,
                                             save_outputs = TRUE,
-                                            output_dir = file.path("output", "calibration", "bootstrap", "logistic_gaussian", "composite"),
+                                            output_dir = canonical_logistic_gaussian_screening_dir("slow"),
                                             run_seed_sensitivity = FALSE,
                                             sensitivity_B = NULL,
                                             verbose = TRUE) {
@@ -2191,7 +2191,7 @@ run_logistic_gaussian_screening_batch <- function(dataset_names = default_logist
                                                   omega_grid_type = "fixed_simplex_lattice",
                                                   t_grid_type = "fixed_fitted_scale",
                                                   make_plots = TRUE,
-                                                  output_dir = file.path("output", "calibration", "bootstrap", "logistic_gaussian", "composite"),
+                                                  output_dir = canonical_logistic_gaussian_screening_dir("slow"),
                                                   run_seed_sensitivity = FALSE,
                                                   verbose = TRUE) {
   dirs <- ensure_logistic_gaussian_screening_directories(output_dir)
@@ -2329,3 +2329,4 @@ run_logistic_gaussian_screening_batch <- function(dataset_names = default_logist
     plot_paths = plot_paths
   )
 }
+source(file.path("scripts", "path_helpers.R"))

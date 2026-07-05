@@ -18,6 +18,7 @@ resolve_fast_problem_diag_path <- function(...) {
 
 source(resolve_fast_problem_diag_path("scripts", "run_fast_multiplier_validation_all_models.R"))
 source(resolve_fast_problem_diag_path("bootstrap", "calibration_study.R"))
+source(resolve_fast_problem_diag_path("scripts", "path_helpers.R"))
 
 problem_case_order <- function(model_name) {
   cases <- make_validation_cases()
@@ -320,8 +321,8 @@ diagnose_beta_paper_failure <- function(output_root,
   list(scan = out_df, first_failure = first_failure)
 }
 
-run_fast_multiplier_problem_diagnostics <- function(output_root = file.path("output", "fast_multiplier", "problem_diagnostics"),
-                                                    validation_raw_csv = file.path("output", "fast_multiplier", "validation_all_models_12cores_B1000_M5", "validation_raw.csv"),
+run_fast_multiplier_problem_diagnostics <- function(output_root = canonical_fast_multiplier_diagnostics_dir("problem_diagnostics"),
+                                                    validation_raw_csv = file.path(canonical_fast_multiplier_validation_dir("validation_all_models_12cores_B1000_M5"), "validation_raw.csv"),
                                                     M_outer = 5L,
                                                     base_seed = 20260613L,
                                                     derivative_mc_size = 1000L) {
@@ -413,13 +414,14 @@ parse_fast_problem_diag_args <- function(args) {
 if (sys.nframe() == 0L) {
   args <- parse_fast_problem_diag_args(commandArgs(trailingOnly = TRUE))
   result <- run_fast_multiplier_problem_diagnostics(
-    output_root = args$output_root %||% file.path("output", "fast_multiplier", "problem_diagnostics"),
-    validation_raw_csv = args$validation_raw_csv %||% file.path("output", "fast_multiplier", "validation_all_models_12cores_B1000_M5", "validation_raw.csv"),
+    output_root = args$output_root %||% canonical_fast_multiplier_diagnostics_dir("problem_diagnostics"),
+    validation_raw_csv = args$validation_raw_csv %||% file.path(canonical_fast_multiplier_validation_dir("validation_all_models_12cores_B1000_M5"), "validation_raw.csv"),
     M_outer = as.integer(args$M_outer %||% 5L),
     base_seed = as.integer(args$base_seed %||% 20260613L),
     derivative_mc_size = as.integer(args$derivative_mc_size %||% 1000L)
   )
-  cat("Validation diagnostics:", file.path(args$output_root %||% file.path("output", "fast_multiplier", "problem_diagnostics"), "validation_problem_diagnostics.csv"), "\n")
-  cat("Beta block diagnostics:", file.path(args$output_root %||% file.path("output", "fast_multiplier", "problem_diagnostics"), "beta_mixture2_score_block_diagnostics.csv"), "\n")
-  cat("Beta paper scan:", file.path(args$output_root %||% file.path("output", "fast_multiplier", "problem_diagnostics"), "beta_mixture2_paper_scan.csv"), "\n")
+  diag_root <- args$output_root %||% canonical_fast_multiplier_diagnostics_dir("problem_diagnostics")
+  cat("Validation diagnostics:", file.path(diag_root, "validation_problem_diagnostics.csv"), "\n")
+  cat("Beta block diagnostics:", file.path(diag_root, "beta_mixture2_score_block_diagnostics.csv"), "\n")
+  cat("Beta paper scan:", file.path(diag_root, "beta_mixture2_paper_scan.csv"), "\n")
 }

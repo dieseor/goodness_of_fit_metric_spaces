@@ -33,6 +33,7 @@ source(model_specs_script_path_jp_comets)
 source(multiplier_bootstrap_script_path_jp_comets)
 source(utils_script_path_jp_comets)
 source(comets_utils_script_path_jp_comets)
+source(resolve_comets_jp_path("scripts", "path_helpers.R"))
 
 make_jp_spec <- get("make_jp_spec", mode = "function")
 multiplier_bootstrap_gof <- get("multiplier_bootstrap_gof", mode = "function")
@@ -331,11 +332,8 @@ run_comets_distance_profile_jp_short_benchmark <- function(output_root = NULL,
                                                              jp_mle_max_abs_kappa_psi = 6
                                                            )) {
   if (is.null(output_root)) {
-    output_root <- file.path(
-      "output",
-      "comets_distance_profile_jp",
-      paste0("run_", timestamp_tag_jp_comets(), "_short_", statistic, "_benchmark")
-    )
+    speed_dir <- if (identical(bootstrap_method, "fast_multiplier")) "fast" else "slow"
+    output_root <- canonical_comets_jp_dir("ks_benchmark_main", speed_dir)
   }
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 

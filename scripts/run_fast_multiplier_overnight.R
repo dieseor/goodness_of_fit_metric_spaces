@@ -16,6 +16,8 @@ resolve_fast_overnight_path <- function(...) {
   if (is.null(lhs)) rhs else lhs
 }
 
+source(resolve_fast_overnight_path("scripts", "path_helpers.R"))
+
 parse_fast_overnight_args <- function(args) {
   out <- list()
   for (arg in args) {
@@ -53,14 +55,14 @@ run_logged_step <- function(step_index,
   invisible(list(log_path = log_path, elapsed_seconds = elapsed_seconds))
 }
 
-run_fast_multiplier_overnight <- function(output_root = file.path("output", "fast_multiplier"),
+run_fast_multiplier_overnight <- function(output_root = file.path("output"),
                                           n_cores = 12L,
                                           derivative_mc_size = 1000L,
                                           derivative_mc_seed = 20260613L,
                                           validation_B = 1000L,
                                           validation_M_outer = 5L) {
   scripts_dir <- dirname(resolve_fast_overnight_path("scripts", "run_fast_multiplier_overnight.R"))
-  log_dir <- file.path(output_root, "logs")
+  log_dir <- canonical_fast_multiplier_logs_dir("overnight")
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 
   steps <- list(
@@ -117,7 +119,7 @@ run_fast_multiplier_overnight <- function(output_root = file.path("output", "fas
 if (sys.nframe() == 0L) {
   args <- parse_fast_overnight_args(commandArgs(trailingOnly = TRUE))
   run_fast_multiplier_overnight(
-    output_root = args$output_root %||% file.path("output", "fast_multiplier"),
+    output_root = args$output_root %||% file.path("output"),
     n_cores = as.integer(args$n_cores %||% 12L),
     derivative_mc_size = as.integer(args$derivative_mc_size %||% 1000L),
     derivative_mc_seed = as.integer(args$derivative_mc_seed %||% 20260613L),

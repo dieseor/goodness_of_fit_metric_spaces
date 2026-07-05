@@ -1,3 +1,5 @@
+source("scripts/path_helpers.R")
+
 is_scenario4_running <- function() {
   status <- suppressWarnings(system(
     "pgrep -f 'run_spherical_cauchy_calibration_m500_b500_sequential.R' >/dev/null 2>&1",
@@ -46,7 +48,7 @@ main <- function() {
     args = c(
       "scripts/run_comets_distance_profile_spherical_cauchy_benchmark.R",
       "--dataset=short",
-      "--output_root=output/real_data/comets/spherical_cauchy/queued_short_ks_benchmark",
+      sprintf("--output_root=%s", canonical_comets_spherical_cauchy_dir("queued_short_ks_benchmark", "slow")),
       "--statistic=ks",
       "--n_cores=12",
       "--B_values=10,30,50,100,200,500,1000"
@@ -60,7 +62,7 @@ main <- function() {
     command = "Rscript",
     args = c(
       "scripts/run_comets_distance_profile_jp_long_benchmark.R",
-      "--output_root=output/real_data/comets/jp/queued_long_ks_benchmark",
+      sprintf("--output_root=%s", canonical_comets_jp_dir("queued_long_ks_benchmark", "slow")),
       "--statistic=ks",
       "--n_cores=12",
       "--B_values=10,30,50,100,200,500,1000"
@@ -75,7 +77,7 @@ main <- function() {
     args = c(
       "scripts/run_comets_distance_profile_spherical_cauchy_benchmark.R",
       "--dataset=long",
-      "--output_root=output/real_data/comets/spherical_cauchy/queued_long_ks_benchmark",
+      sprintf("--output_root=%s", canonical_comets_spherical_cauchy_dir("queued_long_ks_benchmark", "slow")),
       "--statistic=ks",
       "--n_cores=12",
       "--B_values=10,30,50,100,200,500,1000"
@@ -89,7 +91,7 @@ main <- function() {
     command = "Rscript",
     args = c(
       "scripts/run_vmf_composite_calibration_n50_n100.R",
-      "--output_root=output/calibration/bootstrap/vmf_composite_M1000_B1000_n50_100_queue",
+      sprintf("--output_root=%s", canonical_calibration_bootstrap_dir("vmf", "slow", "vmf_composite_M1000_B1000_n50_100_queue")),
       "--n_values=50,100",
       "--M_outer=1000",
       "--B=1000",

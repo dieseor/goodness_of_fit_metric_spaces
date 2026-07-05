@@ -29,6 +29,7 @@ source(small_circle_model_spec_script_path)
 source(multiplier_bootstrap_script_path_sc_circle)
 source(utils_script_path_sc_circle)
 source(comets_utils_script_path_sc_circle)
+source(resolve_comets_small_circle_path("scripts", "path_helpers.R"))
 
 make_small_circle_spec <- get("make_small_circle_spec", mode = "function")
 multiplier_bootstrap_gof <- get("multiplier_bootstrap_gof", mode = "function")
@@ -188,12 +189,13 @@ run_comets_distance_profile_small_circle_benchmark <- function(output_root = NUL
                                                                )) {
   dataset <- match.arg(dataset)
   if (is.null(output_root)) {
-    output_root <- file.path(
-      "output",
-      "comets",
-      "small_circle",
-      paste0("run_", timestamp_tag_small_circle_comets(), "_", dataset, "_", statistic, "_benchmark")
-    )
+    speed_dir <- if (identical(bootstrap_method, "fast_multiplier")) "fast" else "slow"
+    run_name <- if (identical(dataset, "short")) {
+      if (identical(statistic, "ks")) "short_comets_ks" else "short_comets"
+    } else {
+      if (identical(statistic, "ks")) "long_comets_ks" else "long_comets"
+    }
+    output_root <- canonical_comets_small_circle_dir(run_name, speed_dir)
   }
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 

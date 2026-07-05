@@ -865,7 +865,8 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
                                           want_ks = FALSE,
                                           want_cvm = FALSE,
                                           theta_hat,
-                                          keep_bootstrap_thetas = FALSE) {
+                                          keep_bootstrap_thetas = FALSE,
+                                          n_cores = 1L) {
   if (!identical(null$type, "composite")) {
     stop("The fast multiplier branch is only implemented for composite nulls.")
   }
@@ -944,26 +945,52 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
       stop("`control$fast_bootstrap_chunk_size` must be a strictly positive integer when supplied.")
     }
   }
+  n_cores <- max(1L, as.integer(n_cores))
   replicate_blocks <- if (is.null(chunk_size)) {
-    list(seq_len(n_reps))
+    split(seq_len(n_reps), rep(seq_len(min(n_cores, n_reps)), length.out = n_reps))
   } else {
     split(seq_len(n_reps), ceiling(seq_len(n_reps) / chunk_size))
   }
-  loop_start <- proc.time()[["elapsed"]]
-  for (block_indices in replicate_blocks) {
-    for (b in block_indices) {
+  run_fast_block <- function(block_indices) {
+    out_ks <- if (want_ks) numeric(length(block_indices)) else NULL
+    out_cvm <- if (want_cvm) numeric(length(block_indices)) else NULL
+    for (j in seq_along(block_indices)) {
+      b <- block_indices[[j]]
       centered_weights <- as.numeric(weight_matrix[b, ] - 1)
       if (want_ks) {
         process_ks <- scale_factor * drop(crossprod(centered_weights, H_ks)) / sqrt(nrow(S_obs))
-        ks_values[b] <- max(abs(process_ks))
+        out_ks[[j]] <- max(abs(process_ks))
       }
       if (want_cvm) {
-        cvm_values[b] <- compute_fast_cvm_stat_chunked(
+        out_cvm[[j]] <- compute_fast_cvm_stat_chunked(
           centered_weights = centered_weights,
           H_blocks = H_cvm_blocks,
           scale_factor = scale_factor
         )
       }
+    }
+    list(indices = block_indices, ks = out_ks, cvm = out_cvm)
+  }
+  loop_start <- proc.time()[["elapsed"]]
+  block_results <- if (length(replicate_blocks) == 1L) {
+    list(run_fast_block(replicate_blocks[[1L]]))
+  } else if (.Platform$OS.type == "unix") {
+    parallel::mclapply(
+      replicate_blocks,
+      run_fast_block,
+      mc.cores = min(n_cores, length(replicate_blocks)),
+      mc.preschedule = TRUE
+    )
+  } else {
+    lapply(replicate_blocks, run_fast_block)
+  }
+  for (block_result in block_results) {
+    idx <- block_result$indices
+    if (want_ks) {
+      ks_values[idx] <- block_result$ks
+    }
+    if (want_cvm) {
+      cvm_values[idx] <- block_result$cvm
     }
   }
   loop_seconds <- proc.time()[["elapsed"]] - loop_start
@@ -1110,7 +1137,8 @@ multiplier_bootstrap_gof <- function(data,
       want_ks = want_ks,
       want_cvm = want_cvm,
       theta_hat = theta_hat,
-      keep_bootstrap_thetas = keep$bootstrap_thetas
+      keep_bootstrap_thetas = keep$bootstrap_thetas,
+      n_cores = n_cores_effective
     ))
   } else if (n_cores_effective == 1L) {
     chunk_results <- lapply(seq_along(weight_chunks), function(i) {

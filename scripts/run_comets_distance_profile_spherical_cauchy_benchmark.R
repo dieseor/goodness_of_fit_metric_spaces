@@ -33,6 +33,7 @@ source(model_specs_script_path_sc_comets)
 source(multiplier_bootstrap_script_path_sc_comets)
 source(utils_script_path_sc_comets)
 source(comets_utils_script_path_sc_comets)
+source(resolve_comets_spherical_cauchy_path("scripts", "path_helpers.R"))
 
 make_spherical_cauchy_spec <- get("make_spherical_cauchy_spec", mode = "function")
 multiplier_bootstrap_gof <- get("multiplier_bootstrap_gof", mode = "function")
@@ -322,11 +323,8 @@ run_comets_distance_profile_spherical_cauchy_benchmark <- function(output_root =
   dataset <- match.arg(dataset)
 
   if (is.null(output_root)) {
-    output_root <- file.path(
-      "output",
-      "comets_distance_profile_spherical_cauchy",
-      paste0("run_", timestamp_tag_sc_comets(), "_", dataset, "_", statistic, "_benchmark")
-    )
+    run_name <- sprintf("%s_period_%s_benchmark", dataset, statistic)
+    output_root <- canonical_comets_spherical_cauchy_dir(run_name, "slow")
   }
   dir.create(output_root, recursive = TRUE, showWarnings = FALSE)
 

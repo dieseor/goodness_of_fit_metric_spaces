@@ -16,11 +16,13 @@ bootstrap_path_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_pa
 spec_path_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("bootstrap", "small_circle_weighted_mixture2_model_spec.R")
 prep_path_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("real_data", "sunspots", "sunspots.R")
 fmgp_rdata_dir_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("real_data", "sunspots", "fmgp_rdata")
+path_helpers_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("scripts", "path_helpers.R")
 
 source(utils_path_sunspots_weighted_rolling)
 source(model_specs_path_sunspots_weighted_rolling)
 source(spec_path_sunspots_weighted_rolling)
 source(bootstrap_path_sunspots_weighted_rolling)
+source(path_helpers_sunspots_weighted_rolling)
 
 default_weighted_cycle24_theta_start <- function() {
   small_circle_weighted_mixture2_normalize_theta(list(
@@ -502,7 +504,7 @@ run_sunspots_weighted_mixture_rolling_windows_gof <- function(
     cycles = c(21L, 22L, 23L),
     grid_groups = "all",
     input_csv = file.path("real_data", "sunspots", "output", "sunspots_cycles21_23_s2_all.csv"),
-    output_dir = file.path("real_data", "sunspots", "output", "cycles21_23_weighted_mixture_rolling_windows_10cr_B1000"),
+    output_dir = canonical_sunspots_weighted_windows_dir("slow"),
     statistics = "ks",
     B = 1000L,
     n_cores = 12L,
@@ -654,7 +656,26 @@ run_sunspots_weighted_mixture_rolling_windows_gof <- function(
     results_df <- results_df[order(results_df$cycle, results_df$grid_group, results_df$window_id, results_df$statistic_type), , drop = FALSE]
     utils::write.csv(results_df, results_path, row.names = FALSE)
     cycle_grid_theta_start[[key]] <- result$theta_hat
-    sunspots_weighted_rolling_log_message(log_path, sprintf("Cycle %d group %s window %d completed: KS=%.6f | p-value=%.6f | convergence=%s", window_meta$cycle[[1L]], window_meta$grid_group[[1L]], window_meta$window_id[[1L]], result$result_row$test_statistic[[1L]], result$result_row$p_value_raw[[1L]], as.character(result$result_row$convergence[[1L]])))
+    stat_summary <- paste(
+      sprintf(
+        "%s=%.6f (p=%.6f)",
+        toupper(result$result_row$statistic_type),
+        result$result_row$test_statistic,
+        result$result_row$p_value_raw
+      ),
+      collapse = " | "
+    )
+    sunspots_weighted_rolling_log_message(
+      log_path,
+      sprintf(
+        "Cycle %d group %s window %d completed: %s | convergence=%s",
+        window_meta$cycle[[1L]],
+        window_meta$grid_group[[1L]],
+        window_meta$window_id[[1L]],
+        stat_summary,
+        paste(result$result_row$convergence, collapse = ",")
+      )
+    )
   }
 
   summary_rows <- do.call(rbind, lapply(statistics, function(stat_name) {

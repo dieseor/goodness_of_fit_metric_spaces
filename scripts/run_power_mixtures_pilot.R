@@ -207,7 +207,8 @@ rdirichlet_symmetric <- function(n, a) {
 }
 
 generate_vmf_antipodal_sample <- function(n, beta, mu, kappa) {
-  choose_alt <- stats::runif(n) < (beta / 2)
+  # Here beta is the mixture weight of the alternative component.
+  choose_alt <- stats::runif(n) < beta
   sample <- matrix(0, nrow = n, ncol = length(mu))
   n_alt <- sum(choose_alt)
   n_null <- n - n_alt
@@ -223,7 +224,8 @@ generate_vmf_antipodal_sample <- function(n, beta, mu, kappa) {
 }
 
 generate_vmf_nonantipodal_sample <- function(n, beta, mu, nu, kappa) {
-  choose_alt <- stats::runif(n) < (beta / 2)
+  # Here beta is the mixture weight of the alternative component.
+  choose_alt <- stats::runif(n) < beta
   sample <- matrix(0, nrow = n, ncol = length(mu))
   n_alt <- sum(choose_alt)
   n_null <- n - n_alt
@@ -238,7 +240,7 @@ generate_vmf_nonantipodal_sample <- function(n, beta, mu, nu, kappa) {
   sample
 }
 
-generate_logistic_dirichlet_sample <- function(n, beta, dirichlet_a) {
+generate_logistic_dirichlet_sample <- function(n, beta, dirichlet_alpha) {
   choose_alt <- stats::runif(n) < beta
   sample <- matrix(0, nrow = n, ncol = 3L)
   n_alt <- sum(choose_alt)
@@ -252,7 +254,13 @@ generate_logistic_dirichlet_sample <- function(n, beta, dirichlet_a) {
     )
   }
   if (n_alt > 0L) {
-    sample[choose_alt, ] <- rdirichlet_symmetric(n = n_alt, a = dirichlet_a)
+    alpha_vec <- as.numeric(dirichlet_alpha)
+    gamma_draws <- matrix(
+      stats::rgamma(n_alt * length(alpha_vec), shape = rep(alpha_vec, each = n_alt), rate = 1),
+      nrow = n_alt,
+      ncol = length(alpha_vec)
+    )
+    sample[choose_alt, ] <- gamma_draws / rowSums(gamma_draws)
   }
 
   sample
@@ -296,8 +304,11 @@ filter_design_by_block <- function(design, block) {
 make_design_grid <- function(n_values, beta_values) {
   mu <- c(1, 0, 0)
   kappa <- 2
-  gamma_values <- c(60, 90, 120)
-  dirichlet_a_values <- c(2, 4, 6)
+  gamma_values <- c(120)
+  dirichlet_cases <- list(
+    c(0.2, 0.2, 0.2),
+    c(1, 1, 8)
+  )
 
   rows <- list()
   idx <- 1L
@@ -309,12 +320,15 @@ make_design_grid <- function(n_values, beta_values) {
         alternative = "antipodal_mixture",
         n = as.integer(n),
         beta = as.numeric(beta),
-       gamma_deg = NA_real_,
-       dirichlet_a = NA_real_,
-       mu_x = mu[[1L]],
-       mu_y = mu[[2L]],
-       mu_z = mu[[3L]],
-       kappa = kappa,
+        gamma_deg = NA_real_,
+        dirichlet_a = NA_real_,
+        dirichlet_alpha1 = NA_real_,
+        dirichlet_alpha2 = NA_real_,
+        dirichlet_alpha3 = NA_real_,
+        mu_x = mu[[1L]],
+        mu_y = mu[[2L]],
+        mu_z = mu[[3L]],
+        kappa = kappa,
         nu_x = NA_real_,
         nu_y = NA_real_,
         nu_z = NA_real_,
@@ -334,41 +348,47 @@ make_design_grid <- function(n_values, beta_values) {
           alternative = "non_antipodal_mixture",
           n = as.integer(n),
           beta = as.numeric(beta),
-        gamma_deg = as.numeric(gamma_deg),
-        dirichlet_a = NA_real_,
-        mu_x = mu[[1L]],
-        mu_y = mu[[2L]],
-        mu_z = mu[[3L]],
-        kappa = kappa,
-        nu_x = nu[[1L]],
-        nu_y = nu[[2L]],
-        nu_z = nu[[3L]],
-        stringsAsFactors = FALSE
+          gamma_deg = as.numeric(gamma_deg),
+          dirichlet_a = NA_real_,
+          dirichlet_alpha1 = NA_real_,
+          dirichlet_alpha2 = NA_real_,
+          dirichlet_alpha3 = NA_real_,
+          mu_x = mu[[1L]],
+          mu_y = mu[[2L]],
+          mu_z = mu[[3L]],
+          kappa = kappa,
+          nu_x = nu[[1L]],
+          nu_y = nu[[2L]],
+          nu_z = nu[[3L]],
+          stringsAsFactors = FALSE
         )
         idx <- idx + 1L
       }
     }
   }
 
-  for (dirichlet_a in dirichlet_a_values) {
+  for (dirichlet_alpha in dirichlet_cases) {
     for (n in n_values) {
       for (beta in beta_values) {
         rows[[idx]] <- data.frame(
-        scenario = "logistic_gaussian_simplex_d3",
-        alternative = "dirichlet_mixture",
-        n = as.integer(n),
-        beta = as.numeric(beta),
-        gamma_deg = NA_real_,
-        dirichlet_a = as.numeric(dirichlet_a),
-        mu_x = NA_real_,
-        mu_y = NA_real_,
-        mu_z = NA_real_,
-        kappa = NA_real_,
-        nu_x = NA_real_,
-        nu_y = NA_real_,
-        nu_z = NA_real_,
-        stringsAsFactors = FALSE
-      )
+          scenario = "logistic_gaussian_simplex_d3",
+          alternative = "dirichlet_mixture",
+          n = as.integer(n),
+          beta = as.numeric(beta),
+          gamma_deg = NA_real_,
+          dirichlet_a = if (length(unique(dirichlet_alpha)) == 1L) as.numeric(dirichlet_alpha[[1L]]) else NA_real_,
+          dirichlet_alpha1 = as.numeric(dirichlet_alpha[[1L]]),
+          dirichlet_alpha2 = as.numeric(dirichlet_alpha[[2L]]),
+          dirichlet_alpha3 = as.numeric(dirichlet_alpha[[3L]]),
+          mu_x = NA_real_,
+          mu_y = NA_real_,
+          mu_z = NA_real_,
+          kappa = NA_real_,
+          nu_x = NA_real_,
+          nu_y = NA_real_,
+          nu_z = NA_real_,
+          stringsAsFactors = FALSE
+        )
         idx <- idx + 1L
       }
     }
@@ -407,6 +427,9 @@ run_single_power_job <- function(job_row,
     beta = as.numeric(design_row$beta),
     gamma_deg = as.numeric(design_row$gamma_deg %||% NA_real_),
     dirichlet_a = as.numeric(design_row$dirichlet_a %||% NA_real_),
+    dirichlet_alpha1 = as.numeric(design_row$dirichlet_alpha1 %||% NA_real_),
+    dirichlet_alpha2 = as.numeric(design_row$dirichlet_alpha2 %||% NA_real_),
+    dirichlet_alpha3 = as.numeric(design_row$dirichlet_alpha3 %||% NA_real_),
     rep = rep_id,
     ks_stat = NA_real_,
     cvm_stat = NA_real_,
@@ -501,7 +524,11 @@ run_single_power_job <- function(job_row,
         x <- generate_logistic_dirichlet_sample(
           n = as.integer(design_row$n),
           beta = as.numeric(design_row$beta),
-          dirichlet_a = as.numeric(design_row$dirichlet_a)
+          dirichlet_alpha = c(
+            as.numeric(design_row$dirichlet_alpha1),
+            as.numeric(design_row$dirichlet_alpha2),
+            as.numeric(design_row$dirichlet_alpha3)
+          )
         )
 
         logistic_ks_grid_design <- make_exchangeable_logistic_ks_grid()
@@ -568,7 +595,9 @@ summarize_power_results <- function(raw_results, alpha = 0.05) {
     ok$n,
     ok$beta,
     ifelse(is.na(ok$gamma_deg), "NA", format(ok$gamma_deg, scientific = FALSE, trim = TRUE)),
-    ifelse(is.na(ok$dirichlet_a), "NA", format(ok$dirichlet_a, scientific = FALSE, trim = TRUE)),
+    ifelse(is.na(ok$dirichlet_alpha1), "NA", format(ok$dirichlet_alpha1, scientific = FALSE, trim = TRUE)),
+    ifelse(is.na(ok$dirichlet_alpha2), "NA", format(ok$dirichlet_alpha2, scientific = FALSE, trim = TRUE)),
+    ifelse(is.na(ok$dirichlet_alpha3), "NA", format(ok$dirichlet_alpha3, scientific = FALSE, trim = TRUE)),
     sep = "|"
   )
 
@@ -582,6 +611,9 @@ summarize_power_results <- function(raw_results, alpha = 0.05) {
       beta = as.numeric(first$beta),
       gamma_deg = as.numeric(first$gamma_deg),
       dirichlet_a = as.numeric(first$dirichlet_a),
+      dirichlet_alpha1 = as.numeric(first$dirichlet_alpha1),
+      dirichlet_alpha2 = as.numeric(first$dirichlet_alpha2),
+      dirichlet_alpha3 = as.numeric(first$dirichlet_alpha3),
       n_success = nrow(df),
       n_fail = sum(raw_results$scenario == first$scenario &
         raw_results$alternative == first$alternative &
@@ -589,8 +621,12 @@ summarize_power_results <- function(raw_results, alpha = 0.05) {
         raw_results$beta == first$beta &
         ((is.na(raw_results$gamma_deg) & is.na(first$gamma_deg)) |
           (!is.na(raw_results$gamma_deg) & !is.na(first$gamma_deg) & raw_results$gamma_deg == first$gamma_deg)) &
-        ((is.na(raw_results$dirichlet_a) & is.na(first$dirichlet_a)) |
-          (!is.na(raw_results$dirichlet_a) & !is.na(first$dirichlet_a) & raw_results$dirichlet_a == first$dirichlet_a)) &
+        ((is.na(raw_results$dirichlet_alpha1) & is.na(first$dirichlet_alpha1)) |
+          (!is.na(raw_results$dirichlet_alpha1) & !is.na(first$dirichlet_alpha1) & raw_results$dirichlet_alpha1 == first$dirichlet_alpha1)) &
+        ((is.na(raw_results$dirichlet_alpha2) & is.na(first$dirichlet_alpha2)) |
+          (!is.na(raw_results$dirichlet_alpha2) & !is.na(first$dirichlet_alpha2) & raw_results$dirichlet_alpha2 == first$dirichlet_alpha2)) &
+        ((is.na(raw_results$dirichlet_alpha3) & is.na(first$dirichlet_alpha3)) |
+          (!is.na(raw_results$dirichlet_alpha3) & !is.na(first$dirichlet_alpha3) & raw_results$dirichlet_alpha3 == first$dirichlet_alpha3)) &
         raw_results$status != "ok"),
       power_ks_005 = mean(df$ks_pvalue <= alpha, na.rm = TRUE),
       power_cvm_005 = mean(df$cvm_pvalue <= alpha, na.rm = TRUE),
@@ -603,7 +639,9 @@ summarize_power_results <- function(raw_results, alpha = 0.05) {
     summary_df$scenario,
     summary_df$alternative,
     summary_df$gamma_deg,
-    summary_df$dirichlet_a,
+    summary_df$dirichlet_alpha1,
+    summary_df$dirichlet_alpha2,
+    summary_df$dirichlet_alpha3,
     summary_df$n,
     summary_df$beta
   ), , drop = FALSE]
@@ -621,7 +659,9 @@ summarize_alpha_curves <- function(raw_results, alpha_grid) {
     ok$n,
     ok$beta,
     ifelse(is.na(ok$gamma_deg), "NA", format(ok$gamma_deg, scientific = FALSE, trim = TRUE)),
-    ifelse(is.na(ok$dirichlet_a), "NA", format(ok$dirichlet_a, scientific = FALSE, trim = TRUE)),
+    ifelse(is.na(ok$dirichlet_alpha1), "NA", format(ok$dirichlet_alpha1, scientific = FALSE, trim = TRUE)),
+    ifelse(is.na(ok$dirichlet_alpha2), "NA", format(ok$dirichlet_alpha2, scientific = FALSE, trim = TRUE)),
+    ifelse(is.na(ok$dirichlet_alpha3), "NA", format(ok$dirichlet_alpha3, scientific = FALSE, trim = TRUE)),
     sep = "|"
   )
 
@@ -639,6 +679,9 @@ summarize_alpha_curves <- function(raw_results, alpha_grid) {
         beta = as.numeric(first$beta),
         gamma_deg = as.numeric(first$gamma_deg),
         dirichlet_a = as.numeric(first$dirichlet_a),
+        dirichlet_alpha1 = as.numeric(first$dirichlet_alpha1),
+        dirichlet_alpha2 = as.numeric(first$dirichlet_alpha2),
+        dirichlet_alpha3 = as.numeric(first$dirichlet_alpha3),
         alpha = as.numeric(alpha_value),
         rejection_prob_ks = mean(df$ks_pvalue <= alpha_value, na.rm = TRUE),
         rejection_prob_cvm = mean(df$cvm_pvalue <= alpha_value, na.rm = TRUE),
@@ -653,7 +696,9 @@ summarize_alpha_curves <- function(raw_results, alpha_grid) {
     curve_df$scenario,
     curve_df$alternative,
     curve_df$gamma_deg,
-    curve_df$dirichlet_a,
+    curve_df$dirichlet_alpha1,
+    curve_df$dirichlet_alpha2,
+    curve_df$dirichlet_alpha3,
     curve_df$n,
     curve_df$beta,
     curve_df$alpha
@@ -670,7 +715,12 @@ plot_title_suffix <- function(df) {
     return(sprintf("vMF on S^2: non-antipodal mixture, gamma = %s deg", first$gamma_deg))
   }
   if (identical(first$scenario, "logistic_gaussian_simplex_d3")) {
-    return(sprintf("Simplex D = 3: LG vs Dirichlet, a = %s", first$dirichlet_a))
+    return(sprintf(
+      "Simplex D = 3: LG vs Dirichlet (%s, %s, %s)",
+      format(first$dirichlet_alpha1, trim = TRUE),
+      format(first$dirichlet_alpha2, trim = TRUE),
+      format(first$dirichlet_alpha3, trim = TRUE)
+    ))
   }
 
   sprintf("%s / %s", first$scenario, first$alternative)
@@ -685,6 +735,16 @@ plot_group_slug <- function(df) {
   }
   if (!is.na(first$dirichlet_a)) {
     pieces <- c(pieces, sprintf("a_%s", first$dirichlet_a))
+  } else if (!is.na(first$dirichlet_alpha1) && !is.na(first$dirichlet_alpha2) && !is.na(first$dirichlet_alpha3)) {
+    pieces <- c(
+      pieces,
+      sprintf(
+        "alpha_%s_%s_%s",
+        format(first$dirichlet_alpha1, trim = TRUE),
+        format(first$dirichlet_alpha2, trim = TRUE),
+        format(first$dirichlet_alpha3, trim = TRUE)
+      )
+    )
   }
 
   safe_slug(paste(pieces, collapse = "_"))
@@ -693,21 +753,38 @@ plot_group_slug <- function(df) {
 save_power_plot <- function(summary_subset, stat_name, file_path) {
   n_values <- sort(unique(summary_subset$n))
   beta_values <- sort(unique(summary_subset$beta))
-  colors <- grDevices::hcl.colors(length(n_values), palette = "Dark 3")
+  colors <- viridisLite::viridis(length(n_values), option = "D", begin = 0.15, end = 0.9)
   y_column <- if (identical(stat_name, "ks")) "power_ks_005" else "power_cvm_005"
+  calibration_band <- c(0.0365, 0.0635)
 
   grDevices::png(filename = file_path, width = 1800, height = 1200, res = 180)
   on.exit(grDevices::dev.off(), add = TRUE)
+  old_par <- graphics::par(no.readonly = TRUE)
+  on.exit(graphics::par(old_par), add = TRUE)
+  graphics::par(mar = c(6.2, 8.2, 2.2, 1.2))
 
   plot(
     NA,
     xlim = range(beta_values),
     ylim = c(0, 1),
-    xlab = expression(beta),
-    ylab = expression(hat(P)(p <= 0.05)),
-    main = sprintf("%s (%s)", plot_title_suffix(summary_subset), toupper(stat_name))
+    xlab = "",
+    ylab = expression(P[M](p <= 0.05)),
+    cex.axis = 1.5,
+    cex.lab = 1.5
   )
-  grid(col = "grey85")
+  usr <- graphics::par("usr")
+  x_pad <- 0.01 * diff(usr[1:2])
+  grid(col = "grey78")
+  graphics::rect(
+    xleft = usr[[1L]] - x_pad,
+    ybottom = calibration_band[[1L]],
+    xright = usr[[2L]] + x_pad,
+    ytop = calibration_band[[2L]],
+    col = grDevices::adjustcolor("grey75", alpha.f = 0.35),
+    border = NA
+  )
+  graphics::abline(h = 0.05, lty = 2, lwd = 2, col = "black")
+  graphics::mtext(expression(beta), side = 1, line = 2.5, cex = 2)
 
   for (i in seq_along(n_values)) {
     n_i <- n_values[[i]]
@@ -718,39 +795,41 @@ save_power_plot <- function(summary_subset, stat_name, file_path) {
   }
 
   legend(
-    "bottomright",
+    "topleft",
     legend = sprintf("n = %d", n_values),
     col = colors,
     lwd = 3,
     pch = 19,
-    bty = "n"
+    bty = "n",
+    cex = 2,
+    pt.cex = 2
   )
 }
 
 save_alpha_curve_plot <- function(alpha_subset, stat_name, file_path) {
   n_values <- sort(unique(alpha_subset$n))
-  colors <- grDevices::hcl.colors(length(n_values), palette = "Dark 3")
+  colors <- viridisLite::viridis(length(n_values), option = "D", begin = 0.15, end = 0.9)
   y_column <- if (identical(stat_name, "ks")) "rejection_prob_ks" else "rejection_prob_cvm"
   beta_value <- unique(alpha_subset$beta)
 
   grDevices::png(filename = file_path, width = 1800, height = 1200, res = 180)
   on.exit(grDevices::dev.off(), add = TRUE)
+  old_par <- graphics::par(no.readonly = TRUE)
+  on.exit(graphics::par(old_par), add = TRUE)
+  graphics::par(mar = c(6.2, 8.2, 2.2, 1.2))
 
   plot(
     c(0, 1),
     c(0, 1),
     type = "n",
-    xlab = expression(alpha),
-    ylab = expression(hat(P)(p <= alpha)),
-    main = sprintf(
-      "%s, beta = %s (%s)",
-      plot_title_suffix(alpha_subset),
-      format(beta_value[[1L]], trim = TRUE),
-      toupper(stat_name)
-    )
+    xlab = "",
+    ylab = expression(P[M](p <= alpha)),
+    cex.axis = 1.5,
+    cex.lab = 1.5
   )
   grid(col = "grey85")
   abline(0, 1, lty = 2, lwd = 2, col = "black")
+  graphics::mtext(expression(alpha), side = 1, line = 2.5, cex = 2)
 
   for (i in seq_along(n_values)) {
     n_i <- n_values[[i]]
@@ -764,7 +843,8 @@ save_alpha_curve_plot <- function(alpha_subset, stat_name, file_path) {
     legend = sprintf("n = %d", n_values),
     col = colors,
     lwd = 3,
-    bty = "n"
+    bty = "n",
+    cex = 2
   )
 }
 
@@ -1032,19 +1112,19 @@ merge_with_existing_outputs <- function(output_dir,
       existing_df = existing_raw,
       new_df = raw_results,
       scenario_ids = scenario_ids,
-      order_cols = c("scenario", "alternative", "gamma_deg", "dirichlet_a", "n", "beta", "rep")
+      order_cols = c("scenario", "alternative", "gamma_deg", "dirichlet_alpha1", "dirichlet_alpha2", "dirichlet_alpha3", "n", "beta", "rep")
     ),
     summary = replace_scenario_rows(
       existing_df = existing_summary,
       new_df = summary_df,
       scenario_ids = scenario_ids,
-      order_cols = c("scenario", "alternative", "gamma_deg", "dirichlet_a", "n", "beta")
+      order_cols = c("scenario", "alternative", "gamma_deg", "dirichlet_alpha1", "dirichlet_alpha2", "dirichlet_alpha3", "n", "beta")
     ),
     alpha_curves = replace_scenario_rows(
       existing_df = existing_alpha,
       new_df = alpha_curve_df,
       scenario_ids = scenario_ids,
-      order_cols = c("scenario", "alternative", "gamma_deg", "dirichlet_a", "n", "beta", "alpha")
+      order_cols = c("scenario", "alternative", "gamma_deg", "dirichlet_alpha1", "dirichlet_alpha2", "dirichlet_alpha3", "n", "beta", "alpha")
     )
   )
 }
