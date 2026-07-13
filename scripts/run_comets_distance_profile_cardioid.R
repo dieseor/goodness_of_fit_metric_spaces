@@ -177,6 +177,38 @@ make_comet_cardioid_models <- function(model_ids = NULL) {
   output
 }
 
+make_cardioid_ks_grid <- function(data_matrix,
+                                  distance_type = "geodesic",
+                                  ks_grid_mode = c("sample_points_unique_distances", "manual"),
+                                  ks_omega_points = 200L,
+                                  ks_t_points = 50L) {
+  ks_grid_mode <- match.arg(ks_grid_mode)
+
+  if (identical(ks_grid_mode, "sample_points_unique_distances")) {
+    return(make_sample_unique_distance_ks_grid())
+  }
+
+  omega_grid <- generate_canonical_lattice(
+    n_points = as.integer(ks_omega_points),
+    dim = ncol(data_matrix)
+  )
+  dot_products <- pmin(pmax(as.matrix(data_matrix) %*% t(omega_grid), -1), 1)
+  distance_matrix <- if (identical(distance_type, "chordal")) {
+    sqrt(pmax(0, 2 * (1 - dot_products)))
+  } else {
+    acos(dot_products)
+  }
+  t_upper <- max(distance_matrix, na.rm = TRUE)
+  if (!is.finite(t_upper) || t_upper <= 0) {
+    t_upper <- if (identical(distance_type, "chordal")) 2 - 1e-8 else pi - 1e-8
+  }
+
+  list(
+    omega_grid = omega_grid,
+    t_grid = seq(1e-8, t_upper, length.out = as.integer(ks_t_points))
+  )
+}
+
 append_manifest_row_cardioid <- function(manifest_rows,
                                          stage_id,
                                          stage_label,
@@ -449,6 +481,7 @@ run_comets_distance_profile_cardioid <- function(output_root = NULL,
                                                  model_ids = NULL,
                                                  cvm_B = 1000L,
                                                  ks_B = 200L,
+                                                 ks_grid_mode = "sample_points_unique_distances",
                                                  ks_omega_points = 200L,
                                                  ks_t_points = 50L,
                                                  n_cores = 10L,
@@ -490,8 +523,9 @@ run_comets_distance_profile_cardioid <- function(output_root = NULL,
       model_ids = vapply(models, `[[`, character(1), "id"),
       cvm_B = as.integer(cvm_B),
       ks_B = as.integer(ks_B),
-      ks_omega_points = as.integer(ks_omega_points),
-      ks_t_points = as.integer(ks_t_points),
+      ks_grid_mode = ks_grid_mode,
+      ks_omega_points = if (identical(ks_grid_mode, "manual")) as.integer(ks_omega_points) else NA_integer_,
+      ks_t_points = if (identical(ks_grid_mode, "manual")) as.integer(ks_t_points) else NA_integer_,
       n_cores = as.integer(n_cores),
       base_seed = as.integer(base_seed),
       distance_type = distance_type
@@ -499,9 +533,19 @@ run_comets_distance_profile_cardioid <- function(output_root = NULL,
     file = file.path(output_root, "run_config.rds")
   )
 
-  ks_grid <- list(
-    omega_grid = generate_canonical_lattice(as.integer(ks_omega_points), dim = 3),
-    t_grid = seq(1e-8, pi - 1e-8, length.out = as.integer(ks_t_points))
+  ks_grid_oort <- make_cardioid_ks_grid(
+    data_matrix = comets_data$oort$normal,
+    distance_type = distance_type,
+    ks_grid_mode = ks_grid_mode,
+    ks_omega_points = ks_omega_points,
+    ks_t_points = ks_t_points
+  )
+  ks_grid_short <- make_cardioid_ks_grid(
+    data_matrix = comets_data$short$normal,
+    distance_type = distance_type,
+    ks_grid_mode = ks_grid_mode,
+    ks_omega_points = ks_omega_points,
+    ks_t_points = ks_t_points
   )
 
   stage_definitions <- list(
@@ -519,7 +563,7 @@ run_comets_distance_profile_cardioid <- function(output_root = NULL,
       dataset = comets_data$oort$normal,
       statistic = "ks",
       B = ks_B,
-      ks_grid = ks_grid
+      ks_grid = ks_grid_oort
     ),
     short_cvm = list(
       stage_id = "02",
@@ -535,7 +579,7 @@ run_comets_distance_profile_cardioid <- function(output_root = NULL,
       dataset = comets_data$short$normal,
       statistic = "ks",
       B = ks_B,
-      ks_grid = ks_grid
+      ks_grid = ks_grid_short
     )
   )
 

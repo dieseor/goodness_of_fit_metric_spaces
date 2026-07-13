@@ -23,7 +23,7 @@ parse_bool <- function(x, key) {
 parse_args <- function(args) {
   out <- list(
     external_repo = repo_root_default,
-    B = 1000L,
+    B = 5000L,
     cores = 12L,
     rerun_ks = TRUE,
     rerun_cvm = TRUE,

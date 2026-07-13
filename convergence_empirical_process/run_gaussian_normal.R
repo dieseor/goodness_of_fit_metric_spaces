@@ -52,6 +52,7 @@ SIGMA_TRUE <- 1        # True standard deviation of X
 
 # Parallelization
 N_CORES <- 10          # Number of cores for parallel computation
+EMPIRICAL_KS_MODE <- "sample"
 
 # H0 settings: 'simple' or 'composite' with unknown_param in c(NULL, 'mu', 'sigma', 'both')
 H0_TYPE <- 'simple'
@@ -64,7 +65,7 @@ DENSITY_ADJUST <- 1.5
 # MAIN EXECUTION
 # ============================================================================
 
-run_simple_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, omega_grid = NULL, t_grid = NULL) {
+run_simple_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, omega_grid = NULL, t_grid = NULL, empirical_ks_mode = EMPIRICAL_KS_MODE) {
   if (is.null(output_dir)) {
     output_dir <- "output/convergence/gaussian_process/normal"
   }
@@ -95,6 +96,7 @@ run_simple_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULAT
       M = M,
       n_cores = n_cores,
       h0 = H0_TYPE,
+      empirical_ks_mode = empirical_ks_mode,
       qqplot = TRUE
     )
     # Also save QQ plot (if present) - file prefixed with qq_
@@ -118,7 +120,7 @@ run_simple_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULAT
   return(all_results)
 }
 
-run_composite_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, unknown_param = c('mu','sigma','both'), omega_grid = NULL, t_grid = NULL) {
+run_composite_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, unknown_param = c('mu','sigma','both'), omega_grid = NULL, t_grid = NULL, empirical_ks_mode = EMPIRICAL_KS_MODE) {
   if (is.null(output_dir)) {
     output_dir <- "output/convergence/gaussian_process/normal"
   }
@@ -151,6 +153,7 @@ run_composite_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMU
       n_cores = n_cores,
       h0 = 'composite',
       unknown_param = unk,
+      empirical_ks_mode = empirical_ks_mode,
       qqplot = TRUE
     )
       convergence_filename_comp <- sprintf("comp_unk_%s_mu_%g_sigma_%g_M%d_grid%dx%d.png",
@@ -179,7 +182,7 @@ run_composite_normal <- function(scenarios = NULL, output_dir = NULL, M = M_SIMU
 
 
 # Mimic run_composite_variants for the simple null case
-run_simple_variants <- function(mu_values = c(0, -1, 1), sigma_values = c(1, 2, 5), output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST) {
+run_simple_variants <- function(mu_values = c(0, -1, 1), sigma_values = c(1, 2, 5), output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, empirical_ks_mode = EMPIRICAL_KS_MODE) {
   scenarios <- list()
   for (mu_val in mu_values) {
     for (sigma_val in sigma_values) {
@@ -207,7 +210,8 @@ run_simple_variants <- function(mu_values = c(0, -1, 1), sigma_values = c(1, 2, 
     n_cores = n_cores,
     density_adjust = density_adjust,
     omega_grid = omega_grid_global,
-    t_grid = t_grid_global
+    t_grid = t_grid_global,
+    empirical_ks_mode = empirical_ks_mode
   )
   results <- res
   # Summarize KS test p-values to CSV rows
@@ -243,7 +247,7 @@ run_simple_variants <- function(mu_values = c(0, -1, 1), sigma_values = c(1, 2, 
   return(results)
 }
 
-run_composite_variants <- function(mu_values = c(0, -1, 1), sigma_values = c(1, 2, 5), unknown_params = c('mu', 'sigma', 'both'), nominal_mu = 0, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST) {
+run_composite_variants <- function(mu_values = c(0, -1, 1), sigma_values = c(1, 2, 5), unknown_params = c('mu', 'sigma', 'both'), nominal_mu = 0, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, empirical_ks_mode = EMPIRICAL_KS_MODE) {
   scenarios <- list()
   for (mu_val in mu_values) {
     for (sigma_val in sigma_values) {
@@ -265,7 +269,7 @@ run_composite_variants <- function(mu_values = c(0, -1, 1), sigma_values = c(1, 
 
   for (unk in unknown_params) {
     cat('\nRunning composite variants with unknown_param = ', unk, '\n')
-    results[[unk]] <- run_composite_normal(scenarios = scenarios, output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_cores = n_cores, density_adjust = density_adjust, unknown_param = unk, omega_grid = omega_grid_global, t_grid = t_grid_global)
+    results[[unk]] <- run_composite_normal(scenarios = scenarios, output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_cores = n_cores, density_adjust = density_adjust, unknown_param = unk, omega_grid = omega_grid_global, t_grid = t_grid_global, empirical_ks_mode = empirical_ks_mode)
     # Summarize KS test p-values to CSV rows
     for (scn_name in names(results[[unk]])) {
       res_scn <- results[[unk]][[scn_name]]
@@ -304,11 +308,11 @@ run_composite_variants <- function(mu_values = c(0, -1, 1), sigma_values = c(1, 
   return(results)
 }
 
-run_all_normal <- function(output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST) {
-  simple_res <- run_simple_normal(output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_cores = n_cores, density_adjust = density_adjust)
-  composite_res <- run_composite_normal(output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_cores = n_cores, density_adjust = density_adjust)
-  simple_variants_res <- run_simple_variants(mu_values = c(0, -3, 3), sigma_values = c(1, 2, 5), output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_cores = n_cores, density_adjust = density_adjust)
-  composite_variants_res <- run_composite_variants(mu_values = c(0, -3, 3), sigma_values = c(1, 2, 5), unknown_params = c("mu", "sigma", "both"), output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_cores = n_cores, density_adjust = density_adjust)
+run_all_normal <- function(output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, empirical_ks_mode = EMPIRICAL_KS_MODE) {
+  simple_res <- run_simple_normal(output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_cores = n_cores, density_adjust = density_adjust, empirical_ks_mode = empirical_ks_mode)
+  composite_res <- run_composite_normal(output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_cores = n_cores, density_adjust = density_adjust, empirical_ks_mode = empirical_ks_mode)
+  simple_variants_res <- run_simple_variants(mu_values = c(0, -3, 3), sigma_values = c(1, 2, 5), output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_cores = n_cores, density_adjust = density_adjust, empirical_ks_mode = empirical_ks_mode)
+  composite_variants_res <- run_composite_variants(mu_values = c(0, -3, 3), sigma_values = c(1, 2, 5), unknown_params = c("mu", "sigma", "both"), output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_cores = n_cores, density_adjust = density_adjust, empirical_ks_mode = empirical_ks_mode)
   return(list(
     simple = simple_res,
     composite = composite_res,
@@ -325,20 +329,20 @@ if (sys.nframe() == 0) {
   action <- if (length(args) > 0) args[1] else 'all'
   # Allow second arg to override M
   if (length(args) > 1 && !is.na(as.numeric(args[2]))) M_SIMULATIONS <- as.numeric(args[2])
+  if (length(args) > 2 && args[3] %in% c("sample", "grid")) EMPIRICAL_KS_MODE <- args[3]
   # Map action
   if (action == 'simple') {
-    run_simple_normal(M = M_SIMULATIONS)
+    run_simple_normal(M = M_SIMULATIONS, empirical_ks_mode = EMPIRICAL_KS_MODE)
   } else if (action == 'composite') {
-    run_composite_normal(M = M_SIMULATIONS)
+    run_composite_normal(M = M_SIMULATIONS, empirical_ks_mode = EMPIRICAL_KS_MODE)
   } else if (action == 'simple_variants') {
     # Run a grid of mu/sigma combos for simple testing
-    run_simple_variants(mu_values = c(0, -3, 3), sigma_values = c(1, 2, 5), M = M_SIMULATIONS)
+    run_simple_variants(mu_values = c(0, -3, 3), sigma_values = c(1, 2, 5), M = M_SIMULATIONS, empirical_ks_mode = EMPIRICAL_KS_MODE)
   } else if (action == 'composite_variants') {
     # Run a grid of mu/sigma combos for composite testing
-    run_composite_variants(mu_values = c(0, -3, 3), sigma_values = c(1, 2, 5), unknown_params = c("mu", "sigma", "both"),  M = M_SIMULATIONS)
+    run_composite_variants(mu_values = c(0, -3, 3), sigma_values = c(1, 2, 5), unknown_params = c("mu", "sigma", "both"),  M = M_SIMULATIONS, empirical_ks_mode = EMPIRICAL_KS_MODE)
   } else {
-    run_all_normal(M = M_SIMULATIONS)
+    run_all_normal(M = M_SIMULATIONS, empirical_ks_mode = EMPIRICAL_KS_MODE)
   }
-  cat("\nAction executed:", action, "\n")
+  cat("\nAction executed:", action, "| empirical_ks_mode =", EMPIRICAL_KS_MODE, "\n")
 }
-

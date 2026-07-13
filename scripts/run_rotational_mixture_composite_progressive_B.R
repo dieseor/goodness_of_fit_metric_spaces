@@ -159,9 +159,9 @@ if (sys.nframe() == 0L) {
     } else {
       c(25L, 50L, 100L, 200L, 300L, 400L, 500L)
     },
-    B_target = if (!is.null(args$B_target)) as.integer(args$B_target) else 500L,
+    B_target = if (!is.null(args$B_target)) as.integer(args$B_target) else 5000L,
     n_values = if (!is.null(args$n_values)) as.integer(strsplit(args$n_values, ",", fixed = TRUE)[[1L]]) else 50L,
-    M_outer = if (!is.null(args$M_outer)) as.integer(args$M_outer) else 500L,
+    M_outer = if (!is.null(args$M_outer)) as.integer(args$M_outer) else 5000L,
     n_cores_outer = if (!is.null(args$n_cores_outer)) as.integer(args$n_cores_outer) else 12L,
     statistics = if (!is.null(args$statistics)) {
       strsplit(tolower(args$statistics), ",", fixed = TRUE)[[1L]]
@@ -185,7 +185,7 @@ if (sys.nframe() == 0L) {
     message(sprintf(
       "Stopped at B=%d because projected runtime at B=%d is %.1f minutes.",
       result$stopping_B,
-      if (!is.null(args$B_target)) as.integer(args$B_target) else 500L,
+      if (!is.null(args$B_target)) as.integer(args$B_target) else 5000L,
       result$projected_seconds_at_target / 60
     ))
   }

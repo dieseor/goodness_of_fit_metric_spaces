@@ -346,7 +346,7 @@ make_day_patterns_step4 <- function() {
 run_set12_window_screening <- function(selected_df,
                                        years,
                                        output_dir,
-                                       B = 500L,
+                                       B = 5000L,
                                        n_cores = 10L,
                                        profile_method = "tabulated",
                                        seed = 20260527L) {
@@ -480,7 +480,7 @@ run_set12_window_screening <- function(selected_df,
 run_clean_month_diagnostics <- function(input_nc = file.path("wind", "risoe_m_all.nc"),
                                                   output_dir = file.path("wind", "_clean_month_diagnostics"),
                                                   years = 1996:2003,
-                                                  B = 500L,
+                                                  B = 5000L,
                                                   n_cores = 10L,
                                                   seed = 20260527L) {
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)

@@ -579,7 +579,7 @@ attempt_coops_download <- function(station, windows, bins = list(NULL)) {
   )
 }
 
-run_hvmf_realdata_screening <- function(B = 1000L,
+run_hvmf_realdata_screening <- function(B = 5000L,
                                         n_cores = 3L,
                                         base_dir = "hvmf_realdata_screening",
                                         day_stride = 5L) {

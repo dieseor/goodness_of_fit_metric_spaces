@@ -4,6 +4,20 @@
   if (is.null(lhs)) rhs else lhs
 }
 
+resolve_comparison_table_path <- function(...) {
+  candidates <- c(file.path(...), file.path("..", ...), file.path("..", "..", ...))
+  for (candidate in candidates) {
+    if (file.exists(candidate) || dir.exists(candidate)) {
+      return(candidate)
+    }
+  }
+  stop(sprintf("Could not resolve path: %s", file.path(...)))
+}
+
+source(resolve_comparison_table_path(
+  "real_data", "logistic_gaussian", "utils_logistic_gaussian_screening.R"
+))
+
 parse_args <- function(args) {
   out <- list()
   for (arg in args) {
@@ -41,23 +55,7 @@ extract_row <- function(result_path) {
 args <- parse_args(commandArgs(trailingOnly = TRUE))
 
 dataset_names <- if (is.null(args$datasets)) {
-  c(
-    "Aar",
-    "ArcticLake",
-    "ClamEast",
-    "ClamWest",
-    "ClamCombined",
-    "Boxite",
-    "Metabolites",
-    "SerumProtein",
-    "SkyeAFM",
-    "WhiteCells",
-    "expenditures",
-    "expendituresEU",
-    "Sediments",
-    "HouseholdExp",
-    "coffee"
-  )
+  default_logistic_gaussian_screening_datasets()
 } else {
   trimws(strsplit(args$datasets, ",", fixed = TRUE)[[1]])
 }

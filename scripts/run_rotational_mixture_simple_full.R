@@ -36,7 +36,7 @@ run_rotational_mixture_simple_full <- function(
   output_root = file.path("output", "calibration", "bootstrap", "rotational_mixtures_simple_full"),
   n_values = c(50L, 100L, 200L),
   M_outer = 500L,
-  B = 500L,
+  B = 5000L,
   statistics = c("ks", "cvm"),
   alphas = c(0.01, 0.05, 0.10),
   n_cores_outer = 12L,

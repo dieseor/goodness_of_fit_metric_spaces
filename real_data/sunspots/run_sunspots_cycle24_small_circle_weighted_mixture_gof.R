@@ -113,7 +113,7 @@ run_sunspots_cycle24_small_circle_weighted_mixture_gof <- function(
     output_dir = file.path("real_data", "sunspots", "output", "cycle24_small_circle_weighted_mixture"),
     dataset_label = "cycle24_all",
     statistics = "ks",
-    B = 500L,
+    B = 5000L,
     n_cores = 6L,
     seed = 123L,
     distance_type = "geodesic",
@@ -161,10 +161,7 @@ run_sunspots_cycle24_small_circle_weighted_mixture_gof <- function(
   bic <- log(n) * k - 2 * loglik
 
   spec <- make_small_circle_weighted_mixture2_spec(distance_type = distance_type)
-  ks_grid <- list(
-    omega_grid = generate_canonical_lattice(60L, dim = 3),
-    t_grid = seq(1e-8, pi - 1e-8, length.out = 200L)
-  )
+  ks_grid <- make_sample_unique_distance_ks_grid()
   gof_result <- multiplier_bootstrap_gof(
     data = x,
     spec = spec,

@@ -163,7 +163,7 @@ run_rotational_mixture_calibration_b500_sequential <- function(
   ),
   n_values = c(50L, 100L, 200L),
   M_outer = 500L,
-  B = 500L,
+  B = 5000L,
   n_cores_outer = 12L,
   statistics = c("ks", "cvm"),
   alphas = c(0.01, 0.05, 0.10),
@@ -266,8 +266,8 @@ if (sys.nframe() == 0L) {
     } else {
       c(50L, 100L, 200L)
     },
-    M_outer = if (!is.null(args$M_outer)) as.integer(args$M_outer) else 500L,
-    B = if (!is.null(args$B)) as.integer(args$B) else 500L,
+    M_outer = if (!is.null(args$M_outer)) as.integer(args$M_outer) else 5000L,
+    B = if (!is.null(args$B)) as.integer(args$B) else 5000L,
     n_cores_outer = if (!is.null(args$n_cores_outer)) as.integer(args$n_cores_outer) else 12L,
     statistics = if (!is.null(args$statistics)) {
       strsplit(tolower(args$statistics), ",", fixed = TRUE)[[1L]]

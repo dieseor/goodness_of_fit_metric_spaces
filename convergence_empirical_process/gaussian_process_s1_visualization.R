@@ -25,15 +25,103 @@ source(vmf_gp_path_s1)
 # INTERNAL HELPERS
 # ============================================================================
 
-make_theta_colors <- function(theta_values) {
-  hues <- 360 * theta_values / (2 * pi)
-  grDevices::hcl(h = hues, c = 80, l = 55)
+make_theta_colors <- function(theta_values,
+                              reference_theta = 0,
+                              center_color = "#FDE725",
+                              edge_color = "#2C7FB8") {
+  theta_values <- wrap_angle_2pi(as.numeric(theta_values))
+  reference_theta <- wrap_angle_2pi(as.numeric(reference_theta)[1L])
+  signed_diff <- atan2(
+    sin(theta_values - reference_theta),
+    cos(theta_values - reference_theta)
+  )
+  normalized_distance <- abs(signed_diff) / pi
+  palette_fun <- grDevices::colorRamp(c(center_color, edge_color), space = "Lab")
+  rgb_values <- palette_fun(normalized_distance)
+  grDevices::rgb(
+    red = rgb_values[, 1],
+    green = rgb_values[, 2],
+    blue = rgb_values[, 3],
+    maxColorValue = 255
+  )
+}
+
+make_theta_rainbow_colors <- function(theta_values, start = 0, end = 5 / 6) {
+  n_theta <- length(theta_values)
+  if (n_theta < 1L) {
+    return(character(0))
+  }
+  grDevices::rainbow(n_theta, start = start, end = end)
+}
+
+normalize_s1_color_scheme <- function(color_scheme) {
+  color_scheme <- as.character(color_scheme)[1L]
+  if (identical(color_scheme, "symmetric")) {
+    return("yellow_blue")
+  }
+  valid_schemes <- c("yellow_blue", "rainbow")
+  if (!color_scheme %in% valid_schemes) {
+    stop(
+      sprintf(
+        "`color_scheme` must be one of %s.",
+        paste(sprintf('"%s"', c(valid_schemes, "symmetric")), collapse = ", ")
+      ),
+      call. = FALSE
+    )
+  }
+  color_scheme
+}
+
+assign_s1_theta_colors <- function(theta_values, mu, color_scheme) {
+  color_scheme <- normalize_s1_color_scheme(color_scheme)
+  if (identical(color_scheme, "rainbow")) {
+    return(make_theta_rainbow_colors(theta_values))
+  }
+  make_theta_colors(
+    theta_values,
+    reference_theta = circle_angle_from_point(mu)
+  )
+}
+
+format_pi_fraction_label <- function(theta, max_denominator = 360, tol = 1e-10) {
+  theta <- wrap_angle_2pi(as.numeric(theta)[1L])
+  if (abs(theta) < tol) {
+    return("0")
+  }
+
+  ratio <- theta / pi
+  denominators <- seq_len(max_denominator)
+  numerators <- round(ratio * denominators)
+  errors <- abs(ratio - numerators / denominators)
+  best_idx <- which.min(errors)
+  num <- as.integer(numerators[[best_idx]])
+  den <- as.integer(denominators[[best_idx]])
+
+  if (!is.finite(num) || !is.finite(den) || den <= 0 || errors[[best_idx]] > tol) {
+    return(format(theta, digits = 3, trim = TRUE, scientific = FALSE))
+  }
+
+  if (den == 1L) {
+    if (num == 1L) return("\u03c0")
+    return(paste0(num, "\u03c0"))
+  }
+  if (num == 1L) {
+    return(paste0("\u03c0/", den))
+  }
+  paste0(num, "\u03c0/", den)
 }
 
 format_radians_label <- function(theta_values, digits = 3) {
   vapply(
     theta_values,
-    function(theta) format(theta, digits = digits, trim = TRUE, scientific = FALSE),
+    function(theta) {
+      label <- format_pi_fraction_label(theta)
+      if (nzchar(label)) {
+        label
+      } else {
+        format(theta, digits = digits, trim = TRUE, scientific = FALSE)
+      }
+    },
     character(1)
   )
 }
@@ -45,175 +133,83 @@ draw_single_gaussian_realization <- function(cov_matrix, seed = NULL, tol = 1e-1
     psd_tol = tol,
     stop_on_failure = TRUE
   )
-  if (!is.null(seed)) set.seed(seed)
-  as.numeric(mvtnorm::rmvnorm(1, mean = rep(0, nrow(cov_matrix)), sigma = cov_matrix))
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+  z_standard <- stats::rnorm(nrow(cov_matrix))
+  chol_upper <- tryCatch(
+    chol(cov_matrix),
+    error = function(e) {
+      stop(
+        paste0(
+          "Cholesky factorization failed for the covariance matrix. ",
+          "This visualization now simulates from N(0, I) and applies the global Cholesky factor; ",
+          "the supplied covariance must therefore be numerically positive definite. Original error: ",
+          conditionMessage(e)
+        ),
+        call. = FALSE
+      )
+    }
+  )
+  realization_vec <- as.numeric(t(chol_upper) %*% z_standard)
+  list(
+    realization_vec = realization_vec,
+    standard_normal_draw = z_standard,
+    chol_upper = chol_upper
+  )
 }
 
 default_s1_t_grid <- function(t_points) {
   seq(0.05, 1.95, length.out = t_points)
 }
 
-
-# ============================================================================
-# PUBLIC VISUALIZATION
-# ============================================================================
-
-#' Visualize one realization of the vMF limit Gaussian process on S^1
-#' @param mu Mean direction on S^1
-#' @param kappa Concentration parameter
-#' @param n_angles Number of angular directions on the circle
-#' @param t_points Number of interior t-points used to discretize the process
-#' @param omega_grid Optional matrix of points on S^1
-#' @param t_grid Optional vector of chordal thresholds in (0, 2)
-#' @param cov_method Either "exact_s1_simple" or "mc"
-#' @param n_mc_samples Monte Carlo sample size for the mc covariance route
-#' @param n_cores Number of cores for covariance construction
-#' @param seed Optional seed
-#' @param curve_points Number of probability-grid points for plotting
-#' @param ray_extension Radial extension beyond the unit circle
-#' @param lateral_scale Relative amplitude used for left-panel mini-curves
-#' @param cdf_grid_size Deterministic angular grid size used for S^1 CDF computations
-#' @param save_plot Optional file path stem for saving the separate panels
-#' @return List containing the plot, data, and covariance diagnostics
-visualize_limit_gaussian_s1_vmf <- function(mu = c(1, 0),
-                                            kappa = 2,
-                                            n_angles = 6,
-                                            t_points = 160,
-                                            omega_grid = NULL,
-                                            t_grid = NULL,
-                                            cov_method = c("exact_s1_simple", "mc"),
-                                            n_mc_samples = 5000,
-                                            n_cores = 1,
-                                            seed = NULL,
-                                            curve_points = 200,
-                                            ray_extension = 0.35,
-                                            lateral_scale = 0.10,
-                                            cdf_grid_size = 16385,
-                                            save_plot = NULL) {
-  if (!requireNamespace("ggplot2", quietly = TRUE)) {
-    stop("Please install ggplot2 to generate the S1 visualization.")
-  }
-
-  cov_method <- match.arg(cov_method)
-  mu <- as.numeric(mu)
-  if (length(mu) != 2) {
-    stop("`mu` must have length 2 for S^1 visualization.")
-  }
-  mu <- mu / sqrt(sum(mu^2))
-  if (!is.null(seed)) {
-    set.seed(seed)
-  }
-
-  if (is.null(omega_grid)) {
-    circle_grid <- generate_circle_grid(n_angles)
-    omega_grid <- as.matrix(circle_grid[, c("x", "y")])
-  } else {
-    omega_grid <- as.matrix(omega_grid)
-    if (ncol(omega_grid) != 2) {
-      stop("`omega_grid` must have exactly 2 columns for S^1 visualization.")
-    }
-    theta_values <- circle_angles_from_matrix(omega_grid)
-    ordering <- order(theta_values)
-    omega_grid <- omega_grid[ordering, , drop = FALSE]
-    theta_values <- theta_values[ordering]
-    circle_grid <- data.frame(
-      theta = theta_values,
-      x = omega_grid[, 1],
-      y = omega_grid[, 2],
-      label = format_radians_label(theta_values),
-      stringsAsFactors = FALSE
-    )
-  }
-
-  if (is.null(t_grid)) {
-    t_grid <- default_s1_t_grid(t_points)
-  } else {
-    t_grid <- as.numeric(t_grid)
-    t_points <- length(t_grid)
-  }
-  if (any(t_grid <= 0) || any(t_grid >= 2)) {
-    stop("`t_grid` must lie strictly inside (0, 2) for the visualization grid.")
-  }
-
-  cdf_object <- build_vmf_s1_cdf(mu, kappa, n_grid = cdf_grid_size)
-  theta_values <- circle_grid$theta
-  colors <- make_theta_colors(theta_values)
-  circle_grid$color <- colors
-  circle_grid$legend_label <- format_radians_label(theta_values)
-
-  cov_matrix <- cov_vmf(
-    omega_grid = omega_grid,
-    t_grid = t_grid,
-    mu = mu,
-    kappa = kappa,
-    distance_type = "chordal",
-    n_mc_samples = n_mc_samples,
-    n_cores = n_cores,
-    seed = seed,
-    h0 = "simple",
-    unknown_param = NULL,
-    cov_method = cov_method,
-    cdf_grid_size = cdf_grid_size
+save_combined_s1_plot <- function(left_panel,
+                                  right_panel,
+                                  save_path,
+                                  width = 12,
+                                  height = 6,
+                                  dpi = 300,
+                                  bg = "transparent") {
+  grDevices::png(
+    filename = save_path,
+    width = width,
+    height = height,
+    units = "in",
+    res = dpi,
+    bg = bg
   )
-  cov_diagnostics <- validate_covariance_matrix(
-    cov_matrix,
-    symmetry_tol = 1e-10,
-    psd_tol = 1e-10,
-    stop_on_failure = TRUE
+  on.exit(grDevices::dev.off(), add = TRUE)
+  grid::grid.newpage()
+  grid::pushViewport(
+    grid::viewport(
+      layout = grid::grid.layout(
+        nrow = 1,
+        ncol = 2,
+        widths = grid::unit(c(1, 1), "null")
+      )
+    )
   )
+  print(left_panel, vp = grid::viewport(layout.pos.row = 1, layout.pos.col = 1))
+  print(right_panel, vp = grid::viewport(layout.pos.row = 1, layout.pos.col = 2))
+}
 
-  realization_vec <- draw_single_gaussian_realization(cov_matrix, seed = seed, tol = 1e-10)
-  g_inner <- matrix(realization_vec, nrow = nrow(omega_grid), ncol = length(t_grid))
+save_s1_plot_bundle <- function(plot_result, save_result) {
+  saveRDS(plot_result, file = save_result)
+  invisible(save_result)
+}
 
-  u_grid <- seq(0, 1, length.out = curve_points)
-  curve_data_list <- vector("list", nrow(omega_grid))
-  for (i in seq_len(nrow(omega_grid))) {
-    omega <- omega_grid[i, ]
-    t_from_u <- invert_distance_profile_vmf_s1_chordal(
-      omega = omega,
-      mu = mu,
-      kappa = kappa,
-      u_values = u_grid,
-      cdf_object = cdf_object,
-      cdf_grid_size = cdf_grid_size
-    )
-    g_aug <- c(0, g_inner[i, ], 0)
-    t_aug <- c(0, t_grid, 2)
-    g_u <- approx(
-      x = t_aug,
-      y = g_aug,
-      xout = t_from_u,
-      method = "linear",
-      ties = "ordered",
-      rule = 2
-    )$y
-    curve_data_list[[i]] <- data.frame(
-      omega_id = i,
-      theta = theta_values[i],
-      theta_label = circle_grid$legend_label[i],
-      color = colors[i],
-      u = u_grid,
-      t = t_from_u,
-      g = g_u,
-      stringsAsFactors = FALSE
-    )
-  }
-  curve_data <- do.call(rbind, curve_data_list)
-
-  max_abs_g <- max(abs(curve_data$g))
-  amplitude_scale <- if (max_abs_g > 0) lateral_scale / max_abs_g else 0
-  curve_data$x_circle <- (1 + ray_extension * curve_data$u) * cos(curve_data$theta) -
-    amplitude_scale * curve_data$g * sin(curve_data$theta)
-  curve_data$y_circle <- (1 + ray_extension * curve_data$u) * sin(curve_data$theta) +
-    amplitude_scale * curve_data$g * cos(curve_data$theta)
-
+build_s1_panels_from_curve_data <- function(curve_data,
+                                            circle_grid,
+                                            ray_extension,
+                                            right_x_label,
+                                            right_y_label) {
   ray_data <- data.frame(
-    theta = theta_values,
+    theta = circle_grid$theta,
     x = circle_grid$x,
     y = circle_grid$y,
     xend = (1 + ray_extension) * circle_grid$x,
     yend = (1 + ray_extension) * circle_grid$y,
-    color = colors,
+    color = circle_grid$color,
     stringsAsFactors = FALSE
   )
   circle_outline <- data.frame(
@@ -252,11 +248,11 @@ visualize_limit_gaussian_s1_vmf <- function(mu = c(1, 0),
     ggplot2::theme_void()
 
   legend_breaks <- unique(curve_data$theta_label)
-  color_values <- stats::setNames(colors, circle_grid$legend_label)
+  color_values <- stats::setNames(circle_grid$color, circle_grid$legend_label)
 
   right_panel <- ggplot2::ggplot(
     curve_data,
-    ggplot2::aes(x = u, y = g, group = omega_id, color = theta_label)
+    ggplot2::aes(x = plot_x, y = g, group = omega_id, color = theta_label)
   ) +
     ggplot2::geom_hline(yintercept = 0, color = "grey80", linewidth = 0.4) +
     ggplot2::geom_line(linewidth = 0.45) +
@@ -266,8 +262,8 @@ visualize_limit_gaussian_s1_vmf <- function(mu = c(1, 0),
       name = "Radians"
     ) +
     ggplot2::labs(
-      x = "u",
-      y = expression(G(omega, F^{-1}*"("*u*")"))
+      x = right_x_label,
+      y = right_y_label
     ) +
     ggplot2::theme_minimal() +
     ggplot2::theme(
@@ -278,20 +274,267 @@ visualize_limit_gaussian_s1_vmf <- function(mu = c(1, 0),
       legend.box.background = ggplot2::element_rect(fill = "transparent", color = NA)
     )
 
-  if (!is.null(save_plot)) {
-    save_ext <- tools::file_ext(save_plot)
-    save_base <- if (nzchar(save_ext)) {
-      sub(paste0("\\.", save_ext, "$"), "", save_plot)
-    } else {
-      save_plot
-    }
-    left_path <- paste0(save_base, "_left.", ifelse(nzchar(save_ext), save_ext, "png"))
-    right_path <- paste0(save_base, "_right.", ifelse(nzchar(save_ext), save_ext, "png"))
-    ggplot2::ggsave(left_path, left_panel, width = 6, height = 6, dpi = 300)
-    ggplot2::ggsave(right_path, right_panel, width = 7, height = 5, dpi = 300, bg = "transparent")
+  list(left_panel = left_panel, right_panel = right_panel)
+}
+
+write_s1_plot_files <- function(left_panel, right_panel, save_plot) {
+  save_ext <- tools::file_ext(save_plot)
+  save_base <- if (nzchar(save_ext)) {
+    sub(paste0("\\.", save_ext, "$"), "", save_plot)
+  } else {
+    save_plot
+  }
+  combined_path <- paste0(save_base, ifelse(nzchar(save_ext), paste0(".", save_ext), ".png"))
+  left_path <- paste0(save_base, "_left.", ifelse(nzchar(save_ext), save_ext, "png"))
+  right_path <- paste0(save_base, "_right.", ifelse(nzchar(save_ext), save_ext, "png"))
+  ggplot2::ggsave(left_path, left_panel, width = 6, height = 6, dpi = 300)
+  ggplot2::ggsave(right_path, right_panel, width = 7, height = 5, dpi = 300, bg = "transparent")
+  save_combined_s1_plot(left_panel, right_panel, combined_path)
+  invisible(c(combined = combined_path, left = left_path, right = right_path))
+}
+
+
+# ============================================================================
+# PUBLIC VISUALIZATION
+# ============================================================================
+
+#' Visualize one realization of the vMF limit Gaussian process on S^1
+#' @param mu Mean direction on S^1
+#' @param kappa Concentration parameter
+#' @param n_angles Number of angular directions on the circle
+#' @param t_points Number of interior t-points used to discretize the process
+#' @param omega_grid Optional matrix of points on S^1
+#' @param t_grid Optional vector of chordal thresholds in (0, 2)
+#' @param cov_method Either "exact_s1_simple" or "mc"
+#' @param n_mc_samples Monte Carlo sample size for the mc covariance route
+#' @param n_cores Number of cores for covariance construction
+#' @param seed Optional seed
+#' @param curve_points Number of probability-grid points for plotting
+#' @param plot_domain Either "u" or "t" for the display parametrization
+#' @param color_scheme Either "yellow_blue" or "rainbow". The legacy alias
+#'   "symmetric" is accepted and mapped to "yellow_blue"; this affects only the
+#'   palette, not the stochastic process.
+#' @param quiet Whether to suppress console output during covariance construction
+#' @param ray_extension Radial extension beyond the unit circle
+#' @param lateral_scale Relative amplitude used for left-panel mini-curves
+#' @param cdf_grid_size Deterministic angular grid size used for S^1 CDF computations
+#' @param save_plot Optional file path stem for saving the separate panels
+#' @param save_result Optional path to an .rds bundle storing the simulated
+#'   realization and all plot data so the figure can be regenerated later
+#' @return List containing the plot, data, and covariance diagnostics
+visualize_limit_gaussian_s1_vmf <- function(mu = c(1, 0),
+                                            kappa = 2,
+                                            n_angles = 6,
+                                            t_points = 160,
+                                            omega_grid = NULL,
+                                            t_grid = NULL,
+                                            cov_method = c("exact_s1_simple", "mc"),
+                                            n_mc_samples = 5000,
+                                            n_cores = 1,
+                                            seed = NULL,
+                                            curve_points = 200,
+                                            plot_domain = c("u", "t"),
+                                            color_scheme = c("yellow_blue", "rainbow", "symmetric"),
+                                            quiet = TRUE,
+                                            ray_extension = 0.35,
+                                            lateral_scale = 0.10,
+                                            cdf_grid_size = 16385,
+                                            save_plot = NULL,
+                                            save_result = NULL) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("Please install ggplot2 to generate the S1 visualization.")
   }
 
-  list(
+  cov_method <- match.arg(cov_method)
+  plot_domain <- match.arg(plot_domain)
+  color_scheme <- normalize_s1_color_scheme(match.arg(color_scheme))
+  mu <- as.numeric(mu)
+  if (length(mu) != 2) {
+    stop("`mu` must have length 2 for S^1 visualization.")
+  }
+  mu <- mu / sqrt(sum(mu^2))
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+
+  if (is.null(omega_grid)) {
+    circle_grid <- generate_circle_grid(n_angles, theta0 = circle_angle_from_point(mu))
+    omega_grid <- as.matrix(circle_grid[, c("x", "y")])
+  } else {
+    omega_grid <- as.matrix(omega_grid)
+    if (ncol(omega_grid) != 2) {
+      stop("`omega_grid` must have exactly 2 columns for S^1 visualization.")
+    }
+    theta_values <- circle_angles_from_matrix(omega_grid)
+    ordering <- order(theta_values)
+    omega_grid <- omega_grid[ordering, , drop = FALSE]
+    theta_values <- theta_values[ordering]
+    circle_grid <- data.frame(
+      theta = theta_values,
+      x = omega_grid[, 1],
+      y = omega_grid[, 2],
+      label = format_radians_label(theta_values),
+      stringsAsFactors = FALSE
+    )
+  }
+
+  if (is.null(t_grid)) {
+    t_grid <- default_s1_t_grid(t_points)
+  } else {
+    t_grid <- as.numeric(t_grid)
+    t_points <- length(t_grid)
+  }
+  if (any(t_grid <= 0) || any(t_grid >= 2)) {
+    stop("`t_grid` must lie strictly inside (0, 2) for the visualization grid.")
+  }
+
+  cdf_object <- build_vmf_s1_cdf(mu, kappa, n_grid = cdf_grid_size)
+  theta_values <- circle_grid$theta
+  colors <- assign_s1_theta_colors(theta_values, mu, color_scheme)
+  circle_grid$color <- colors
+  circle_grid$legend_label <- format_radians_label(theta_values)
+
+  cov_matrix <- if (isTRUE(quiet)) {
+    capture.output({
+      cov_matrix_local <- cov_vmf(
+        omega_grid = omega_grid,
+        t_grid = t_grid,
+        mu = mu,
+        kappa = kappa,
+        distance_type = "chordal",
+        n_mc_samples = n_mc_samples,
+        n_cores = n_cores,
+        seed = seed,
+        h0 = "simple",
+        unknown_param = NULL,
+        cov_method = cov_method,
+        cdf_grid_size = cdf_grid_size
+      )
+    })
+    cov_matrix_local
+  } else {
+    cov_vmf(
+      omega_grid = omega_grid,
+      t_grid = t_grid,
+      mu = mu,
+      kappa = kappa,
+      distance_type = "chordal",
+      n_mc_samples = n_mc_samples,
+      n_cores = n_cores,
+      seed = seed,
+      h0 = "simple",
+      unknown_param = NULL,
+      cov_method = cov_method,
+      cdf_grid_size = cdf_grid_size
+    )
+  }
+  cov_diagnostics <- validate_covariance_matrix(
+    cov_matrix,
+    symmetry_tol = 1e-10,
+    psd_tol = 1e-10,
+    stop_on_failure = TRUE
+  )
+
+  gaussian_draw <- draw_single_gaussian_realization(cov_matrix, seed = seed, tol = 1e-10)
+  realization_vec <- gaussian_draw$realization_vec
+  g_inner <- matrix(realization_vec, nrow = nrow(omega_grid), ncol = length(t_grid))
+
+  curve_data_list <- vector("list", nrow(omega_grid))
+  if (plot_domain == "u") {
+    u_grid <- seq(0, 1, length.out = curve_points)
+    for (i in seq_len(nrow(omega_grid))) {
+      omega <- omega_grid[i, ]
+      t_from_u <- invert_distance_profile_vmf_s1_chordal(
+        omega = omega,
+        mu = mu,
+        kappa = kappa,
+        u_values = u_grid,
+        cdf_object = cdf_object,
+        cdf_grid_size = cdf_grid_size
+      )
+      g_aug <- c(0, g_inner[i, ], 0)
+      t_aug <- c(0, t_grid, 2)
+      g_u <- approx(
+        x = t_aug,
+        y = g_aug,
+        xout = t_from_u,
+        method = "linear",
+        ties = "ordered",
+        rule = 2
+      )$y
+      curve_data_list[[i]] <- data.frame(
+        omega_id = i,
+        theta = theta_values[i],
+        theta_label = circle_grid$legend_label[i],
+        color = colors[i],
+        u = u_grid,
+        t = t_from_u,
+        g = g_u,
+        plot_x = u_grid,
+        radial_progress = u_grid,
+        stringsAsFactors = FALSE
+      )
+    }
+    right_x_label <- "u"
+    right_y_label <- expression(G(omega, F^{-1}*"("*u*")"))
+  } else {
+    t_plot <- seq(0, 2, length.out = curve_points)
+    for (i in seq_len(nrow(omega_grid))) {
+      omega <- omega_grid[i, ]
+      g_aug <- c(0, g_inner[i, ], 0)
+      t_aug <- c(0, t_grid, 2)
+      g_t <- approx(
+        x = t_aug,
+        y = g_aug,
+        xout = t_plot,
+        method = "linear",
+        ties = "ordered",
+        rule = 2
+      )$y
+      u_from_t <- theoretical_distance_profile_vmf_s1_chordal(
+        omega = omega,
+        mu = mu,
+        kappa = kappa,
+        t_values = t_plot,
+        cdf_object = cdf_object,
+        cdf_grid_size = cdf_grid_size
+      )
+      curve_data_list[[i]] <- data.frame(
+        omega_id = i,
+        theta = theta_values[i],
+        theta_label = circle_grid$legend_label[i],
+        color = colors[i],
+        u = u_from_t,
+        t = t_plot,
+        g = g_t,
+        plot_x = t_plot,
+        radial_progress = t_plot / 2,
+        stringsAsFactors = FALSE
+      )
+    }
+    right_x_label <- "t"
+    right_y_label <- expression(G(omega, t))
+  }
+  curve_data <- do.call(rbind, curve_data_list)
+
+  max_abs_g <- max(abs(curve_data$g))
+  amplitude_scale <- if (max_abs_g > 0) lateral_scale / max_abs_g else 0
+  curve_data$x_circle <- (1 + ray_extension * curve_data$radial_progress) * cos(curve_data$theta) -
+    amplitude_scale * curve_data$g * sin(curve_data$theta)
+  curve_data$y_circle <- (1 + ray_extension * curve_data$radial_progress) * sin(curve_data$theta) +
+    amplitude_scale * curve_data$g * cos(curve_data$theta)
+
+  panels <- build_s1_panels_from_curve_data(
+    curve_data = curve_data,
+    circle_grid = circle_grid,
+    ray_extension = ray_extension,
+    right_x_label = right_x_label,
+    right_y_label = right_y_label
+  )
+  left_panel <- panels$left_panel
+  right_panel <- panels$right_panel
+
+  result <- list(
     plot = list(left_panel = left_panel, right_panel = right_panel),
     left_panel = left_panel,
     right_panel = right_panel,
@@ -299,11 +542,92 @@ visualize_limit_gaussian_s1_vmf <- function(mu = c(1, 0),
     left_panel_data = curve_data[, c("omega_id", "theta", "u", "g", "x_circle", "y_circle", "color")],
     cov_matrix = cov_matrix,
     cov_diagnostics = cov_diagnostics,
+    realization_vec = realization_vec,
+    standard_normal_draw = gaussian_draw$standard_normal_draw,
+    chol_upper = gaussian_draw$chol_upper,
     omega_grid = omega_grid,
     t_grid = t_grid,
-    u_grid = u_grid,
-    cov_method = cov_method
+    plot_grid = curve_data$plot_x,
+    plot_domain = plot_domain,
+    color_scheme = color_scheme,
+    cov_method = cov_method,
+    mu = mu,
+    kappa = kappa,
+    circle_grid = circle_grid,
+    ray_extension = ray_extension,
+    lateral_scale = lateral_scale,
+    right_x_label = right_x_label,
+    right_y_label = right_y_label,
+    cdf_grid_size = cdf_grid_size
   )
+
+  if (!is.null(save_plot)) {
+    write_s1_plot_files(left_panel, right_panel, save_plot)
+  }
+  if (!is.null(save_result)) {
+    save_s1_plot_bundle(result, save_result)
+  }
+
+  result
+}
+
+#' Rebuild an S1 visualization from a stored result bundle
+#' @param result A result list returned by visualize_limit_gaussian_s1_vmf, or a
+#'   path to a saved .rds bundle produced via `save_result`
+#' @param color_scheme Either "yellow_blue" or "rainbow". The legacy alias
+#'   "symmetric" is accepted and mapped to "yellow_blue"
+#' @param save_plot Optional file path stem for saving the regenerated panels
+#' @return List containing the regenerated plot objects and updated plot data
+replot_limit_gaussian_s1_vmf_from_result <- function(result,
+                                                     color_scheme = c("yellow_blue", "rainbow", "symmetric"),
+                                                     save_plot = NULL) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("Please install ggplot2 to generate the S1 visualization.")
+  }
+
+  if (is.character(result) && length(result) == 1L) {
+    result <- readRDS(result)
+  }
+  if (!is.list(result) || is.null(result$curve_data) || is.null(result$circle_grid)) {
+    stop("`result` must be a visualization result list or a valid saved .rds bundle.")
+  }
+
+  color_scheme <- normalize_s1_color_scheme(match.arg(color_scheme))
+  theta_values <- result$circle_grid$theta
+  colors <- assign_s1_theta_colors(theta_values, result$mu, color_scheme)
+
+  circle_grid <- result$circle_grid
+  circle_grid$color <- colors
+  circle_grid$legend_label <- format_radians_label(theta_values)
+
+  curve_data <- result$curve_data
+  color_map <- stats::setNames(colors, theta_values)
+  label_map <- stats::setNames(circle_grid$legend_label, theta_values)
+  curve_data$color <- unname(color_map[as.character(curve_data$theta)])
+  curve_data$theta_label <- unname(label_map[as.character(curve_data$theta)])
+
+  panels <- build_s1_panels_from_curve_data(
+    curve_data = curve_data,
+    circle_grid = circle_grid,
+    ray_extension = result$ray_extension,
+    right_x_label = result$right_x_label,
+    right_y_label = result$right_y_label
+  )
+
+  replotted_result <- result
+  replotted_result$plot <- panels
+  replotted_result$left_panel <- panels$left_panel
+  replotted_result$right_panel <- panels$right_panel
+  replotted_result$curve_data <- curve_data
+  replotted_result$left_panel_data <- curve_data[, c("omega_id", "theta", "u", "g", "x_circle", "y_circle", "color")]
+  replotted_result$circle_grid <- circle_grid
+  replotted_result$color_scheme <- color_scheme
+
+  if (!is.null(save_plot)) {
+    write_s1_plot_files(panels$left_panel, panels$right_panel, save_plot)
+  }
+
+  replotted_result
 }
 
 

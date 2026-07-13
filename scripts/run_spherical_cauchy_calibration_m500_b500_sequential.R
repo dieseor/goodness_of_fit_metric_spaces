@@ -180,7 +180,7 @@ run_spherical_cauchy_calibration_sequential <- function(
   ),
   n_values = c(50L, 100L, 200L),
   M_outer = 500L,
-  B = 500L,
+  B = 5000L,
   n_cores_outer = 12L,
   statistics = c("ks", "cvm"),
   alphas = c(0.01, 0.05, 0.10),

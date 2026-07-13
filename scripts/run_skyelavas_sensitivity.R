@@ -97,7 +97,7 @@ safe_max <- function(x) {
 }
 
 choose_omega_grid_for_subset <- function(x_closed,
-                                         omega_grid_type = c("fixed_simplex_lattice", "sample_points"),
+                                         omega_grid_type = c("sample_points", "fixed_simplex_lattice"),
                                          max_centers = 100L,
                                          seed = 123L,
                                          boundary_epsilon = NULL) {
@@ -283,10 +283,7 @@ run_single_distance_profile_analysis <- function(x_comp,
     data = x_closed,
     null = list(type = "composite"),
     statistics = c("ks", "cvm"),
-    ks_grid = list(
-      omega_grid = centers$omega,
-      t_grid = t_grid
-    ),
+    ks_grid = make_sample_unique_distance_ks_grid(),
     B = B,
     alpha = 0.05,
     n_cores = n_cores,

@@ -431,7 +431,7 @@ make_component_vs_polar_comparison <- function(component_summary_csv,
   merged
 }
 
-run_hvmf_realdata_screening_polar <- function(B = 1000L,
+run_hvmf_realdata_screening_polar <- function(B = 5000L,
                                               n_cores = 3L,
                                               base_dir = "hvmf_realdata_screening",
                                               dataset_files = polar_dataset_files(),

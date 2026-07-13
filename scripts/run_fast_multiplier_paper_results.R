@@ -66,7 +66,7 @@ paper_calibration_jobs <- function(derivative_mc_size = 1000L,
       statistics = c("ks", "cvm"),
       n_values = c(50L, 100L, 200L),
       M_outer = 1000L,
-      B = 1000L
+      B = 5000L
     ),
     list(
       id = "vmf_composite",
@@ -77,7 +77,7 @@ paper_calibration_jobs <- function(derivative_mc_size = 1000L,
       statistics = c("ks", "cvm"),
       n_values = c(50L, 100L, 200L),
       M_outer = 1000L,
-      B = 1000L
+      B = 5000L
     ),
     list(
       id = "hvmf_composite",
@@ -85,7 +85,7 @@ paper_calibration_jobs <- function(derivative_mc_size = 1000L,
       statistics = c("cvm"),
       n_values = c(50L, 100L, 200L),
       M_outer = 1000L,
-      B = 1000L
+      B = 5000L
     ),
     list(
       id = "logistic_gaussian_composite",
@@ -93,7 +93,7 @@ paper_calibration_jobs <- function(derivative_mc_size = 1000L,
       statistics = c("ks", "cvm"),
       n_values = c(50L, 100L, 200L),
       M_outer = 1000L,
-      B = 1000L
+      B = 5000L
     ),
     list(
       id = "small_circle_composite",
@@ -103,7 +103,7 @@ paper_calibration_jobs <- function(derivative_mc_size = 1000L,
       statistics = c("ks", "cvm"),
       n_values = c(50L, 100L, 200L),
       M_outer = 1000L,
-      B = 1000L
+      B = 5000L
     ),
     list(
       id = "spherical_cauchy_composite",
@@ -113,7 +113,7 @@ paper_calibration_jobs <- function(derivative_mc_size = 1000L,
       statistics = c("ks", "cvm"),
       n_values = c(50L, 100L, 200L),
       M_outer = 1000L,
-      B = 1000L
+      B = 5000L
     ),
     list(
       id = "beta_mixture2_composite",
@@ -123,7 +123,7 @@ paper_calibration_jobs <- function(derivative_mc_size = 1000L,
       statistics = c("ks", "cvm"),
       n_values = c(50L, 100L, 200L),
       M_outer = 1000L,
-      B = 1000L
+      B = 5000L
     )
   )
 }
@@ -164,7 +164,7 @@ run_fast_paper_calibration <- function(output_root = file.path("output", "calibr
 }
 
 run_fast_comets_jp_short_long <- function(output_root,
-                                          B = 1000L,
+                                          B = 5000L,
                                           n_cores = 12L,
                                           bootstrap_method = "fast_multiplier",
                                           derivative_mc_size = 1000L,
@@ -275,7 +275,7 @@ run_fast_paper_real_data <- function(output_root = "real_data",
   message("[fast paper real_data] comets jp")
   run_fast_comets_jp_short_long(
     output_root = canonical_comets_jp_dir("short_long_summary", "fast"),
-    B = 1000L,
+    B = 5000L,
     n_cores = as.integer(n_cores),
     bootstrap_method = "fast_multiplier",
     derivative_mc_size = derivative_mc_size,
@@ -287,7 +287,7 @@ run_fast_paper_real_data <- function(output_root = "real_data",
     output_root = canonical_comets_mixture_dir("beta_mixture2_short_long_B1000", "fast"),
     datasets = c("short", "long"),
     models = "beta_mixture2",
-    B = 1000L,
+    B = 5000L,
     statistics = c("ks", "cvm"),
     n_cores = as.integer(n_cores),
     bootstrap_method = "fast_multiplier"
@@ -295,7 +295,7 @@ run_fast_paper_real_data <- function(output_root = "real_data",
 
   message("[fast paper real_data] logistic Gaussian datasets")
   run_logistic_gaussian_screening_batch(
-    B = 1000L,
+    B = 5000L,
     n_cores = as.integer(n_cores),
     bootstrap_method = "fast_multiplier",
     output_dir = canonical_logistic_gaussian_screening_dir("fast", "paper_results"),
@@ -305,7 +305,7 @@ run_fast_paper_real_data <- function(output_root = "real_data",
   message("[fast paper real_data] Risoe 125m screening")
   run_risoe_125m_screening_ks_cvm(
     output_dir = canonical_wind_screening_dir("fast"),
-    B = 1000L,
+    B = 5000L,
     n_cores = as.integer(n_cores),
     bootstrap_method = "fast_multiplier"
   )
@@ -314,7 +314,7 @@ run_fast_paper_real_data <- function(output_root = "real_data",
   run_sunspots_weighted_mixture_rolling_windows_gof(
     output_dir = canonical_sunspots_weighted_windows_dir("fast"),
     statistics = "ks",
-    B = 1000L,
+    B = 5000L,
     n_cores = as.integer(n_cores),
     bootstrap_method = "fast_multiplier"
   )
@@ -347,7 +347,7 @@ run_fast_multiplier_paper_results <- function(mode = c("all", "paper_only", "val
   if (mode %in% c("all", "validation")) {
     run_fast_multiplier_validation_all_models(
       output_root = validation_output_root,
-      B = 1000L,
+      B = 5000L,
       M_outer = as.integer(validation_M_outer),
       derivative_mc_size = as.integer(derivative_mc_size),
       base_seed = 20260613L,

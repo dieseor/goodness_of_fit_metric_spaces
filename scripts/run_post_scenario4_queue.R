@@ -94,7 +94,7 @@ main <- function() {
       sprintf("--output_root=%s", canonical_calibration_bootstrap_dir("vmf", "slow", "vmf_composite_M1000_B1000_n50_100_queue")),
       "--n_values=50,100",
       "--M_outer=1000",
-      "--B=1000",
+      "--B=50000",
       "--n_cores_outer=12"
     ),
     log_dir = log_dir

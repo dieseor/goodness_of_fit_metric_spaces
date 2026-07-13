@@ -32,19 +32,166 @@ normalize_logistic_gaussian_screening_control <- function(control = list()) {
   control
 }
 
-default_logistic_gaussian_screening_datasets <- function() {
-  datasets <- c(
-    "SkyeAFM",
+composition_registry <- list(
+  Aar_oxides = list(
+    data_entry = "Aar",
+    object_name = "Aar",
+    parts = c("SiO2", "TiO2", "Al2O3", "MnO", "MgO", "CaO", "Na2O", "K2O", "P2O5", "Fe2O3t")
+  ),
+  Activity10 = list(
+    data_entry = "Activity10",
+    object_name = "Activity10",
+    parts = c("teac", "cons", "admi", "rese", "wake", "slee")
+  ),
+  Activity31 = list(
+    data_entry = "Activity31",
+    object_name = "Activity31",
+    parts = c("teac", "cons", "admi", "rese", "wake", "slee")
+  ),
+  AnimalVegetation = list(
+    data_entry = "AnimalVegetation",
+    object_name = "AnimalVegetation",
+    parts = c("disc", "spick", "din", "spin")
+  ),
+  ArcticLake = list(
+    data_entry = "ArcticLake",
+    object_name = "ArcticLake",
+    parts = c("sand", "silt", "clay")
+  ),
+  Bayesite = list(
+    data_entry = "Bayesite",
+    object_name = "Bayesite",
+    parts = c("A", "B", "C", "D")
+  ),
+  Boxite = list(
+    data_entry = "Boxite",
+    object_name = "Boxite",
+    parts = c("A", "B", "C", "D", "E")
+  ),
+  ClamEast = list(
+    data_entry = "ClamEast",
+    object_name = "ClamEast",
+    parts = c("dl", "dm", "ds", "ll", "lm", "ls")
+  ),
+  ClamWest = list(
+    data_entry = "ClamWest",
+    object_name = "ClamWest",
+    parts = c("dl", "dm", "ds", "ll", "lm", "ls")
+  ),
+  Coxite = list(
+    data_entry = "Coxite",
+    object_name = "Coxite",
+    parts = c("A", "B", "C", "D", "E")
+  ),
+  DiagnosticProb = list(
+    data_entry = "DiagnosticProb",
+    object_name = "DiagnosticProb",
+    parts = c("A", "B", "C")
+  ),
+  Firework = list(
+    data_entry = "Firework",
+    object_name = "Firework",
+    parts = c("a", "b", "c", "d", "e")
+  ),
+  Hongite = list(
+    data_entry = "Hongite",
+    object_name = "Hongite",
+    parts = c("A", "B", "C", "D", "E")
+  ),
+  HouseholdExp = list(
+    data_entry = "HouseholdExp",
+    object_name = "HouseholdExp",
+    parts = c("Housing", "Food", "Other", "Services")
+  ),
+  Hydrochem = list(
+    data_entry = "Hydrochem",
+    object_name = "Hydrochem",
+    parts = c("H", "Na", "K", "Mg", "Ca", "Sr", "Ba", "NH4", "Cl", "NO3", "PO4", "SO4", "HCO3", "TOC")
+  ),
+  juraset = list(
+    data_entry = "juraset",
+    object_name = "juraset",
+    parts = c("Cd", "Cu", "Pb", "Co", "Cr", "Ni", "Zn")
+  ),
+  Kongite = list(
+    data_entry = "Kongite",
+    object_name = "Kongite",
+    parts = c("A", "B", "C", "D", "E")
+  ),
+  Metabolites = list(
+    data_entry = "Metabolites",
+    object_name = "Metabolites",
+    parts = c("met1", "met2", "met3")
+  ),
+  PogoJump = list(
+    data_entry = "PogoJump",
+    object_name = "PogoJump",
+    parts = c("yat", "yee", "sam")
+  ),
+  Sediments = list(
+    data_entry = "Sediments",
+    object_name = "Sediments",
+    parts = c("sand", "silt", "clay")
+  ),
+  SerumProtein = list(
+    data_entry = "SerumProtein",
+    object_name = "SerumProtein",
+    parts = c("a", "b", "c", "d")
+  ),
+  ShiftOperators = list(
+    data_entry = "ShiftOperators",
+    object_name = "ShiftOperators",
+    parts = c("A", "B", "C", "D")
+  ),
+  SkyeAFM = list(
+    data_entry = "SkyeAFM",
+    object_name = "SkyeAFM",
+    parts = c("A", "F", "M")
+  ),
+  Supervisor = list(
+    data_entry = "Supervisor",
+    object_name = "Supervisor",
+    parts = c("C", "D", "E", "F")
+  ),
+  WhiteCells_microscopic = list(
+    data_entry = "WhiteCells",
+    object_name = "WhiteCells",
+    parts = c("mG", "mL", "mM")
+  ),
+  WhiteCells_image = list(
+    data_entry = "WhiteCells",
+    object_name = "WhiteCells",
+    parts = c("iG", "iL", "iM")
+  ),
+  Yatquat_preference = list(
+    data_entry = "Yatquat",
+    object_name = "Yatquat",
+    parts = c("prFL", "prSK", "prST")
+  ),
+  Yatquat_panel = list(
+    data_entry = "Yatquat",
+    object_name = "Yatquat",
+    parts = c("paFL", "paSK", "paST")
+  )
+)
+
+stopifnot(length(composition_registry) == 28L)
+stopifnot(!anyDuplicated(names(composition_registry)))
+
+external_logistic_gaussian_screening_datasets <- function() {
+  c(
     "SkyeLavas",
     "SkyeLavasAitchison32",
-    "AarMajorOxides",
-    "Sediments",
-    "HouseholdExp",
-    "ClamEast",
-    "ClamWest",
-    "ClamCombined"
+    "ClamCombined",
+    "coffee",
+    "expenditures",
+    "expendituresEU",
+    "alcohol"
   )
-  datasets
+}
+
+default_logistic_gaussian_screening_datasets <- function() {
+  c(names(composition_registry), external_logistic_gaussian_screening_datasets())
 }
 
 make_skye_lavas_blocks <- function() {
@@ -151,216 +298,112 @@ make_skye_lavas_aitchison_32_raw <- function() {
 }
 
 logistic_gaussian_screening_dataset_registry <- function() {
-  list(
-    SkyeAFM = list(
+  canonical_entries <- lapply(composition_registry, function(entry) {
+    list(
       source_type = "compositions_data",
-      candidate_names = "SkyeAFM",
+      candidate_names = entry$data_entry,
       candidate_packages = "compositions",
-      compositional_columns = c("A", "F", "M"),
-      notes = c(
-        "AFM percentages for 23 aphyric Skye lavas.",
-        "Rows already sum to 100 before closure."
+      compositional_columns = entry$parts,
+      source_object = entry$object_name,
+      strict_compositional_validation = TRUE,
+      notes = "Canonical compositional-column selection from the compositions package."
+    )
+  })
+  names(canonical_entries) <- names(composition_registry)
+
+  c(
+    canonical_entries,
+    list(
+      SkyeLavas = list(
+        source_type = "local_constructed",
+        constructor = make_skye_lavas_33_basalt_raw,
+        compositional_columns = c("SiO2", "Al2O3", "Fe2O3", "MgO", "CaO", "Na2O", "K2O", "TiO2", "P2O5", "MnO"),
+        notes = c(
+          "Skye lavas dataset reconstructed from Thompson, Esson and Duncan (1972), Table 2.",
+          "This version contains the 33 basalt specimens from the first three basalt blocks plus sample 982, and uses the 10 major oxides as compositional parts."
+        )
+      ),
+      SkyeLavasAitchison32 = list(
+        source_type = "local_constructed",
+        constructor = make_skye_lavas_aitchison_32_raw,
+        compositional_columns = c("SiO2", "Al2O3", "Fe2O3", "MgO", "CaO", "Na2O", "K2O", "TiO2", "P2O5", "MnO"),
+        notes = c(
+          "Aitchison's 32 basalt Skye lavas reconstructed from Thompson, Esson and Duncan (1972), Table 2.",
+          "This version keeps only the first three basalt blocks and uses the 10 major oxides as compositional parts."
+        )
+      ),
+      SkyeLavasComplete = list(
+        source_type = "local_constructed",
+        constructor = make_skye_lavas_33_basalt_raw,
+        compositional_columns = c("SiO2", "Al2O3", "Fe2O3", "MgO", "CaO", "Na2O", "K2O", "TiO2", "P2O5", "MnO"),
+        notes = c(
+          "Alias of SkyeLavas: Skye lavas reconstructed from Thompson, Esson and Duncan (1972), Table 2.",
+          "This alias currently points to the 33-basalt version, i.e. the first three basalt blocks plus sample 982."
+        )
+      ),
+      arcticLake = list(
+        source_type = "search_r_packages",
+        candidate_names = c("arcticLake", "ArcticLake"),
+        candidate_packages = c("robCompositions", "compositions"),
+        compositional_columns = c("sand", "silt", "clay"),
+        notes = c(
+          "Arctic lake sediment ternary compositions (robCompositions/compositions).",
+          "Depth metadata is excluded when present."
+        )
+      ),
+      expenditures = list(
+        source_type = "search_r_packages",
+        candidate_names = "expenditures",
+        candidate_packages = c("robCompositions", "Compositional"),
+        compositional_columns = c("housing", "foodstuffs", "alcohol", "other", "services"),
+        notes = c(
+          "Synthetic household expenditure composition toy dataset.",
+          "All five expenditure categories are treated compositionally."
+        )
+      ),
+      expendituresEU = list(
+        source_type = "search_r_packages",
+        candidate_names = "expendituresEU",
+        candidate_packages = c("robCompositions", "Compositional"),
+        compositional_columns = c("Food", "Alcohol", "Clothing", "Housing", "Furnishings", "Health", "Transport", "Communications", "Recreation", "Education", "Restaurants", "Other"),
+        notes = c(
+          "EU expenditure compositions.",
+          "All expenditure categories are treated compositionally."
+        )
+      ),
+      coffee = list(
+        source_type = "search_r_packages",
+        candidate_names = "coffee",
+        candidate_packages = c("robCompositions", "Compositional"),
+        compositional_columns = c("acit", "metpyr", "furfu", "furfualc", "dimeth", "met5"),
+        notes = c(
+          "Coffee composition dataset from robCompositions.",
+          "The factor `sort` is a coffee-type label and is excluded from the compositional analysis.",
+          "The six volatile compounds are treated compositionally."
+        )
+      ),
+      alcohol = list(
+        source_type = "search_r_packages",
+        candidate_names = "alcohol",
+        candidate_packages = c("robCompositions", "Compositional"),
+        compositional_columns = c("beer", "wine", "spirits", "other"),
+        notes = c(
+          "Alcohol consumption composition by beverage type.",
+          "Metadata columns (`country`, `year`) are excluded from the compositional analysis."
+        )
+      ),
+      ClamCombined = list(
+        source_type = "combined_prepared",
+        components = c("ClamEast", "ClamWest"),
+        group_variable = "site",
+        source_object = "ClamCombined",
+        notes = c(
+          "Combined East and West clam color-size compositions.",
+          "A site label is retained for ilr diagnostics because the combined sample may be a mixture."
+        )
       )
-    ),
-    SkyeLavas = list(
-      source_type = "local_constructed",
-      constructor = make_skye_lavas_33_basalt_raw,
-      compositional_columns = c("SiO2", "Al2O3", "Fe2O3", "MgO", "CaO", "Na2O", "K2O", "TiO2", "P2O5", "MnO"),
-      notes = c(
-        "Skye lavas dataset reconstructed from Thompson, Esson and Duncan (1972), Table 2.",
-        "This version contains the 33 basalt specimens from the first three basalt blocks plus sample 982, and uses the 10 major oxides as compositional parts."
-      )
-    ),
-    SkyeLavasAitchison32 = list(
-      source_type = "local_constructed",
-      constructor = make_skye_lavas_aitchison_32_raw,
-      compositional_columns = c("SiO2", "Al2O3", "Fe2O3", "MgO", "CaO", "Na2O", "K2O", "TiO2", "P2O5", "MnO"),
-      notes = c(
-        "Aitchison's 32 basalt Skye lavas reconstructed from Thompson, Esson and Duncan (1972), Table 2.",
-        "This version keeps only the first three basalt blocks and uses the 10 major oxides as compositional parts."
-      )
-    ),
-    SkyeLavasComplete = list(
-      source_type = "local_constructed",
-      constructor = make_skye_lavas_33_basalt_raw,
-      compositional_columns = c("SiO2", "Al2O3", "Fe2O3", "MgO", "CaO", "Na2O", "K2O", "TiO2", "P2O5", "MnO"),
-      notes = c(
-        "Alias of SkyeLavas: Skye lavas reconstructed from Thompson, Esson and Duncan (1972), Table 2.",
-        "This alias currently points to the 33-basalt version, i.e. the first three basalt blocks plus sample 982."
-      )
-    ),
-    AarMajorOxides = list(
-      source_type = "compositions_data",
-      candidate_names = "Aar",
-      candidate_packages = "compositions",
-      compositional_columns = c("SiO2", "TiO2", "Al2O3", "MnO", "MgO", "CaO", "Na2O", "K2O", "P2O5", "Fe2O3t"),
-      notes = c(
-        "Major-oxide geochemical compositions from the Aar massif.",
-        "Selected oxide parts are treated compositionally after closure."
-      )
-    ),
-    Sediments = list(
-      source_type = "compositions_data",
-      candidate_names = "Sediments",
-      candidate_packages = "compositions",
-      compositional_columns = c("sand", "silt", "clay"),
-      notes = c(
-        "Classical ternary sediment composition dataset.",
-        "The sample type metadata column is excluded from the compositional analysis."
-      )
-    ),
-    HouseholdExp = list(
-      source_type = "compositions_data",
-      candidate_names = "HouseholdExp",
-      candidate_packages = "compositions",
-      compositional_columns = c("Housing", "Food", "Other", "Services"),
-      notes = c(
-        "Canonical household budget shares dataset used in compositional PCA examples.",
-        "The `Sex` metadata column is excluded from the compositional analysis."
-      )
-    ),
-    Aar = list(
-      source_type = "compositions_data",
-      candidate_names = "Aar",
-      candidate_packages = "compositions",
-      compositional_columns = c("SiO2", "TiO2", "Al2O3", "MnO", "MgO", "CaO", "Na2O", "K2O", "P2O5", "Fe2O3t"),
-      notes = c(
-        "Alias entry for the Aar major-oxide geochemical compositions.",
-        "Selected oxide parts are treated compositionally after closure."
-      )
-    ),
-    Metabolites = list(
-      source_type = "compositions_data",
-      candidate_names = "Metabolites",
-      candidate_packages = "compositions",
-      compositional_columns = c("met1", "met2", "met3"),
-      notes = c(
-        "Steroid metabolite compositions.",
-        "The class label column `Type` is excluded from the compositional analysis."
-      )
-    ),
-    SerumProtein = list(
-      source_type = "compositions_data",
-      candidate_names = "SerumProtein",
-      candidate_packages = "compositions",
-      compositional_columns = c("a", "b", "c", "d"),
-      notes = c(
-        "Serum protein compositions.",
-        "The class label column `Type` is excluded from the compositional analysis."
-      )
-    ),
-    WhiteCells = list(
-      source_type = "compositions_data",
-      candidate_names = "WhiteCells",
-      candidate_packages = "compositions",
-      compositional_columns = c("mG", "mL", "mM", "iG", "iL", "iM"),
-      notes = c(
-        "White-cell composition profiles.",
-        "All six columns are treated compositionally after closure."
-      )
-    ),
-    Boxite = list(
-      source_type = "compositions_data",
-      candidate_names = "Boxite",
-      candidate_packages = "compositions",
-      compositional_columns = c("A", "B", "C", "D", "E"),
-      notes = c(
-        "Boxite compositions.",
-        "The depth covariate is excluded from the compositional analysis."
-      )
-    ),
-    arcticLake = list(
-      source_type = "search_r_packages",
-      candidate_names = c("arcticLake", "ArcticLake"),
-      candidate_packages = c("robCompositions", "compositions"),
-      compositional_columns = c("sand", "silt", "clay"),
-      notes = c(
-        "Arctic lake sediment ternary compositions (robCompositions/compositions).",
-        "Depth metadata is excluded when present."
-      )
-    ),
-    expenditures = list(
-      source_type = "search_r_packages",
-      candidate_names = "expenditures",
-      candidate_packages = c("robCompositions", "Compositional"),
-      compositional_columns = c("housing", "foodstuffs", "alcohol", "other", "services"),
-      notes = c(
-        "Synthetic household expenditure composition toy dataset.",
-        "All five expenditure categories are treated compositionally."
-      )
-    ),
-    expendituresEU = list(
-      source_type = "search_r_packages",
-      candidate_names = "expendituresEU",
-      candidate_packages = c("robCompositions", "Compositional"),
-      compositional_columns = c("Food", "Alcohol", "Clothing", "Housing", "Furnishings", "Health", "Transport", "Communications", "Recreation", "Education", "Restaurants", "Other"),
-      notes = c(
-        "EU expenditure compositions.",
-        "All expenditure categories are treated compositionally."
-      )
-    ),
-    coffee = list(
-      source_type = "search_r_packages",
-      candidate_names = "coffee",
-      candidate_packages = c("robCompositions", "Compositional"),
-      compositional_columns = c("acit", "metpyr", "furfu", "furfualc", "dimeth", "met5"),
-      notes = c(
-        "Coffee composition dataset from robCompositions.",
-        "The factor `sort` is a coffee-type label and is excluded from the compositional analysis.",
-        "The six volatile compounds are treated compositionally."
-      )
-    ),
-    alcohol = list(
-      source_type = "search_r_packages",
-      candidate_names = "alcohol",
-      candidate_packages = c("robCompositions", "Compositional"),
-      compositional_columns = c("beer", "wine", "spirits", "other"),
-      notes = c(
-        "Alcohol consumption composition by beverage type.",
-        "Metadata columns (`country`, `year`) are excluded from the compositional analysis."
-      )
-    ),
-    ArcticLake = list(
-      source_type = "compositions_data",
-      candidate_names = "ArcticLake",
-      candidate_packages = "compositions",
-      compositional_columns = c("sand", "silt", "clay"),
-      notes = c(
-        "Sediment composition data; depth is excluded from the compositional analysis.",
-        "Closure is applied because rows are only approximately summing to 100.",
-        "Aitchison indicates that marginal logistic-normality is not the natural model here; regression on depth is more appropriate."
-      )
-    ),
-    ClamEast = list(
-      source_type = "compositions_data",
-      candidate_names = "ClamEast",
-      candidate_packages = "compositions",
-      compositional_columns = c("dl", "dm", "ds", "ll", "lm", "ls"),
-      notes = c(
-        "East Bay clam color-size compositions.",
-        "No automatic zero replacement is performed in the main analysis."
-      )
-    ),
-    ClamWest = list(
-      source_type = "compositions_data",
-      candidate_names = "ClamWest",
-      candidate_packages = "compositions",
-      compositional_columns = c("dl", "dm", "ds", "ll", "lm", "ls"),
-      notes = c(
-        "West Bay clam color-size compositions.",
-        "No automatic zero replacement is performed in the main analysis."
-      )
-    ),
-    ClamCombined = list(
-      source_type = "combined_prepared",
-      components = c("ClamEast", "ClamWest"),
-      group_variable = "site",
-      notes = c(
-        "Combined East and West clam color-size compositions.",
-        "A site label is retained for ilr diagnostics because the combined sample may be a mixture."
       )
     )
-  )
 }
 
 slugify_dataset_name <- function(name) {
@@ -940,10 +983,12 @@ prepare_composition_dataset <- function(name) {
       D = ncol(x_closed),
       has_zeros = any(x_comp == 0),
       has_missing = FALSE,
+      n_duplicate_rows = sum(duplicated(x_comp)),
       n_missing_rows_removed = 0L,
       min_entry = min(x_comp),
       row_sums_before_closure = rowSums(x_comp),
       component_names = colnames(x_comp),
+      source_object = spec$source_object %||% name,
       group = group,
       group_variable = spec$group_variable %||% "group",
       notes = spec$notes,
@@ -1016,6 +1061,23 @@ prepare_composition_dataset <- function(name) {
     stop(sprintf("Dataset %s did not yield a valid compositional matrix.", name))
   }
 
+  strict_validation <- isTRUE(spec$strict_compositional_validation)
+  if (strict_validation && anyNA(x_comp_numeric)) {
+    stop(sprintf("Canonical compositions dataset %s contains missing selected parts.", name))
+  }
+  if (strict_validation && any(is.infinite(x_comp_numeric))) {
+    stop(sprintf("Canonical compositions dataset %s contains infinite selected parts.", name))
+  }
+  if (strict_validation && any(x_comp_numeric == 0)) {
+    stop(sprintf("Canonical compositions dataset %s contains zero selected parts.", name))
+  }
+  if (strict_validation && any(x_comp_numeric < 0)) {
+    stop(sprintf("Canonical compositions dataset %s contains negative selected parts.", name))
+  }
+  if (strict_validation && anyDuplicated(x_comp_numeric)) {
+    stop(sprintf("Canonical compositions dataset %s contains duplicate rows after selecting its registered parts.", name))
+  }
+
   has_missing <- anyNA(x_comp_numeric)
   n_missing_rows <- sum(!stats::complete.cases(x_comp_numeric))
   x_comp_complete <- x_comp_numeric[stats::complete.cases(x_comp_numeric), , drop = FALSE]
@@ -1029,6 +1091,8 @@ prepare_composition_dataset <- function(name) {
     stop(sprintf("Dataset %s contains negative compositional entries.", name))
   }
 
+  n_duplicate_rows <- sum(duplicated(x_comp_complete))
+
   zero_info <- apply_zero_replacement(
     x = x_comp_complete,
     zero_replacement = spec$zero_replacement %||% NULL
@@ -1040,7 +1104,8 @@ prepare_composition_dataset <- function(name) {
   x_closed <- close_composition_rows(x_comp_complete)
 
   closure_error <- max(abs(rowSums(x_closed) - 1))
-  if (closure_error > 1e-10) {
+  closure_tolerance <- if (strict_validation) 1e-12 else 1e-10
+  if (closure_error > closure_tolerance) {
     stop(sprintf("Closure failed numerically for dataset %s.", name))
   }
 
@@ -1076,10 +1141,12 @@ prepare_composition_dataset <- function(name) {
     D = ncol(x_closed),
     has_zeros = has_zeros,
     has_missing = has_missing,
+    n_duplicate_rows = n_duplicate_rows,
     n_missing_rows_removed = n_missing_rows,
     min_entry = min(x_comp_complete),
     row_sums_before_closure = row_sums_before_closure,
     component_names = colnames(x_comp_complete),
+    source_object = spec$source_object %||% loaded$name,
     source_package = loaded$package,
     source_dataset_name = loaded$name,
     zero_replacement = zero_info$zero_replacement,
@@ -1698,6 +1765,7 @@ make_problematic_screening_result <- function(dataset_name,
                                               alpha,
                                               ridge,
                                               bootstrap_mode,
+                                              bootstrap_method,
                                               n_cores,
                                               output_dir,
                                               make_plots,
@@ -1783,7 +1851,7 @@ make_problematic_screening_result <- function(dataset_name,
 }
 
 run_logistic_gaussian_screening <- function(dataset_name,
-                                            B = 1000L,
+                                            B = 5000L,
                                             max_centers = 100L,
                                             n_t = 60L,
                                             t_grid_tail_prob = 1e-8,
@@ -1796,8 +1864,8 @@ run_logistic_gaussian_screening <- function(dataset_name,
                                             n_cores = 1L,
                                             bootstrap_method = "reestimated",
                                             control = list(),
-                                            omega_grid_type = c("fixed_simplex_lattice", "sample_points"),
-                                            t_grid_type = c("fixed_fitted_scale", "sample_quantiles"),
+                                            omega_grid_type = c("sample_points", "fixed_simplex_lattice"),
+                                            t_grid_type = c("sample_distances", "fixed_fitted_scale", "sample_quantiles"),
                                             null_mc_size = 20000L,
                                             make_plots = TRUE,
                                             save_outputs = TRUE,
@@ -1831,6 +1899,7 @@ run_logistic_gaussian_screening <- function(dataset_name,
       alpha = alpha,
       ridge = ridge,
       bootstrap_mode = bootstrap_mode,
+      bootstrap_method = bootstrap_method,
       n_cores = n_cores,
       output_dir = output_dir,
       make_plots = make_plots,
@@ -1854,6 +1923,7 @@ run_logistic_gaussian_screening <- function(dataset_name,
       alpha = alpha,
       ridge = ridge,
       bootstrap_mode = bootstrap_mode,
+      bootstrap_method = bootstrap_method,
       n_cores = n_cores,
       output_dir = output_dir,
       make_plots = make_plots,
@@ -1897,6 +1967,13 @@ run_logistic_gaussian_screening <- function(dataset_name,
       omega_grid = centers$omega,
       n_t = n_t,
       tail_prob = t_grid_tail_prob
+    )
+  } else if (identical(t_grid_type, "sample_distances")) {
+    list(
+      t_grid = sort(unique(as.numeric(distance_observed))),
+      t_max = NA_real_,
+      tail_prob = NA_real_,
+      construction = "sample_distances"
     )
   } else {
     list(
@@ -1969,10 +2046,7 @@ run_logistic_gaussian_screening <- function(dataset_name,
       data = data_prep$X_closed,
       null = list(type = "composite"),
       statistics = c("ks", "cvm"),
-      ks_grid = list(
-        omega_grid = centers$omega,
-        t_grid = t_grid
-      ),
+      ks_grid = make_sample_unique_distance_ks_grid(),
       B = B,
       alpha = alpha,
       n_cores = n_cores,
@@ -2125,9 +2199,32 @@ run_logistic_gaussian_screening <- function(dataset_name,
   result
 }
 
+screening_dataset_metadata <- function(dataset_name) {
+  canonical_entry <- composition_registry[[dataset_name]]
+  if (!is.null(canonical_entry)) {
+    return(list(
+      data_source = "compositions",
+      source_object = canonical_entry$object_name,
+      selected_parts = paste(canonical_entry$parts, collapse = ",")
+    ))
+  }
+
+  spec <- logistic_gaussian_screening_dataset_registry()[[dataset_name]]
+  list(
+    data_source = "external",
+    source_object = spec$source_object %||% spec$study %||% dataset_name,
+    selected_parts = paste(spec$compositional_columns %||% character(0), collapse = ",")
+  )
+}
+
 make_logistic_gaussian_screening_summary_row <- function(result) {
   fit <- result$fit
   mardia <- result$diagnostics$mardia
+  metadata <- screening_dataset_metadata(result$dataset_name)
+  selected_parts <- metadata$selected_parts
+  if (!nzchar(selected_parts)) {
+    selected_parts <- paste(result$data_prep$component_names %||% character(0), collapse = ",")
+  }
   shapiro_min_pvalue <- suppressWarnings(min(result$diagnostics$shapiro_p_values, na.rm = TRUE))
   if (!is.finite(shapiro_min_pvalue)) {
     shapiro_min_pvalue <- NA_real_
@@ -2135,13 +2232,18 @@ make_logistic_gaussian_screening_summary_row <- function(result) {
 
   data.frame(
     dataset = result$dataset_name,
+    data_source = metadata$data_source,
+    source_object = metadata$source_object,
+    selected_parts = selected_parts,
     status = result$data_prep$status %||% "ok",
+    result_status = if (identical(result$data_prep$status %||% "ok", "ok")) "completed" else "failed",
     source_package = result$data_prep$source_package %||% NA_character_,
     source_dataset_name = result$data_prep$source_dataset_name %||% NA_character_,
     n = result$data_prep$n,
     D = result$data_prep$D,
     zeros = if (isTRUE(result$data_prep$has_zeros)) "yes" else "no",
     missing = if (isTRUE(result$data_prep$has_missing)) "yes" else "no",
+    duplicate_rows = result$data_prep$n_duplicate_rows %||% NA_integer_,
     missing_rows_removed = result$data_prep$n_missing_rows_removed,
     zero_replacement = result$data_prep$zero_replacement %||% NA_real_,
     n_zeros_replaced = result$data_prep$n_zeros_replaced %||% NA_integer_,
@@ -2175,7 +2277,7 @@ make_logistic_gaussian_screening_summary_row <- function(result) {
 }
 
 run_logistic_gaussian_screening_batch <- function(dataset_names = default_logistic_gaussian_screening_datasets(),
-                                                  B = 1000L,
+                                                  B = 5000L,
                                                   max_centers = 100L,
                                                   n_t = 60L,
                                                   t_grid_tail_prob = 1e-8,
@@ -2188,8 +2290,8 @@ run_logistic_gaussian_screening_batch <- function(dataset_names = default_logist
                                                   n_cores = 1L,
                                                   bootstrap_method = "reestimated",
                                                   control = list(),
-                                                  omega_grid_type = "fixed_simplex_lattice",
-                                                  t_grid_type = "fixed_fitted_scale",
+                                                  omega_grid_type = "sample_points",
+                                                  t_grid_type = "sample_distances",
                                                   make_plots = TRUE,
                                                   output_dir = canonical_logistic_gaussian_screening_dir("slow"),
                                                   run_seed_sensitivity = FALSE,
@@ -2239,10 +2341,12 @@ run_logistic_gaussian_screening_batch <- function(dataset_names = default_logist
           screening_type = "logistic_gaussian_composite_or_screening",
           warning = logistic_gaussian_screening_warning,
           data_prep = list(
+            status = "failed",
             n = NA_integer_,
             D = NA_integer_,
             has_zeros = NA,
             has_missing = NA,
+            n_duplicate_rows = NA_integer_,
             n_missing_rows_removed = NA_integer_,
             min_entry = NA_real_
           ),

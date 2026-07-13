@@ -85,13 +85,15 @@ parse_sunspots_weighted_rolling_args <- function(args = commandArgs(trailingOnly
     "  --grid_groups=all",
     "  --input_csv=PATH",
     "  --output_dir=PATH",
-    "  --B=1000",
+    "  --B=50000",
     "  --n_cores=12",
     "  --seed=123",
     "  --distance_type=geodesic",
     "  --window_rotations=10",
     "  --step_rotations=1",
     "  --min_n=50",
+    "  --fast_multiplier_ks_block_size=INTEGER",
+    "  --fast_multiplier_cvm_block_size=INTEGER",
     "  --start_window=1",
     "  --end_window=Inf",
     "  --resume=TRUE",
@@ -126,6 +128,8 @@ parse_sunspots_weighted_rolling_args <- function(args = commandArgs(trailingOnly
   if ("window_rotations" %in% names(parsed)) out$window_rotations <- as.numeric(parsed$window_rotations)
   if ("step_rotations" %in% names(parsed)) out$step_rotations <- as.numeric(parsed$step_rotations)
   if ("min_n" %in% names(parsed)) out$min_n <- parse_weighted_rolling_integer(parsed$min_n, "min_n")
+  if ("fast_multiplier_ks_block_size" %in% names(parsed)) out$fast_multiplier_ks_block_size <- parse_weighted_rolling_integer(parsed$fast_multiplier_ks_block_size, "fast_multiplier_ks_block_size")
+  if ("fast_multiplier_cvm_block_size" %in% names(parsed)) out$fast_multiplier_cvm_block_size <- parse_weighted_rolling_integer(parsed$fast_multiplier_cvm_block_size, "fast_multiplier_cvm_block_size")
   if ("start_window" %in% names(parsed)) out$start_window <- parse_weighted_rolling_integer(parsed$start_window, "start_window")
   if ("end_window" %in% names(parsed)) out$end_window <- parse_weighted_rolling_integer(parsed$end_window, "end_window", allow_inf = TRUE)
   if ("resume" %in% names(parsed)) out$resume <- parse_weighted_rolling_bool(parsed$resume, "resume")
@@ -390,12 +394,14 @@ compute_fmgp_alignment <- function(windows_df, cycles, grid_groups, output_dir) 
 run_weighted_window_gof_once <- function(window_df,
                                          window_meta,
                                          statistics = "ks",
-                                         B = 1000L,
+                                         B = 5000L,
                                          n_cores = 12L,
-                                         bootstrap_method = "reestimated",
+                                         bootstrap_method = "fast_multiplier",
                                          seed = 123L,
                                          distance_type = "geodesic",
-                                         theta_start = NULL) {
+                                         theta_start = NULL,
+                                         fast_multiplier_ks_block_size = NULL,
+                                         fast_multiplier_cvm_block_size = NULL) {
   x <- as.matrix(window_df[, c("x1", "x2", "x3")])
   x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
   control <- list(
@@ -409,6 +415,12 @@ run_weighted_window_gof_once <- function(window_df,
   if (!is.null(theta_start)) {
     control$small_circle_weighted_mixture2_start_theta <- theta_start
     control$small_circle_weighted_mixture2_warm_start_only <- TRUE
+  }
+  if (!is.null(fast_multiplier_ks_block_size)) {
+    control$fast_multiplier_ks_block_size <- as.integer(fast_multiplier_ks_block_size)
+  }
+  if (!is.null(fast_multiplier_cvm_block_size)) {
+    control$fast_multiplier_cvm_block_size <- as.integer(fast_multiplier_cvm_block_size)
   }
 
   mle_warning_log <- character()
@@ -430,7 +442,7 @@ run_weighted_window_gof_once <- function(window_df,
   bic <- log(n) * 7L - 2 * loglik
 
   statistics <- normalize_weighted_rolling_statistics(statistics)
-  ks_grid <- list(omega_grid = generate_canonical_lattice(60L, dim = 3), t_grid = seq(1e-8, pi - 1e-8, length.out = 200L))
+  ks_grid <- make_sample_unique_distance_ks_grid()
   spec <- make_small_circle_weighted_mixture2_spec(distance_type = distance_type)
   bootstrap_warning_log <- character()
   bootstrap_start <- proc.time()[["elapsed"]]
@@ -472,6 +484,7 @@ run_weighted_window_gof_once <- function(window_df,
         n_north = sum(window_df$hemisphere == "N"),
         n_south = sum(window_df$hemisphere == "S"),
         model = "small_circle_weighted_mixture2",
+        bootstrap_method = bootstrap_method,
         statistic_type = stat_name,
         test_statistic = gof_result$inference[[stat_name]]$observed,
         p_value_raw = gof_result$inference[[stat_name]]$p_value,
@@ -506,14 +519,16 @@ run_sunspots_weighted_mixture_rolling_windows_gof <- function(
     input_csv = file.path("real_data", "sunspots", "output", "sunspots_cycles21_23_s2_all.csv"),
     output_dir = canonical_sunspots_weighted_windows_dir("slow"),
     statistics = "ks",
-    B = 1000L,
+    B = 5000L,
     n_cores = 12L,
-    bootstrap_method = "reestimated",
+    bootstrap_method = "fast_multiplier",
     seed = 123L,
     distance_type = "geodesic",
     window_rotations = 10,
     step_rotations = 1,
     min_n = 50L,
+    fast_multiplier_ks_block_size = NULL,
+    fast_multiplier_cvm_block_size = NULL,
     start_window = 1L,
     end_window = Inf,
     resume = TRUE,
@@ -559,12 +574,15 @@ run_sunspots_weighted_mixture_rolling_windows_gof <- function(
   results_path <- file.path(output_dir, "sunspots_cycles21_23_weighted_mixture_rolling_10cr_gof_results.csv")
   if (file.exists(results_path)) {
     results_df <- utils::read.csv(results_path, stringsAsFactors = FALSE)
+    if (!("bootstrap_method" %in% names(results_df))) {
+      results_df$bootstrap_method <- "reestimated"
+    }
   } else {
     results_df <- data.frame(
       cycle = integer(), grid_group = character(), window_id = integer(), global_window_id = integer(),
       start_date = character(), end_date = character(), center_date = character(),
       n = integer(), n_north = integer(), n_south = integer(),
-      model = character(), statistic_type = character(), test_statistic = double(), p_value_raw = double(),
+      model = character(), bootstrap_method = character(), statistic_type = character(), test_statistic = double(), p_value_raw = double(),
       loglik = double(), aic = double(), bic = double(), pi_hat = double(),
       mu_1 = double(), mu_2 = double(), mu_3 = double(),
       kappa1_hat = double(), nu1_hat = double(), kappa2_hat = double(), nu2_hat = double(),
@@ -581,6 +599,7 @@ run_sunspots_weighted_mixture_rolling_windows_gof <- function(
       completed <- results_df[
         results_df$cycle == cycle &
           results_df$grid_group == grid_group &
+          results_df$bootstrap_method == bootstrap_method &
           results_df$statistic_type == statistics[[1L]] &
           is.finite(results_df$p_value_raw),
         ,
@@ -607,6 +626,7 @@ run_sunspots_weighted_mixture_rolling_windows_gof <- function(
       results_df$cycle == window_meta$cycle[[1L]] &
         results_df$grid_group == window_meta$grid_group[[1L]] &
         results_df$window_id == window_meta$window_id[[1L]] &
+        results_df$bootstrap_method == bootstrap_method &
         is.finite(results_df$p_value_raw),
       ,
       drop = FALSE
@@ -638,7 +658,9 @@ run_sunspots_weighted_mixture_rolling_windows_gof <- function(
         bootstrap_method = bootstrap_method,
         seed = window_seed,
         distance_type = distance_type,
-        theta_start = cycle_grid_theta_start[[key]]
+        theta_start = cycle_grid_theta_start[[key]],
+        fast_multiplier_ks_block_size = fast_multiplier_ks_block_size,
+        fast_multiplier_cvm_block_size = fast_multiplier_cvm_block_size
       ),
       silent = TRUE
     )
@@ -650,6 +672,7 @@ run_sunspots_weighted_mixture_rolling_windows_gof <- function(
     duplicate_rows <- results_df$cycle == window_meta$cycle[[1L]] &
       results_df$grid_group == window_meta$grid_group[[1L]] &
       results_df$window_id == window_meta$window_id[[1L]] &
+      results_df$bootstrap_method == bootstrap_method &
       results_df$statistic_type %in% result$result_row$statistic_type
     if (any(duplicate_rows)) results_df <- results_df[!duplicate_rows, , drop = FALSE]
     results_df <- rbind(results_df, result$result_row)
@@ -682,12 +705,13 @@ run_sunspots_weighted_mixture_rolling_windows_gof <- function(
     do.call(rbind, lapply(split(windows_df, list(windows_df$cycle, windows_df$grid_group), drop = TRUE), function(wg) {
       cycle_value <- wg$cycle[[1L]]
       grid_group_value <- wg$grid_group[[1L]]
-      completed <- results_df[
-        results_df$cycle == cycle_value &
-          results_df$grid_group == grid_group_value &
-          results_df$statistic_type == stat_name &
-          results_df$window_id %in% wg$window_id[wg$keep_window] &
-          is.finite(results_df$p_value_raw),
+        completed <- results_df[
+          results_df$cycle == cycle_value &
+            results_df$grid_group == grid_group_value &
+            results_df$bootstrap_method == bootstrap_method &
+            results_df$statistic_type == stat_name &
+            results_df$window_id %in% wg$window_id[wg$keep_window] &
+            is.finite(results_df$p_value_raw),
         ,
         drop = FALSE
       ]

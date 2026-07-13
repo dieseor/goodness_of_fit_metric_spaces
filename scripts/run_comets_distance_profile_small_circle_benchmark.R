@@ -60,7 +60,9 @@ run_small_circle_benchmark_stage <- function(data_matrix,
                                              seed,
                                              bootstrap_method = "reestimated",
                                              distance_type,
-                                             ks_t_points,
+                                             ks_grid_mode,
+                                             manual_ks_omega_points,
+                                             manual_ks_t_points,
                                              control) {
   requested_cores <- min(as.integer(n_cores), 12L)
 
@@ -70,7 +72,17 @@ run_small_circle_benchmark_stage <- function(data_matrix,
       spec = make_small_circle_spec(distance_type = distance_type),
       null = list(type = "composite"),
       statistics = statistic,
-      ks_grid = if (identical(statistic, "ks")) make_small_circle_ks_grid_comets(B_value, ks_t_points) else NULL,
+      ks_grid = if (identical(statistic, "ks")) {
+        make_small_circle_ks_grid_comets(
+          data_matrix = data_matrix,
+          distance_type = distance_type,
+          ks_grid_mode = ks_grid_mode,
+          manual_ks_omega_points = manual_ks_omega_points,
+          manual_ks_t_points = manual_ks_t_points
+        )
+      } else {
+        NULL
+      },
       B = B_value,
       alpha = 0.05,
       n_cores = as.integer(stage_cores),
@@ -113,18 +125,43 @@ load_comets_distance_profile_data_small_circle <- function() {
   load_comets_real_data(finite_normals = "none")
 }
 
-make_small_circle_ks_grid_comets <- function(M_value,
-                                             ks_t_points = 250L) {
+make_small_circle_ks_grid_comets <- function(data_matrix,
+                                             distance_type = "geodesic",
+                                             ks_grid_mode = c("sample_points_unique_distances", "manual"),
+                                             manual_ks_omega_points = 60L,
+                                             manual_ks_t_points = 250L) {
+  ks_grid_mode <- match.arg(ks_grid_mode)
+
+  if (identical(ks_grid_mode, "sample_points_unique_distances")) {
+    return(make_sample_unique_distance_ks_grid())
+  }
+
+  omega_grid <- generate_canonical_lattice(
+    n_points = as.integer(manual_ks_omega_points),
+    dim = ncol(data_matrix)
+  )
+  dot_products <- pmin(pmax(as.matrix(data_matrix) %*% t(omega_grid), -1), 1)
+  distance_matrix <- if (identical(distance_type, "chordal")) {
+    sqrt(pmax(0, 2 * (1 - dot_products)))
+  } else {
+    acos(dot_products)
+  }
+  t_upper <- max(distance_matrix, na.rm = TRUE)
+  if (!is.finite(t_upper) || t_upper <= 0) {
+    t_upper <- if (identical(distance_type, "chordal")) 2 - 1e-8 else pi - 1e-8
+  }
+
   list(
-    omega_grid = generate_canonical_lattice(as.integer(M_value), dim = 3),
-    t_grid = seq(1e-8, pi - 1e-8, length.out = as.integer(ks_t_points))
+    omega_grid = omega_grid,
+    t_grid = seq(1e-8, t_upper, length.out = as.integer(manual_ks_t_points))
   )
 }
 
 summarize_small_circle_model_result <- function(result,
                                                 dataset_label,
                                                 statistic,
-                                                M_value) {
+                                                ks_grid_mode,
+                                                manual_ks_omega_points) {
   theta_hat <- result$observed$theta_hat
   inference <- result$inference[[statistic]]
   theta_star <- result$bootstrap$theta_star
@@ -163,7 +200,8 @@ summarize_small_circle_model_result <- function(result,
     nu_star_min = nu_star_range[[1L]],
     nu_star_max = nu_star_range[[2L]],
     B = result$bootstrap$B,
-    M = as.integer(M_value),
+    M = if (identical(statistic, "ks") && identical(ks_grid_mode, "manual")) as.integer(manual_ks_omega_points) else NA_integer_,
+    ks_grid_mode = if (identical(statistic, "ks")) ks_grid_mode else NA_character_,
     n = result$diagnostics$n,
     n_cores = result$diagnostics$n_cores,
     elapsed_seconds = result$diagnostics$elapsed_seconds,
@@ -176,7 +214,9 @@ run_comets_distance_profile_small_circle_benchmark <- function(output_root = NUL
                                                                B_values = c(10L, 30L, 50L, 100L, 200L, 500L, 1000L),
                                                                statistic = "ks",
                                                                n_cores = 12L,
-                                                               ks_t_points = 250L,
+                                                               ks_grid_mode = "sample_points_unique_distances",
+                                                               manual_ks_omega_points = 60L,
+                                                               manual_ks_t_points = 250L,
                                                                base_seed = 20260531L,
                                                                bootstrap_method = "reestimated",
                                                                distance_type = "geodesic",
@@ -224,8 +264,7 @@ run_comets_distance_profile_small_circle_benchmark <- function(output_root = NUL
         row_idx <- which(
           existing_summary$dataset == dataset_label &
             existing_summary$statistic == statistic &
-            existing_summary$B == B_value &
-            existing_summary$M == B_value
+            existing_summary$B == B_value
         )
         if (length(row_idx) >= 1L) {
           existing_row <- existing_summary[row_idx[[1L]], , drop = FALSE]
@@ -235,11 +274,12 @@ run_comets_distance_profile_small_circle_benchmark <- function(output_root = NUL
       if (is.null(existing_row)) {
         result_existing <- readRDS(stage_file)
         existing_row <- summarize_small_circle_model_result(
-          result = result_existing,
-          dataset_label = dataset_label,
-          statistic = statistic,
-          M_value = B_value
-        )
+        result = result_existing,
+        dataset_label = dataset_label,
+        statistic = statistic,
+        ks_grid_mode = ks_grid_mode,
+        manual_ks_omega_points = manual_ks_omega_points
+      )
       }
 
       summary_rows[[length(summary_rows) + 1L]] <- existing_row
@@ -254,7 +294,9 @@ run_comets_distance_profile_small_circle_benchmark <- function(output_root = NUL
       seed = as.integer(base_seed + i),
       bootstrap_method = bootstrap_method,
       distance_type = distance_type,
-      ks_t_points = ks_t_points,
+      ks_grid_mode = ks_grid_mode,
+      manual_ks_omega_points = manual_ks_omega_points,
+      manual_ks_t_points = manual_ks_t_points,
       control = control
     )
 
@@ -262,7 +304,8 @@ run_comets_distance_profile_small_circle_benchmark <- function(output_root = NUL
       result = result,
       dataset_label = dataset_label,
       statistic = statistic,
-      M_value = B_value
+      ks_grid_mode = ks_grid_mode,
+      manual_ks_omega_points = manual_ks_omega_points
     )
     utils::write.csv(do.call(rbind, summary_rows), file = file.path(output_root, "benchmark_summary.csv"), row.names = FALSE)
     saveRDS(result, file = file.path(output_root, sprintf("stage_%02d_M%d_B%d.rds", i, B_value, B_value)))
@@ -298,8 +341,23 @@ if (sys.nframe() == 0L) {
     B_values = if (!is.null(args$B_values)) as.integer(strsplit(args$B_values, ",", fixed = TRUE)[[1L]]) else c(10L, 30L, 50L, 100L, 200L, 500L, 1000L),
     statistic = args$statistic %||% "ks",
     n_cores = if (!is.null(args$n_cores)) as.integer(args$n_cores) else 12L,
-    ks_t_points = if (!is.null(args$ks_t_points)) as.integer(args$ks_t_points) else 250L,
+    ks_grid_mode = args$ks_grid_mode %||% "sample_points_unique_distances",
+    manual_ks_omega_points = if (!is.null(args$manual_ks_omega_points)) {
+      as.integer(args$manual_ks_omega_points)
+    } else if (!is.null(args$M)) {
+      as.integer(args$M)
+    } else {
+      60L
+    },
+    manual_ks_t_points = if (!is.null(args$manual_ks_t_points)) {
+      as.integer(args$manual_ks_t_points)
+    } else if (!is.null(args$ks_t_points)) {
+      as.integer(args$ks_t_points)
+    } else {
+      250L
+    },
     base_seed = if (!is.null(args$seed)) as.integer(args$seed) else 20260531L,
+    bootstrap_method = args$bootstrap_method %||% "reestimated",
     distance_type = args$distance_type %||% "geodesic"
   )
 }

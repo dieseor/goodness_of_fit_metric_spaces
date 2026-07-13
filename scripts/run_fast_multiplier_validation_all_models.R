@@ -454,7 +454,7 @@ build_validation_summary <- function(raw_df) {
 }
 
 run_fast_multiplier_validation_all_models <- function(output_root = canonical_fast_multiplier_validation_dir("validation_all_models"),
-                                                      B = 1000L,
+                                                      B = 5000L,
                                                       M_outer = 5L,
                                                       derivative_mc_size = 1000L,
                                                       base_seed = 20260613L,

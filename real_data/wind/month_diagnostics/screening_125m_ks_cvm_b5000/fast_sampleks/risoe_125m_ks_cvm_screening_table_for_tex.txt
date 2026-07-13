@@ -1,0 +1,19 @@
+\begin{table}[htbp]
+\centering
+\caption{Composite HvMF goodness-of-fit screening for the cleaned Ris{\o} $125\,\mathrm{m}$ series (1996--2003). The table reports multiplier-bootstrap $p$-values with $B=5000$ for the KS and CvM statistics under four four-day subsampling patterns. Bold entries are not significant at the $5\%$ level.}
+\label{tab:risoe-wind-screening-125m}
+\begin{tabular}{lcccccccc}
+\toprule
+ & \multicolumn{2}{c}{\texttt{start1}} & \multicolumn{2}{c}{\texttt{start2}} & \multicolumn{2}{c}{\texttt{start3}} & \multicolumn{2}{c}{\texttt{start4}} \\
+Month(s) & KS & CvM & KS & CvM & KS & CvM & KS & CvM \\
+\midrule
+\texttt{jan} & 0.0432 & 0.0186 & \textbf{0.2224} & \textbf{0.2446} & \textbf{0.3617} & \textbf{0.3477} & \textbf{0.1078} & \textbf{0.1540} \\
+\texttt{feb} & \textbf{0.3995} & \textbf{0.1514} & \textbf{0.1158} & \textbf{0.0506} & \textbf{0.2983} & \textbf{0.2086} & \textbf{0.0518} & \textbf{0.0772} \\
+\texttt{jan_feb} & \textbf{0.4029} & \textbf{0.1616} & \textbf{0.0700} & \textbf{0.0800} & \textbf{0.2707} & \textbf{0.1612} & 0.0256 & \textbf{0.0826} \\
+\texttt{feb_mar} & \textbf{0.2196} & \textbf{0.0846} & \textbf{0.2651} & \textbf{0.2883} & \textbf{0.5545} & \textbf{0.2811} & 0.0048 & 0.0374 \\
+\texttt{oct} & \textbf{0.1408} & \textbf{0.0858} & \textbf{0.3325} & \textbf{0.1710} & \textbf{0.4381} & \textbf{0.4467} & 0.0048 & 0.0302 \\
+\texttt{nov} & 0.0312 & 0.0154 & \textbf{0.2525} & \textbf{0.3253} & \textbf{0.5585} & \textbf{0.2893} & \textbf{0.8446} & \textbf{0.8038} \\
+\texttt{oct_nov} & 0.0042 & 0.0074 & \textbf{0.0804} & 0.0230 & \textbf{0.2458} & \textbf{0.2386} & \textbf{0.0960} & \textbf{0.1674} \\
+\bottomrule
+\end{tabular}
+\end{table}

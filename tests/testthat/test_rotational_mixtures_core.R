@@ -349,6 +349,294 @@ test_that("rotational beta-mixture axial and S2 densities are numerically normal
   expect_equal(s2_integral, 1, tolerance = 1e-8)
 })
 
+test_that("rotational uniform-beta-mixture coefficients and special profiles are correct", {
+  theta <- uniform_beta_mixture_normalize_theta(list(
+    mu = c(0, 0, 1),
+    weight_uniform = 0.2,
+    alpha = 10,
+    beta = 3
+  ))
+  coeffs <- uniform_beta_mixture_legendre_coefficients(theta, l_max = 40L, quad_n = 1000L)
+  expect_lt(coeffs$a0_error, 1e-10)
+
+  t_grid <- seq(0, pi, length.out = 31)
+  profile_mu <- distance_profile_uniform_beta_mixture(
+    omega = theta$mu,
+    t_values = t_grid,
+    mu = theta$mu,
+    weight_uniform = theta$weight_uniform,
+    alpha = theta$alpha,
+    beta = theta$beta,
+    distance_type = "geodesic",
+    method = "legendre",
+    l_max = 120L,
+    quad_n = 500L
+  )
+  profile_minus_mu <- distance_profile_uniform_beta_mixture(
+    omega = -theta$mu,
+    t_values = t_grid,
+    mu = theta$mu,
+    weight_uniform = theta$weight_uniform,
+    alpha = theta$alpha,
+    beta = theta$beta,
+    distance_type = "geodesic",
+    method = "legendre",
+    l_max = 120L,
+    quad_n = 500L
+  )
+  thresholds <- cos(t_grid)
+  expect_equal(
+    profile_mu,
+    1 - uniform_beta_mixture_cdf_y(
+      y = (thresholds + 1) / 2,
+      weight_uniform = theta$weight_uniform,
+      alpha = theta$alpha,
+      beta = theta$beta
+    ),
+    tolerance = 1e-9
+  )
+  expect_equal(
+    profile_minus_mu,
+    uniform_beta_mixture_cdf_y(
+      y = (1 - thresholds) / 2,
+      weight_uniform = theta$weight_uniform,
+      alpha = theta$alpha,
+      beta = theta$beta
+    ),
+    tolerance = 1e-9
+  )
+  expect_equal(profile_mu[[1L]], 0, tolerance = 1e-12)
+  expect_equal(profile_mu[[length(profile_mu)]], 1, tolerance = 1e-12)
+  expect_true(all(diff(profile_mu) >= -1e-10))
+  expect_true(all(profile_mu >= -1e-12 & profile_mu <= 1 + 1e-12))
+})
+
+test_that("rotational uniform-beta-mixture Legendre and integral profiles agree", {
+  theta <- uniform_beta_mixture_normalize_theta(list(
+    mu = c(0, 0, 1),
+    weight_uniform = 0.25,
+    alpha = 12,
+    beta = 4
+  ))
+  omega <- jp_normalize_unit_vector(c(0.3, -0.4, 0.85), arg_name = "omega", min_length = 3L)
+  t_grid <- seq(0.05, pi - 0.05, length.out = 25)
+
+  legendre <- distance_profile_uniform_beta_mixture(
+    omega = omega,
+    t_values = t_grid,
+    mu = theta$mu,
+    weight_uniform = theta$weight_uniform,
+    alpha = theta$alpha,
+    beta = theta$beta,
+    method = "legendre",
+    l_max = 150L,
+    quad_n = 600L
+  )
+  integral <- distance_profile_uniform_beta_mixture(
+    omega = omega,
+    t_values = t_grid,
+    mu = theta$mu,
+    weight_uniform = theta$weight_uniform,
+    alpha = theta$alpha,
+    beta = theta$beta,
+    method = "integral",
+    quad_n = 600L
+  )
+
+  expect_lt(max(abs(legendre - integral)), 5e-4)
+})
+
+test_that("rotational uniform-beta-mixture grid and CvM helpers match naive row-wise evaluation", {
+  theta <- uniform_beta_mixture_normalize_theta(list(
+    mu = jp_normalize_unit_vector(c(0.2, -0.35, 0.915), arg_name = "mu", min_length = 3L),
+    weight_uniform = 0.3,
+    alpha = 9,
+    beta = 2.5
+  ))
+  omega_grid <- rbind(
+    theta$mu,
+    -theta$mu,
+    jp_normalize_unit_vector(c(0.4, 0.2, 0.89), arg_name = "omega", min_length = 3L)
+  )
+  t_grid <- seq(0.1, pi - 0.1, length.out = 11)
+  x <- r_sph_uniform_beta_mixture(
+    n = 6,
+    mu = theta$mu,
+    weight_uniform = theta$weight_uniform,
+    alpha = theta$alpha,
+    beta = theta$beta
+  )
+  dot_products <- pmin(pmax(x %*% t(x), -1), 1)
+
+  for (method in c("legendre", "integral")) {
+    grid_naive <- t(vapply(seq_len(nrow(omega_grid)), function(i) {
+      distance_profile_uniform_beta_mixture(
+        omega = omega_grid[i, ],
+        t_values = t_grid,
+        mu = theta$mu,
+        weight_uniform = theta$weight_uniform,
+        alpha = theta$alpha,
+        beta = theta$beta,
+        distance_type = "geodesic",
+        method = method,
+        l_max = 80L,
+        quad_n = 250L,
+        tol = 1e-10
+      )
+    }, numeric(length(t_grid))))
+    grid_fast <- distance_profile_uniform_beta_mixture_grid(
+      omega_grid = omega_grid,
+      mu = theta$mu,
+      weight_uniform = theta$weight_uniform,
+      alpha = theta$alpha,
+      beta = theta$beta,
+      t_grid = t_grid,
+      distance_type = "geodesic",
+      method = method,
+      l_max = 80L,
+      quad_n = 250L,
+      tol = 1e-10
+    )
+    expect_equal(grid_fast, grid_naive, tolerance = 1e-8)
+
+    cvm_naive <- t(vapply(seq_len(nrow(x)), function(i) {
+      distance_profile_uniform_beta_mixture(
+        omega = x[i, ],
+        t_values = acos(dot_products[i, ]),
+        mu = theta$mu,
+        weight_uniform = theta$weight_uniform,
+        alpha = theta$alpha,
+        beta = theta$beta,
+        distance_type = "geodesic",
+        method = method,
+        l_max = 80L,
+        quad_n = 250L,
+        tol = 1e-10
+      )
+    }, numeric(nrow(x))))
+    cvm_fast <- distance_profile_uniform_beta_mixture_cvm_grid(
+      X = x,
+      mu = theta$mu,
+      weight_uniform = theta$weight_uniform,
+      alpha = theta$alpha,
+      beta = theta$beta,
+      method = method,
+      l_max = 80L,
+      quad_n = 250L,
+      tol = 1e-10
+    )
+    expect_equal(cvm_fast, cvm_naive, tolerance = 1e-8)
+  }
+})
+
+test_that("rotational uniform-beta-mixture sampler and weighted MLE behave coherently", {
+  set.seed(20260602)
+  theta <- uniform_beta_mixture_normalize_theta(list(
+    mu = jp_normalize_unit_vector(c(0.2, -0.35, 0.915), arg_name = "mu", min_length = 3L),
+    weight_uniform = 0.25,
+    alpha = 10,
+    beta = 3
+  ))
+  x <- r_sph_uniform_beta_mixture(
+    n = 180,
+    mu = theta$mu,
+    weight_uniform = theta$weight_uniform,
+    alpha = theta$alpha,
+    beta = theta$beta
+  )
+  expect_lt(max(abs(sqrt(rowSums(x^2)) - 1)), 1e-8)
+
+  weights <- rep(c(1, 2, 3), length.out = nrow(x))
+  fit_weighted <- uniform_beta_mixture_mle_s2_weighted(
+    x = x,
+    weights = weights,
+    control = list(uniform_beta_mixture_optim_control = list(maxit = 250L, reltol = 1e-9))
+  )
+  x_rep <- x[rep(seq_len(nrow(x)), times = weights), , drop = FALSE]
+  fit_rep <- uniform_beta_mixture_mle_s2_weighted(
+    x = x_rep,
+    control = list(
+      uniform_beta_mixture_start_theta = fit_weighted,
+      uniform_beta_mixture_optim_control = list(maxit = 250L, reltol = 1e-9)
+    )
+  )
+
+  expect_true(sum(fit_weighted$mu * fit_rep$mu) > 0.95)
+  expect_equal(fit_weighted$weight_uniform, fit_rep$weight_uniform, tolerance = 0.08)
+  expect_equal(fit_weighted$alpha, fit_rep$alpha, tolerance = 2.0)
+  expect_equal(fit_weighted$beta, fit_rep$beta, tolerance = 1.0)
+
+  y <- (as.numeric(x %*% theta$mu) + 1) / 2
+  ecdf_y <- stats::ecdf(y)
+  grid <- seq(0.05, 0.95, length.out = 41)
+  fitted_cdf <- uniform_beta_mixture_cdf_y(
+    y = grid,
+    weight_uniform = theta$weight_uniform,
+    alpha = theta$alpha,
+    beta = theta$beta
+  )
+  expect_lt(max(abs(ecdf_y(grid) - fitted_cdf)), 0.12)
+})
+
+test_that("rotational uniform-beta-mixture density is numerically stable at y endpoints", {
+  log_density <- uniform_beta_mixture_density_y(
+    y = c(0, 1),
+    weight_uniform = 0.2,
+    alpha = 0.4,
+    beta = 2.5,
+    log = TRUE
+  )
+
+  expect_true(all(is.finite(log_density)))
+
+  x <- rbind(c(0, 0, 1), c(0, 0, -1))
+  log_s2 <- d_sph_uniform_beta_mixture_s2(
+    x = x,
+    mu = c(0, 0, 1),
+    weight_uniform = 0.2,
+    alpha = 0.4,
+    beta = 2.5,
+    log = TRUE
+  )
+
+  expect_true(all(is.finite(log_s2)))
+})
+
+test_that("rotational uniform-beta-mixture axial and S2 densities are numerically normalized", {
+  axial_integral <- integrate(
+    f = function(z) uniform_beta_mixture_density_gz(
+      z = z,
+      weight_uniform = 0.2,
+      alpha = 10,
+      beta = 3
+    ),
+    lower = -1,
+    upper = 1,
+    rel.tol = 1e-8,
+    abs.tol = 1e-10
+  )$value
+
+  s2_integral <- integrate(
+    f = function(z) {
+      x <- cbind(sqrt(pmax(0, 1 - z^2)), 0, z)
+      2 * pi * d_sph_uniform_beta_mixture_s2(
+        x = x,
+        mu = c(0, 0, 1),
+        weight_uniform = 0.2,
+        alpha = 10,
+        beta = 3
+      )
+    },
+    lower = -1,
+    upper = 1,
+    rel.tol = 1e-8,
+    abs.tol = 1e-10
+  )$value
+
+  expect_equal(axial_integral, 1, tolerance = 1e-8)
+  expect_equal(s2_integral, 1, tolerance = 1e-8)
+})
+
 test_that("rotational logit-normal-mixture coefficients and special profiles are correct", {
   theta <- logitnormal_mixture2_normalize_theta(list(
     mu = c(0, 0, 1),

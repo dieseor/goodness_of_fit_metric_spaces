@@ -467,8 +467,72 @@ simulate_limit_gaussian_vmf <- function(omega_grid, t_grid, mu, kappa,
   
   # Use generic function to simulate
   supremum_values <- simulate_limit_gaussian(cov_matrix, M)
-  
+
   return(supremum_values)
+}
+
+compute_theoretical_sample_profile_vmf <- function(center,
+                                                   radii,
+                                                   mu,
+                                                   kappa,
+                                                   distance_type = "chordal") {
+  radii <- pmax(as.numeric(radii), 0)
+  if (identical(distance_type, "chordal")) {
+    support_max <- 2 - 1e-10
+  } else {
+    support_max <- pi - 1e-10
+  }
+  radii <- pmin(radii, support_max)
+  theoretical_distance_profile_vmf(center, mu, kappa, radii, distance_type)
+}
+
+compute_sample_ks_sup_vmf <- function(sample_data,
+                                      mu,
+                                      kappa,
+                                      distance_type = "chordal",
+                                      h0 = c("simple", "composite"),
+                                      unknown_param = NULL) {
+  h0 <- match.arg(h0)
+  if (h0 == "composite") {
+    xi_hat <- compute_mle_xi(sample_data)
+    kappa_hat <- sqrt(sum(xi_hat^2))
+    if (!is.finite(kappa_hat) || kappa_hat <= 0) {
+      mu_hat <- mu
+      kappa_hat <- 0
+    } else {
+      mu_hat <- xi_hat / kappa_hat
+    }
+  } else {
+    mu_hat <- mu
+    kappa_hat <- kappa
+  }
+
+  n <- nrow(sample_data)
+  dot_products <- sample_data %*% t(sample_data)
+  if (distance_type == "chordal") {
+    distance_matrix <- sqrt(pmax(0, 2 * (1 - dot_products)))
+  } else {
+    dot_products <- pmax(pmin(dot_products, 1), -1)
+    distance_matrix <- acos(dot_products)
+  }
+
+  max_diff <- 0
+  for (i in seq_len(n)) {
+    distances_i <- distance_matrix[, i]
+    order_i <- order(distances_i)
+    sorted_distances_i <- distances_i[order_i]
+    empirical_i <- seq_len(n) / n
+    theoretical_i <- compute_theoretical_sample_profile_vmf(
+      center = sample_data[i, ],
+      radii = sorted_distances_i,
+      mu = mu_hat,
+      kappa = kappa_hat,
+      distance_type = distance_type
+    )
+    max_diff <- max(max_diff, max(abs(empirical_i - theoretical_i)))
+  }
+
+  sqrt(n) * max_diff
 }
 
 #' Simulate the empirical process for vMF (parallelized)
@@ -487,9 +551,12 @@ simulate_empirical_process_vmf <- function(omega_grid, t_grid, n, mu, kappa,
                                           n_cores = 10,
                                           seed = NULL,
                                           h0 = c("simple","composite"),
-                                          unknown_param = NULL) {
+                                          unknown_param = NULL,
+                                          empirical_ks_mode = c("sample", "grid")) {
   h0 <- match.arg(h0)
+  empirical_ks_mode <- match.arg(empirical_ks_mode)
   cat("=== Simulating Empirical Process for vMF Distribution ===\n")
+  cat("Empirical KS mode:", empirical_ks_mode, "\n")
   
   n_omega <- nrow(omega_grid)
   n_t <- length(t_grid)
@@ -529,7 +596,7 @@ simulate_empirical_process_vmf <- function(omega_grid, t_grid, n, mu, kappa,
   
     clusterExport(cl, c("check_dot_products", "omega_grid", "t_grid", "n", "mu", "kappa"
   , "distance_type",
-                      "F_theoretical_matrix", "n_omega", "n_t", "q", "h0", "unknown_param", "theoretical_distance_profile_vmf", "compute_mle_xi"),
+                      "F_theoretical_matrix", "n_omega", "n_t", "q", "h0", "unknown_param", "theoretical_distance_profile_vmf", "compute_theoretical_sample_profile_vmf", "compute_sample_ks_sup_vmf", "compute_mle_xi", "empirical_ks_mode"),
                 envir = environment())
   # Export compute_mle_xi from utils so workers can call it for composite nulls
   clusterExport(cl, c("compute_mle_xi"), envir = environment())
@@ -552,42 +619,52 @@ simulate_empirical_process_vmf <- function(omega_grid, t_grid, n, mu, kappa,
       t_grid_vec <- as.numeric(t_grid)
       
       for (idx in seq_along(sim_indices)) {
-  # Step 1: Generate sample
-  sample_data <- rotasym::r_vMF(n = n, mu = mu, kappa = kappa)
-        
-        # Step 2: Compute distances
-        dot_products <- sample_data %*% t(omega_grid_matrix)
-        #dot_products <- check_dot_products(dot_products)
-        
-        if (distance_type == "chordal") {
-          distance_matrix <- sqrt(2 * (1 - dot_products))
-        } else {  # geodesic
-          distance_matrix <- acos(dot_products)
-        }
-        
-        # Step 3: Compute empirical CDF (VECTORIZED like Normal case!)
-        # sapply over t_grid, each iteration computes colMeans
-        F_hat_matrix <- sapply(t_grid_vec, function(t_val) {
-          colMeans(distance_matrix <= t_val)
-        })
-        # Step 4: Compute theoretical matrix (simple vs composite handling)
-        if (h0 == "simple") {
-          F_theoretical_local <- F_theoretical_matrix
+        sample_data <- rotasym::r_vMF(n = n, mu = mu, kappa = kappa)
+
+        if (identical(empirical_ks_mode, "sample")) {
+          local_supremums[idx] <- compute_sample_ks_sup_vmf(
+            sample_data = sample_data,
+            mu = mu,
+            kappa = kappa,
+            distance_type = distance_type,
+            h0 = h0,
+            unknown_param = unknown_param
+          )
         } else {
-          # Composite null: estimate xi (vector) from sample; we use the 
-          # MLE function defined in R/utils.R.
-          xi_hat <- compute_mle_xi(sample_data)
-          # Convert to mu_hat and kappa_hat placeholders
-          kappa_hat <- sqrt(sum(xi_hat^2))
-          mu_hat <- xi_hat / kappa_hat
-          F_theoretical_local <- t(apply(omega_grid, 1, function(omega) {
-            theoretical_distance_profile_vmf(omega, mu_hat, kappa_hat, t_grid_vec, distance_type)
-          }))
+          # Step 2: Compute distances
+          dot_products <- sample_data %*% t(omega_grid_matrix)
+
+          if (distance_type == "chordal") {
+            distance_matrix <- sqrt(2 * (1 - dot_products))
+          } else {  # geodesic
+            dot_products <- pmax(pmin(dot_products, 1), -1)
+            distance_matrix <- acos(dot_products)
+          }
+
+          # Step 3: Compute empirical CDF (VECTORIZED like Normal case!)
+          # sapply over t_grid, each iteration computes colMeans
+          F_hat_matrix <- sapply(t_grid_vec, function(t_val) {
+            colMeans(distance_matrix <= t_val)
+          })
+          # Step 4: Compute theoretical matrix (simple vs composite handling)
+          if (h0 == "simple") {
+            F_theoretical_local <- F_theoretical_matrix
+          } else {
+            # Composite null: estimate xi (vector) from sample; we use the
+            # MLE function defined in R/utils.R.
+            xi_hat <- compute_mle_xi(sample_data)
+            # Convert to mu_hat and kappa_hat placeholders
+            kappa_hat <- sqrt(sum(xi_hat^2))
+            mu_hat <- xi_hat / kappa_hat
+            F_theoretical_local <- t(apply(omega_grid, 1, function(omega) {
+              theoretical_distance_profile_vmf(omega, mu_hat, kappa_hat, t_grid_vec, distance_type)
+            }))
+          }
+
+          # Step 5: Compute supremum
+          scaled_diff_matrix <- sqrt(n) * abs(F_hat_matrix - F_theoretical_local)
+          local_supremums[idx] <- max(scaled_diff_matrix)
         }
-        
-        # Step 5: Compute supremum
-        scaled_diff_matrix <- sqrt(n) * abs(F_hat_matrix - F_theoretical_local)
-        local_supremums[idx] <- max(scaled_diff_matrix)
       }
       
       return(local_supremums)
@@ -647,6 +724,7 @@ visualize_convergence_to_limit_vmf <- function(n_values = c(50, 100, 500),
                                               n50_adjust_multiplier = 3,
                                               h0 = c("simple","composite"),
                                               unknown_param = NULL,
+                                              empirical_ks_mode = c("sample", "grid"),
                                               cov_method = c("mc", "exact_s1_simple", "integral_s2_simple"),
                                               cdf_grid_size = 16385,
                                               xlim = NULL,
@@ -654,8 +732,10 @@ visualize_convergence_to_limit_vmf <- function(n_values = c(50, 100, 500),
                                               qqplot_save = NULL) {
   h0 <- match.arg(h0)
   cov_method <- match.arg(cov_method)
+  empirical_ks_mode <- match.arg(empirical_ks_mode)
   
   # Use provided omega_grid/t_grid if present, otherwise create automatically
+  cat("Empirical KS mode:", empirical_ks_mode, "\n")
   if (is.null(omega_grid)) {
     omega_grid <- generate_canonical_lattice(omega_points, dim = length(mu))
   } else {
@@ -704,7 +784,8 @@ visualize_convergence_to_limit_vmf <- function(n_values = c(50, 100, 500),
   for (n in n_values) {
     cat("Simulating empirical process with n =", n, "...\n")
     empirical_values <- simulate_empirical_process_vmf(
-      omega_grid, t_grid, n, mu, kappa, distance_type, M, n_cores, seed = seed, h0 = h0, unknown_param = unknown_param
+      omega_grid, t_grid, n, mu, kappa, distance_type, M, n_cores,
+      seed = seed, h0 = h0, unknown_param = unknown_param, empirical_ks_mode = empirical_ks_mode
     )
     empirical_data[[as.character(n)]] <- empirical_values
   }

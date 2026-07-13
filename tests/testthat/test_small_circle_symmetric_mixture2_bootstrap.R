@@ -62,6 +62,48 @@ test_that("symmetric small-circle-mixture bootstrap supports simple and composit
   }, logical(1))))
 })
 
+test_that("fast symmetric small-circle CvM light prep matches the dense route", {
+  set.seed(20260712)
+  theta_hat <- list(mu = c(0, 0, 1), kappa = 10, nu = 0.35)
+  x <- r_sph_small_circle_symmetric_mixture2(
+    36L, mu = theta_hat$mu, kappa = theta_hat$kappa, nu = theta_hat$nu
+  )
+  spec <- make_small_circle_symmetric_mixture2_spec(distance_type = "geodesic")
+  control <- list(
+    derivative_mc_size = 300L,
+    derivative_mc_seed = 20260713L,
+    fast_bootstrap_chunk_size = 3L,
+    fast_multiplier_cache_corrections = FALSE,
+    small_circle_symmetric_mixture2_profile_method = "legendre",
+    small_circle_symmetric_mixture2_L_max = 80L,
+    small_circle_symmetric_mixture2_quad_n = 200L
+  )
+  run_fast <- function(keep_process) {
+    multiplier_bootstrap_gof(
+      data = x,
+      spec = spec,
+      null = list(type = "composite"),
+      statistics = "cvm",
+      B = 6L,
+      seed = 20260714L,
+      n_cores = 1L,
+      observed_theta_hat = theta_hat,
+      bootstrap_method = "fast_multiplier",
+      keep = list(observed_process = keep_process, bootstrap_statistics = TRUE),
+      control = control
+    )
+  }
+
+  dense <- run_fast(TRUE)
+  light <- run_fast(FALSE)
+
+  expect_identical(dense$diagnostics$fast_cvm_mode, "dense_matrix")
+  expect_identical(light$diagnostics$fast_cvm_mode, "sample_points_unique_distances_sorted_rows")
+  expect_true(light$diagnostics$lightweight_cvm_prep)
+  expect_equal(dense$inference$cvm$observed, light$inference$cvm$observed, tolerance = 1e-10)
+  expect_equal(dense$bootstrap$statistics$cvm, light$bootstrap$statistics$cvm, tolerance = 1e-10)
+})
+
 test_that("symmetric small-circle-mixture simple calibration scenarios run in smoke size", {
   output_dir <- file.path(tempdir(), "small_circle_symmetric_mixture2_simple_calibration_smoke")
 

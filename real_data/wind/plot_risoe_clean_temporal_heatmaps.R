@@ -253,7 +253,7 @@ log_line <- function(con, ..., .console = FALSE) {
 run_composite_benchmark_case <- function(df,
                                          dataset_id,
                                          output_dir,
-                                         B = 500L,
+                                         B = 5000L,
                                          n_cores = 12L,
                                          profile_method = "tabulated") {
   results_dir <- file.path(output_dir, "results")
@@ -357,7 +357,7 @@ run_risoe_clean_temporal_heatmaps <- function(input_nc = "wind/risoe_m_all.nc",
                                               output_dir = file.path("wind", "clean_temporal_heatmaps"),
                                               years = c(1997:2001, 2003:2007),
                                               day_pattern = c(3L, 7L, 11L, 15L, 19L, 23L, 27L, 30L),
-                                              B = 500L,
+                                              B = 5000L,
                                               n_cores = 12L,
                                               profile_method = "tabulated") {
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
