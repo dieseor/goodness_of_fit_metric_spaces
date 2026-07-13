@@ -77,6 +77,74 @@ test_that("rotational beta-mixture bootstrap supports simple and composite nulls
   expect_length(composite_result$bootstrap$theta_star, 5)
 })
 
+test_that("rotational uniform-beta-mixture bootstrap supports simple and composite nulls", {
+  set.seed(202606031)
+  theta <- list(
+    mu = c(0, 0, 1),
+    weight_uniform = 0.2,
+    alpha = 8,
+    beta = 2
+  )
+  x <- r_sph_uniform_beta_mixture(
+    n = 24,
+    mu = theta$mu,
+    weight_uniform = theta$weight_uniform,
+    alpha = theta$alpha,
+    beta = theta$beta
+  )
+  ks_grid <- list(
+    omega_grid = generate_canonical_lattice(5, dim = 3),
+    t_grid = seq(1e-8, pi - 1e-8, length.out = 5)
+  )
+
+  result_1 <- multiplier_bootstrap_uniform_beta_mixture(
+    data = x,
+    null = list(type = "simple", theta = theta),
+    statistics = c("ks", "cvm"),
+    ks_grid = ks_grid,
+    B = 6,
+    seed = 142,
+    n_cores = 1
+  )
+  result_2 <- multiplier_bootstrap_uniform_beta_mixture(
+    data = x,
+    null = list(type = "simple", theta = theta),
+    statistics = c("ks", "cvm"),
+    ks_grid = ks_grid,
+    B = 6,
+    seed = 142,
+    n_cores = 1
+  )
+
+  expect_equal(result_1$bootstrap$statistics$ks, result_2$bootstrap$statistics$ks, tolerance = 1e-12)
+  expect_equal(result_1$bootstrap$statistics$cvm, result_2$bootstrap$statistics$cvm, tolerance = 1e-12)
+  expect_true(result_1$inference$ks$p_value >= 0 && result_1$inference$ks$p_value <= 1)
+  expect_true(result_1$inference$cvm$p_value >= 0 && result_1$inference$cvm$p_value <= 1)
+  expect_true(isTRUE(result_1$diagnostics$weighted_mle))
+
+  composite_result <- multiplier_bootstrap_uniform_beta_mixture(
+    data = x,
+    null = list(type = "composite"),
+    statistics = c("ks", "cvm"),
+    ks_grid = ks_grid,
+    B = 5,
+    seed = 184,
+    n_cores = 1,
+    keep = list(
+      observed_process = FALSE,
+      bootstrap_statistics = TRUE,
+      bootstrap_thetas = TRUE
+    ),
+    control = list(
+      uniform_beta_mixture_optim_control = list(maxit = 250L, reltol = 1e-9)
+    )
+  )
+
+  expect_true(composite_result$inference$ks$p_value >= 0 && composite_result$inference$ks$p_value <= 1)
+  expect_true(composite_result$inference$cvm$p_value >= 0 && composite_result$inference$cvm$p_value <= 1)
+  expect_length(composite_result$bootstrap$theta_star, 5)
+})
+
 test_that("rotational logit-normal-mixture bootstrap supports simple and composite nulls", {
   set.seed(20260604)
   theta <- list(

@@ -149,15 +149,22 @@ format_pvalue_tex <- function(p_value, digits = 4L) {
 
 make_ks_grid_for_case <- function(X,
                                   mu,
+                                  ks_grid_mode = c("sample_points_unique_distances", "manual"),
                                   ks_n_omega = 50L,
                                   ks_n_t = 100L,
                                   chi_margin = 0.25,
                                   t_margin = 0.25) {
+  ks_grid_mode <- match.arg(ks_grid_mode)
+
+  if (identical(ks_grid_mode, "sample_points_unique_distances")) {
+    return(make_sample_unique_distance_ks_grid())
+  }
+
   make_hvmf_ks_grid(
     data = X,
     mu = mu,
-    n_omega = ks_n_omega,
-    n_t = ks_n_t,
+    n_omega = as.integer(ks_n_omega),
+    n_t = as.integer(ks_n_t),
     chi_margin = chi_margin,
     t_margin = t_margin
   )
@@ -165,10 +172,11 @@ make_ks_grid_for_case <- function(X,
 
 run_single_risoe_125m_case <- function(config,
                                        selected_df,
-                                       B = 1000L,
+                                       B = 5000L,
                                        n_cores = 12L,
                                        bootstrap_method = "reestimated",
                                        fixed_tz = "UTC",
+                                       ks_grid_mode = "sample_points_unique_distances",
                                        ks_n_omega = 50L,
                                        ks_n_t = 100L,
                                        chi_margin = 0.25,
@@ -196,6 +204,7 @@ run_single_risoe_125m_case <- function(config,
       ks_grid <- make_ks_grid_for_case(
         X = X,
         mu = fit$mu,
+        ks_grid_mode = ks_grid_mode,
         ks_n_omega = ks_n_omega,
         ks_n_t = ks_n_t,
         chi_margin = chi_margin,
@@ -230,8 +239,9 @@ run_single_risoe_125m_case <- function(config,
         n = nrow(df_case),
         kappa_hat = fit$kappa,
         theta_deg_hat = fit$theta_deg,
-        ks_n_omega = ks_n_omega,
-        ks_n_t = ks_n_t,
+        ks_grid_mode = ks_grid_mode,
+        ks_n_omega = if (identical(ks_grid_mode, "manual")) ks_n_omega else NA_integer_,
+        ks_n_t = if (identical(ks_grid_mode, "manual")) ks_n_t else NA_integer_,
         elapsed_seconds = elapsed_seconds,
         status = "ok",
         error_message = NA_character_,
@@ -268,8 +278,9 @@ run_single_risoe_125m_case <- function(config,
         n = NA_integer_,
         kappa_hat = NA_real_,
         theta_deg_hat = NA_real_,
-        ks_n_omega = ks_n_omega,
-        ks_n_t = ks_n_t,
+        ks_grid_mode = ks_grid_mode,
+        ks_n_omega = if (identical(ks_grid_mode, "manual")) ks_n_omega else NA_integer_,
+        ks_n_t = if (identical(ks_grid_mode, "manual")) ks_n_t else NA_integer_,
         elapsed_seconds = elapsed_seconds,
         status = "error",
         error_message = safe_error_message(e),
@@ -300,14 +311,17 @@ run_single_risoe_125m_case <- function(config,
   )
 }
 
-write_risoe_125m_latex_table <- function(results_df, output_txt) {
+write_risoe_125m_latex_table <- function(results_df, output_txt, B_value) {
   windows_order <- c("jan", "feb", "jan_feb", "feb_mar", "oct", "nov", "oct_nov")
   patterns_order <- c("start1", "start2", "start3", "start4")
 
   lines <- c(
     "\\begin{table}[htbp]",
     "\\centering",
-    "\\caption{Composite HvMF goodness-of-fit screening for the cleaned Ris{\\o} $125\\,\\mathrm{m}$ series (1996--2003). The table reports multiplier-bootstrap $p$-values with $B=1000$ for the KS and CvM statistics under four four-day subsampling patterns. Bold entries are not significant at the $5\\%$ level.}",
+    sprintf(
+      "\\caption{Composite HvMF goodness-of-fit screening for the cleaned Ris{\\o} $125\\,\\mathrm{m}$ series (1996--2003). The table reports multiplier-bootstrap $p$-values with $B=%d$ for the KS and CvM statistics under four four-day subsampling patterns. Bold entries are not significant at the $5\\%%$ level.}",
+      as.integer(B_value)
+    ),
     "\\label{tab:risoe-wind-screening-125m}",
     "\\begin{tabular}{lcccccccc}",
     "\\toprule",
@@ -350,10 +364,11 @@ write_risoe_125m_latex_table <- function(results_df, output_txt) {
 
 run_risoe_125m_screening_ks_cvm <- function(input_nc = file.path("wind", "risoe_m_all.nc"),
                                             output_dir = canonical_wind_screening_dir("slow"),
-                                            B = 1000L,
+                                            B = 5000L,
                                             n_cores = 12L,
                                             bootstrap_method = "reestimated",
                                             fixed_tz = "UTC",
+                                            ks_grid_mode = "sample_points_unique_distances",
                                             ks_n_omega = 50L,
                                             ks_n_t = 100L,
                                             chi_margin = 0.25,
@@ -380,6 +395,7 @@ run_risoe_125m_screening_ks_cvm <- function(input_nc = file.path("wind", "risoe_
       n_cores = n_cores,
       bootstrap_method = bootstrap_method,
       fixed_tz = fixed_tz,
+      ks_grid_mode = ks_grid_mode,
       ks_n_omega = ks_n_omega,
       ks_n_t = ks_n_t,
       chi_margin = chi_margin,
@@ -391,10 +407,10 @@ run_risoe_125m_screening_ks_cvm <- function(input_nc = file.path("wind", "risoe_
   results_df <- do.call(rbind, rows)
   rownames(results_df) <- NULL
 
-  csv_path <- file.path(output_dir, "risoe_125m_ks_cvm_screening_b1000.csv")
+  csv_path <- file.path(output_dir, sprintf("risoe_125m_ks_cvm_screening_b%d.csv", as.integer(B)))
   txt_path <- file.path(output_dir, "risoe_125m_ks_cvm_screening_table_for_tex.txt")
   write.csv(results_df, csv_path, row.names = FALSE)
-  write_risoe_125m_latex_table(results_df, txt_path)
+  write_risoe_125m_latex_table(results_df, txt_path, B_value = B)
 
   cat("\nOutput CSV:\n", csv_path, "\n", sep = "")
   cat("Output TeX table:\n", txt_path, "\n", sep = "")

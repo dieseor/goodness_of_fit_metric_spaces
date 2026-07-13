@@ -88,7 +88,7 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
     trimws(strsplit(args$datasets, ",", fixed = TRUE)[[1]])
   }
 
-  B <- parse_integer_arg(args$B, 1000L)
+  B <- parse_integer_arg(args$B, 5000L)
   max_centers <- parse_integer_arg(args$max_centers, 100L)
   n_t <- parse_integer_arg(args$n_t, 60L)
   t_grid_tail_prob <- parse_numeric_arg(args$t_grid_tail_prob, 1e-8)
@@ -98,8 +98,8 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
   ridge <- parse_numeric_arg(args$ridge, 1e-8)
   bootstrap_mode <- as.character(args$bootstrap_mode %||% "composite_multiplier")
   n_cores <- parse_integer_arg(args$n_cores, 1L)
-  omega_grid_type <- as.character(args$omega_grid_type %||% "fixed_simplex_lattice")
-  t_grid_type <- as.character(args$t_grid_type %||% "fixed_fitted_scale")
+  omega_grid_type <- as.character(args$omega_grid_type %||% "sample_points")
+  t_grid_type <- as.character(args$t_grid_type %||% "sample_distances")
   quadform_method <- as.character(args$quadform_method %||% "hbe")
   output_dir <- as.character(args$output_dir %||% canonical_logistic_gaussian_screening_dir(
     if (identical(bootstrap_mode, "composite_multiplier")) "fast" else "slow"

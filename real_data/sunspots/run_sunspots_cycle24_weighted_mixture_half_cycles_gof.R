@@ -70,7 +70,7 @@ split_cycle24_half_datasets <- function(
 run_sunspots_cycle24_weighted_mixture_half_cycles_gof <- function(
     input_csv = file.path("real_data", "sunspots", "output", "sunspots_cycle24_s2_all.csv"),
     output_dir = file.path("real_data", "sunspots", "output"),
-    B = 500L,
+    B = 5000L,
     n_cores = 6L,
     seed_first_half = 123L,
     seed_second_half = 456L) {

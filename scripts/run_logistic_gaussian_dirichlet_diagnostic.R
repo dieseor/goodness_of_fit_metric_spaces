@@ -226,16 +226,7 @@ run_dirichlet_lg_diagnostic <- function(output_dir = file.path("simulation_resul
     stringsAsFactors = FALSE
   )
 
-  ks_grid <- make_logistic_gaussian_ks_grid(
-    mu_ilr = c(0, 0),
-    Sigma_ilr = diag(2L),
-    ambient_dim = 3L,
-    n_t = 20L
-  )
-  ks_grid$omega_grid <- build_fixed_simplex_omega_grid(
-    ambient_dim = 3L,
-    max_centers = 60L
-  )$omega
+  ks_grid <- make_sample_unique_distance_ks_grid()
 
   if (isTRUE(show_progress)) {
     message(sprintf("Running %d jobs with %d core(s).", nrow(jobs), as.integer(n_cores)))

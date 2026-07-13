@@ -267,25 +267,11 @@ generate_logistic_dirichlet_sample <- function(n, beta, dirichlet_alpha) {
 }
 
 make_vmf_ks_grid <- function(kappa = 2) {
-  ks_grid <- make_vmf_composite_calibration_scenario(kappa = kappa)$ks_grid
-  ks_grid$omega_grid <- generate_canonical_lattice(100L, dim = 3)
-  ks_grid
+  make_sample_unique_distance_ks_grid()
 }
 
 make_exchangeable_logistic_ks_grid <- function() {
-  # If X = softmax(Y) with Y ~ N_3(0, I_3), then clr(X) = H Y where H is the
-  # orthogonal projector onto the clr subspace. Under the repo's orthonormal
-  # ilr basis, this induces Z_ilr ~ N_2(0, I_2).
-  ks_grid <- make_logistic_gaussian_ks_grid(
-    mu_ilr = c(0, 0),
-    Sigma_ilr = diag(2L),
-    ambient_dim = 3L
-  )
-  ks_grid$omega_grid <- build_fixed_simplex_omega_grid(
-    ambient_dim = 3L,
-    max_centers = 100L
-  )$omega
-  ks_grid
+  make_sample_unique_distance_ks_grid()
 }
 
 filter_design_by_block <- function(design, block) {

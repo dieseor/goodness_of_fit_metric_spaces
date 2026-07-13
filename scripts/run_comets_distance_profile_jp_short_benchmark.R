@@ -158,7 +158,8 @@ summarize_jp_model_result <- function(result,
     psi_star_min = psi_star_range[[1L]],
     psi_star_max = psi_star_range[[2L]],
     B = result$bootstrap$B,
-    M = as.integer(M_value),
+    M = NA_integer_,
+    ks_grid_mode = "sample_points_unique_distances",
     n = result$diagnostics$n,
     n_cores = result$diagnostics$n_cores,
     elapsed_seconds = result$diagnostics$elapsed_seconds,
@@ -168,10 +169,7 @@ summarize_jp_model_result <- function(result,
 
 make_jp_ks_grid_comets <- function(M_value,
                                    ks_t_points = 250L) {
-  list(
-    omega_grid = generate_canonical_lattice(as.integer(M_value), dim = 3),
-    t_grid = seq(1e-8, pi - 1e-8, length.out = as.integer(ks_t_points))
-  )
+  make_sample_unique_distance_ks_grid()
 }
 
 run_single_jp_short_comet_model <- function(data_matrix,
@@ -268,7 +266,8 @@ run_jp_short_comet_stage <- function(data_matrix,
     summary = summary_df,
     config = list(
       B = as.integer(B),
-      M = as.integer(M_value),
+      M = NA_integer_,
+      ks_grid_mode = "sample_points_unique_distances",
       n_cores = as.integer(n_cores),
       seed = as.integer(seed),
       distance_type = distance_type,
@@ -292,7 +291,8 @@ run_jp_short_comet_stage <- function(data_matrix,
       dataset_label = dataset_label,
       statistic = statistic,
       B = as.integer(B),
-      M = as.integer(M_value),
+      M = NA_integer_,
+      ks_grid_mode = "sample_points_unique_distances",
       n = nrow(data_matrix),
       n_cores = as.integer(n_cores),
       seed = as.integer(seed),

@@ -145,10 +145,7 @@ plot_cycle24_weighted_mixture_worst_ks_projection <- function(
   }
 
   spec <- make_small_circle_weighted_mixture2_spec(distance_type = "geodesic")
-  ks_grid <- list(
-    omega_grid = generate_canonical_lattice(as.integer(M_value), dim = 3),
-    t_grid = seq(1e-8, pi - 1e-8, length.out = as.integer(ks_t_points))
-  )
+  ks_grid <- make_sample_unique_distance_ks_grid()
   ks_prep <- prepare_ks_observed_data(
     data = x,
     spec = spec,

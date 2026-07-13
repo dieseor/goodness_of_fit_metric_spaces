@@ -47,21 +47,79 @@ test_that("logistic Gaussian composite screening runs on SkyeAFM in smoke size",
   )
 })
 
-test_that("default dataset registry includes expanded composite candidates", {
-  datasets <- default_logistic_gaussian_screening_datasets(
-    include_external = TRUE
+test_that("the final registry contains the 28 specified compositions and preserved externals", {
+  expected_parts <- list(
+    Aar_oxides = c("SiO2", "TiO2", "Al2O3", "MnO", "MgO", "CaO", "Na2O", "K2O", "P2O5", "Fe2O3t"),
+    Activity10 = c("teac", "cons", "admi", "rese", "wake", "slee"),
+    Activity31 = c("teac", "cons", "admi", "rese", "wake", "slee"),
+    AnimalVegetation = c("disc", "spick", "din", "spin"),
+    ArcticLake = c("sand", "silt", "clay"),
+    Bayesite = c("A", "B", "C", "D"),
+    Boxite = c("A", "B", "C", "D", "E"),
+    ClamEast = c("dl", "dm", "ds", "ll", "lm", "ls"),
+    ClamWest = c("dl", "dm", "ds", "ll", "lm", "ls"),
+    Coxite = c("A", "B", "C", "D", "E"),
+    DiagnosticProb = c("A", "B", "C"),
+    Firework = c("a", "b", "c", "d", "e"),
+    Hongite = c("A", "B", "C", "D", "E"),
+    HouseholdExp = c("Housing", "Food", "Other", "Services"),
+    Hydrochem = c("H", "Na", "K", "Mg", "Ca", "Sr", "Ba", "NH4", "Cl", "NO3", "PO4", "SO4", "HCO3", "TOC"),
+    juraset = c("Cd", "Cu", "Pb", "Co", "Cr", "Ni", "Zn"),
+    Kongite = c("A", "B", "C", "D", "E"),
+    Metabolites = c("met1", "met2", "met3"),
+    PogoJump = c("yat", "yee", "sam"),
+    Sediments = c("sand", "silt", "clay"),
+    SerumProtein = c("a", "b", "c", "d"),
+    ShiftOperators = c("A", "B", "C", "D"),
+    SkyeAFM = c("A", "F", "M"),
+    Supervisor = c("C", "D", "E", "F"),
+    WhiteCells_microscopic = c("mG", "mL", "mM"),
+    WhiteCells_image = c("iG", "iL", "iM"),
+    Yatquat_preference = c("prFL", "prSK", "prST"),
+    Yatquat_panel = c("paFL", "paSK", "paST")
+  )
+  expected_entries <- stats::setNames(names(expected_parts), names(expected_parts))
+  expected_entries[c("Aar_oxides", "WhiteCells_microscopic", "WhiteCells_image", "Yatquat_preference", "Yatquat_panel")] <-
+    c("Aar", "WhiteCells", "WhiteCells", "Yatquat", "Yatquat")
+
+  expect_identical(names(composition_registry), names(expected_parts))
+  expect_equal(length(composition_registry), 28L)
+  expect_equal(anyDuplicated(names(composition_registry)), 0L)
+  expect_identical(lapply(composition_registry, `[[`, "parts"), expected_parts)
+  expect_identical(
+    vapply(composition_registry, `[[`, character(1), "data_entry"),
+    expected_entries
+  )
+  expect_identical(
+    vapply(composition_registry, `[[`, character(1), "object_name"),
+    expected_entries
+  )
+  expect_identical(
+    default_logistic_gaussian_screening_datasets(),
+    c(names(expected_parts), external_logistic_gaussian_screening_datasets())
   )
 
-  expect_true(all(c(
-    "SkyeAFM",
-    "SkyeLavasComplete",
-    "AarMajorOxides",
-    "Sediments",
-    "HouseholdExp",
-    "ClamEast",
-    "ClamWest",
-    "ClamCombined",
-  ) %in% datasets))
+  registry <- logistic_gaussian_screening_dataset_registry()
+  expect_true(all(names(expected_parts) %in% names(registry)))
+  expect_false(any(c("Aar", "AarMajorOxides", "WhiteCells", "Blood23", "Glacial", "Skulls", "jura259") %in% names(registry)))
+  expect_true(all(external_logistic_gaussian_screening_datasets() %in% names(registry)))
+})
+
+test_that("every canonical dataset loads its exact selected components", {
+  for (dataset_name in names(composition_registry)) {
+    prepared <- prepare_composition_dataset(dataset_name)
+    expect_equal(prepared$status, "ok", info = dataset_name)
+    expect_identical(prepared$component_names, composition_registry[[dataset_name]]$parts, info = dataset_name)
+    expect_false(prepared$has_zeros, info = dataset_name)
+    expect_false(prepared$has_missing, info = dataset_name)
+    expect_equal(prepared$n_duplicate_rows, 0L, info = dataset_name)
+    expect_equal(
+      unname(rowSums(prepared$X_closed)),
+      rep(1, prepared$n),
+      tolerance = 1e-12,
+      info = dataset_name
+    )
+  }
 })
 
 test_that("not found datasets return structured not_found results", {

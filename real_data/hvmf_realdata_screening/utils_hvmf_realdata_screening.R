@@ -468,7 +468,7 @@ compute_hvmf_auxiliary_parameters <- function(mu) {
 }
 
 run_hvmf_simple_plugin_cvm <- function(X,
-                                       B = 1000L,
+                                       B = 5000L,
                                        n_cores = 3L,
                                        seed = NULL,
                                        control = list(

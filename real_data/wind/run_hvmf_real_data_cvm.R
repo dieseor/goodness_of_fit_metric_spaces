@@ -222,7 +222,7 @@ make_real_data_analysis_configs <- function(results_dir = "wind/results") {
 }
 
 run_single_hvmf_real_data_analysis <- function(config,
-                                               B = 1000L,
+                                               B = 5000L,
                                                n_cores = 3L,
                                                alpha = 0.05,
                                                tol = 1e-8) {
@@ -368,7 +368,7 @@ write_real_data_summary_csv <- function(summary_rows,
   output_csv
 }
 
-run_hvmf_real_data_cvm_analyses <- function(B = 1000L,
+run_hvmf_real_data_cvm_analyses <- function(B = 5000L,
                                             n_cores = 3L,
                                             results_dir = "wind/results",
                                             alpha = 0.05,

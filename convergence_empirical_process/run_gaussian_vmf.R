@@ -56,6 +56,7 @@ DISTANCE_TYPE <- "geodesic"  # Either "chordal" or "geodesic"
 
 # Parallelization
 N_CORES <- 10          # Number of cores for parallel computation
+EMPIRICAL_KS_MODE <- "sample"
 
 # ============================================================================
 # MAIN EXECUTION
@@ -65,17 +66,17 @@ N_CORES <- 10          # Number of cores for parallel computation
 ## ---------------------------------------------------------------------------
 ## Execution dispatch - mirror normal runner structure
 ## ---------------------------------------------------------------------------
-run_all_vmf <- function(output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, distance_type = 'geodesic') {
-  simple_res <- run_simple_vmf(output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_mc_samples = N_MC_COVARIANCE, n_cores = n_cores, distance_type = distance_type, density_adjust = density_adjust)
-  comp_res <- run_composite_vmf(output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_mc_samples = N_MC_COVARIANCE, n_cores = n_cores, distance_type = distance_type, density_adjust = density_adjust)
+run_all_vmf <- function(output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, distance_type = 'geodesic', empirical_ks_mode = EMPIRICAL_KS_MODE) {
+  simple_res <- run_simple_vmf(output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_mc_samples = N_MC_COVARIANCE, n_cores = n_cores, distance_type = distance_type, density_adjust = density_adjust, empirical_ks_mode = empirical_ks_mode)
+  comp_res <- run_composite_vmf(output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_mc_samples = N_MC_COVARIANCE, n_cores = n_cores, distance_type = distance_type, density_adjust = density_adjust, empirical_ks_mode = empirical_ks_mode)
   # Also run variants for the simple null (mirror composite variants)
   simple_variants_res <- run_simple_variants_vmf(mu_values = list(c(1,0,0), 
   c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values = c(0.5, 
-  1, 5), output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_mc_samples = N_MC_COVARIANCE, n_cores = n_cores, distance_type = distance_type, density_adjust = density_adjust)
+  1, 5), output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_mc_samples = N_MC_COVARIANCE, n_cores = n_cores, distance_type = distance_type, density_adjust = density_adjust, empirical_ks_mode = empirical_ks_mode)
   # Also run composite variants as part of 'all'
   comp_variants_res <- run_composite_variants_vmf(mu_values = list(c(1,0,0), 
   c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values = c(0.5, 
-  1, 5), unknown_params = c('xi'), output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_mc_samples = N_MC_COVARIANCE, n_cores = n_cores, distance_type = distance_type, density_adjust = density_adjust)
+  1, 5), unknown_params = c('xi'), output_dir = output_dir, M = M, omega_points = omega_points, t_points = t_points, n_mc_samples = N_MC_COVARIANCE, n_cores = n_cores, distance_type = distance_type, density_adjust = density_adjust, empirical_ks_mode = empirical_ks_mode)
   return(c(simple_res, comp_res, simple_variants_res))
 }
 
@@ -83,7 +84,7 @@ run_all_vmf <- function(output_dir = NULL, M = M_SIMULATIONS, omega_points = OME
 # Helper: composite variants for vMF
 run_composite_variants_vmf <- function(mu_values = list(c(1,0,0), 
 c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values = c(0.5, 
-1, 5), unknown_params = c('xi'), output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_mc_samples = N_MC_COVARIANCE, n_cores = N_CORES, distance_type = 'geodesic', density_adjust = DENSITY_ADJUST, n50_multiplier_overrides = NULL) {
+1, 5), unknown_params = c('xi'), output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_mc_samples = N_MC_COVARIANCE, n_cores = N_CORES, distance_type = 'geodesic', density_adjust = DENSITY_ADJUST, n50_multiplier_overrides = NULL, empirical_ks_mode = EMPIRICAL_KS_MODE) {
   if (is.null(output_dir)) output_dir <- 'output/convergence/gaussian_process/vmf'
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   scenarios <- list()
@@ -118,7 +119,7 @@ c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values 
           }
         }
       }
-      res <- visualize_convergence_to_limit_vmf(n_values = c(50, 100, 500), mu = scn$mu, kappa = scn$kappa, distance_type = distance_type, omega_grid = omega_grid_global, t_grid = t_grid_global, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, n50_adjust_multiplier = n50_mult, h0 = 'composite', unknown_param = unk, qqplot = TRUE)
+      res <- visualize_convergence_to_limit_vmf(n_values = c(50, 100, 500), mu = scn$mu, kappa = scn$kappa, distance_type = distance_type, omega_grid = omega_grid_global, t_grid = t_grid_global, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, n50_adjust_multiplier = n50_mult, h0 = 'composite', unknown_param = unk, empirical_ks_mode = empirical_ks_mode, qqplot = TRUE)
       fname <- file.path(output_dir, sprintf('comp_vmf_%s_kappa%g_%s_%s_M%d_grid%dx%d.png', unk, scn$kappa, scn$mu_label, distance_type, M, omega_points, t_points))
       if (!is.null(res$qq_plot)) {
         qq_fname <- file.path(output_dir, sprintf('qq_comp_vmf_%s_kappa%g_%s_%s_M%d_grid%dx%d.png', unk, scn$kappa, scn$mu_label, distance_type, M, omega_points, t_points))
@@ -135,7 +136,7 @@ c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values 
 # Helper: simple variants for vMF (mirror composite variants behavior)
 run_simple_variants_vmf <- function(mu_values = list(c(1,0,0), 
 c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values = c(0.5, 
-1, 5), output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_mc_samples = N_MC_COVARIANCE, n_cores = N_CORES, distance_type = 'geodesic', density_adjust = DENSITY_ADJUST, cov_method = c("mc", "exact_s1_simple", "integral_s2_simple")) {
+1, 5), output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_mc_samples = N_MC_COVARIANCE, n_cores = N_CORES, distance_type = 'geodesic', density_adjust = DENSITY_ADJUST, cov_method = c("mc", "exact_s1_simple", "integral_s2_simple"), empirical_ks_mode = EMPIRICAL_KS_MODE) {
   cov_method <- match.arg(cov_method)
   if (is.null(output_dir)) output_dir <- 'output/convergence/gaussian_process/vmf'
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
@@ -152,7 +153,7 @@ c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values 
   t_grid_global <- seq(0 + 1e-8, ifelse(distance_type == 'chordal', 2 - 1e-8, pi - 1e-8), length.out = t_points)
   cat('Running simple variants for vMF (h0 = simple)\n')
   for (scn in scenarios) {
-    res <- visualize_convergence_to_limit_vmf(n_values = c(50, 100, 500), mu = scn$mu, kappa = scn$kappa, distance_type = distance_type, omega_grid = omega_grid_global, t_grid = t_grid_global, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, n50_adjust_multiplier = 6, h0 = 'simple', cov_method = cov_method, qqplot = TRUE)
+    res <- visualize_convergence_to_limit_vmf(n_values = c(50, 100, 500), mu = scn$mu, kappa = scn$kappa, distance_type = distance_type, omega_grid = omega_grid_global, t_grid = t_grid_global, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, n50_adjust_multiplier = 6, h0 = 'simple', cov_method = cov_method, empirical_ks_mode = empirical_ks_mode, qqplot = TRUE)
     fname <- file.path(output_dir, sprintf('simple_vmf_%s_kappa%g_%s_%s_M%d_grid%dx%d.png', cov_method, scn$kappa, scn$mu_label, distance_type, M, omega_points, t_points))
     if (!is.null(res$qq_plot)) {
       qq_fname <- file.path(output_dir, sprintf('qq_simple_vmf_%s_kappa%g_%s_%s_M%d_grid%dx%d.png', cov_method, scn$kappa, scn$mu_label, distance_type, M, omega_points, t_points))
@@ -168,7 +169,7 @@ c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values 
 # ---------------------------------------------------------------------------
 # New: simple/composite run helpers for vMF (mirror Normal structure)
 # ---------------------------------------------------------------------------
-run_simple_vmf <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_mc_samples = N_MC_COVARIANCE, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, distance_type = 'geodesic', cov_method = c("mc", "exact_s1_simple", "integral_s2_simple")) {
+run_simple_vmf <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_mc_samples = N_MC_COVARIANCE, n_cores = N_CORES, density_adjust = DENSITY_ADJUST, distance_type = 'geodesic', cov_method = c("mc", "exact_s1_simple", "integral_s2_simple"), empirical_ks_mode = EMPIRICAL_KS_MODE) {
   cov_method <- match.arg(cov_method)
   if (is.null(output_dir)) output_dir <- 'output/convergence/gaussian_process/vmf'
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
@@ -178,7 +179,7 @@ run_simple_vmf <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATION
   }
   results <- list()
   for (s in scenarios) {
-    res <- visualize_convergence_to_limit_vmf(n_values = c(50, 100, 500), mu = s$mu, kappa = s$kappa, distance_type = distance_type, omega_points = omega_points, t_points = t_points, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, n50_adjust_multiplier = 6, h0 = 'simple', cov_method = cov_method, qqplot = TRUE)
+    res <- visualize_convergence_to_limit_vmf(n_values = c(50, 100, 500), mu = s$mu, kappa = s$kappa, distance_type = distance_type, omega_points = omega_points, t_points = t_points, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, n50_adjust_multiplier = 6, h0 = 'simple', cov_method = cov_method, empirical_ks_mode = empirical_ks_mode, qqplot = TRUE)
     fname <- file.path(output_dir, sprintf('simple_vmf_%s_kappa%g_%s_%s_M%d_grid%dx%d.png', cov_method, s$kappa, s$mu_label, distance_type, M, omega_points, t_points))
     if (!is.null(res$qq_plot)) {
       qq_fname <- file.path(output_dir, sprintf('qq_simple_vmf_%s_kappa%g_%s_%s_M%d_grid%dx%d.png', cov_method, s$kappa, s$mu_label, distance_type, M, omega_points, t_points))
@@ -224,7 +225,8 @@ run_simple_variants_integral_vmf <- function(mu_values = list(c(1,0,0),
                                              n_mc_samples = N_MC_COVARIANCE,
                                              n_cores = N_CORES,
                                              distance_type = 'geodesic',
-                                             density_adjust = DENSITY_ADJUST) {
+                                             density_adjust = DENSITY_ADJUST,
+                                             empirical_ks_mode = EMPIRICAL_KS_MODE) {
   run_simple_variants_vmf(
     mu_values = mu_values,
     kappa_values = kappa_values,
@@ -236,11 +238,12 @@ run_simple_variants_integral_vmf <- function(mu_values = list(c(1,0,0),
     n_cores = n_cores,
     distance_type = distance_type,
     density_adjust = density_adjust,
-    cov_method = "integral_s2_simple"
+    cov_method = "integral_s2_simple",
+    empirical_ks_mode = empirical_ks_mode
   )
 }
 
-run_composite_vmf <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_mc_samples = N_MC_COVARIANCE, n_cores = N_CORES, distance_type = 'geodesic', unknown_param = c('xi')) {
+run_composite_vmf <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, n_mc_samples = N_MC_COVARIANCE, n_cores = N_CORES, distance_type = 'geodesic', unknown_param = c('xi'), empirical_ks_mode = EMPIRICAL_KS_MODE) {
   if (is.null(output_dir)) output_dir <- 'output/convergence/gaussian_process/vmf'
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   if (is.null(scenarios)) {
@@ -250,7 +253,7 @@ run_composite_vmf <- function(scenarios = NULL, output_dir = NULL, M = M_SIMULAT
   results <- list()
   for (s in scenarios) {
     for (unk in unknown_param) {
-      res <- visualize_convergence_to_limit_vmf(n_values = c(50, 100, 500), mu = s$mu, kappa = s$kappa, distance_type = distance_type, omega_points = omega_points, t_points = t_points, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, n50_adjust_multiplier = 4.5, h0 = 'composite', unknown_param = unk, qqplot = TRUE)
+      res <- visualize_convergence_to_limit_vmf(n_values = c(50, 100, 500), mu = s$mu, kappa = s$kappa, distance_type = distance_type, omega_points = omega_points, t_points = t_points, M = M, n_mc_samples = n_mc_samples, n_cores = n_cores, seed = 42, n50_adjust_multiplier = 4.5, h0 = 'composite', unknown_param = unk, empirical_ks_mode = empirical_ks_mode, qqplot = TRUE)
       fname <- file.path(output_dir, sprintf('comp_vmf_%s_kappa%g_%s_%s_M%d_grid%dx%d.png', unk, s$kappa, s$mu_label, distance_type, M, omega_points, t_points))
       if (!is.null(res$qq_plot)) {
         qq_fname <- file.path(output_dir, sprintf('qq_comp_vmf_%s_kappa%g_%s_%s_M%d_grid%dx%d.png', unk, s$kappa, s$mu_label, distance_type, M, omega_points, t_points))
@@ -275,23 +278,24 @@ if (sys.nframe() == 0) {
   if (length(args) > 1 && !is.na(as.numeric(args[2]))) M_SIMULATIONS <- as.numeric(args[2])
   # Optionally allow overriding the distance type via the third arg
   if (length(args) > 2 && args[3] %in% c('geodesic', 'chordal')) DISTANCE_TYPE <- args[3]
+  if (length(args) > 3 && args[4] %in% c("sample", "grid")) EMPIRICAL_KS_MODE <- args[4]
 
   if (action == 'simple') {
-    run_simple_vmf(M = M_SIMULATIONS, distance_type = DISTANCE_TYPE)
+    run_simple_vmf(M = M_SIMULATIONS, distance_type = DISTANCE_TYPE, empirical_ks_mode = EMPIRICAL_KS_MODE)
   } else if (action == 'simple_variants') {
     run_simple_variants_vmf(mu_values = list(c(1,0,0), 
     c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values = c(0.5, 
-    1, 5), M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, distance_type = DISTANCE_TYPE)
+    1, 5), M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, distance_type = DISTANCE_TYPE, empirical_ks_mode = EMPIRICAL_KS_MODE)
   } else if (action == 'composite') {
-    run_composite_vmf(M = M_SIMULATIONS, distance_type = DISTANCE_TYPE)
+    run_composite_vmf(M = M_SIMULATIONS, distance_type = DISTANCE_TYPE, empirical_ks_mode = EMPIRICAL_KS_MODE)
   } else if (action == 'composite_variants') {
     run_composite_variants_vmf(mu_values = list(c(1,0,0), 
     c(1/sqrt(3), 1/sqrt(3), 1/sqrt(3)), c(-1/sqrt(2), 0, -1/sqrt(2))), kappa_values = c(0.5, 
-    1, 5), unknown_params = c('xi'), M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, distance_type = DISTANCE_TYPE)
+    1, 5), unknown_params = c('xi'), M = M_SIMULATIONS, omega_points = OMEGA_POINTS, t_points = T_POINTS, distance_type = DISTANCE_TYPE, empirical_ks_mode = EMPIRICAL_KS_MODE)
   } else if (action == 'all') {
-    run_all_vmf(M = M_SIMULATIONS, distance_type = DISTANCE_TYPE)
+    run_all_vmf(M = M_SIMULATIONS, distance_type = DISTANCE_TYPE, empirical_ks_mode = EMPIRICAL_KS_MODE)
   } else {
-    run_simple_vmf(M = M_SIMULATIONS, distance_type = DISTANCE_TYPE)
+    run_simple_vmf(M = M_SIMULATIONS, distance_type = DISTANCE_TYPE, empirical_ks_mode = EMPIRICAL_KS_MODE)
   }
-  cat('\nAction executed:', action, '\n')
+  cat('\nAction executed:', action, '| empirical_ks_mode =', EMPIRICAL_KS_MODE, '\n')
 }

@@ -60,7 +60,7 @@ parse_axial_statistics <- function(value) {
 parse_axial_args <- function(args = commandArgs(trailingOnly = TRUE)) {
   defaults <- list(
     cycles = c(21L, 22L, 23L),
-    B = 1000L,
+    B = 5000L,
     n_cores = 12L,
     seed = 123L,
     resume = TRUE,
@@ -93,7 +93,7 @@ parse_axial_args <- function(args = commandArgs(trailingOnly = TRUE)) {
     "Options:",
     "  --help",
     "  --cycles=21,22,23",
-    "  --B=1000",
+    "  --B=50000",
     "  --n_cores=12",
     "  --seed=123",
     "  --resume=TRUE",
@@ -219,12 +219,7 @@ read_axial_sunspots <- function(path_value, cycles) {
 }
 
 make_axial_ks_grid <- function(ks_omega_points = 60L, ks_t_points = 200L) {
-  # For KS we follow the repo convention of using a fixed deterministic grid.
-  # Here the metric space is [-1, 1] with Euclidean distance, so centers
-  # omega belong to [-1, 1] and radii t belong to [0, 2].
-  omega_grid <- seq(-1, 1, length.out = as.integer(ks_omega_points))
-  t_grid <- seq(1e-8, 2, length.out = as.integer(ks_t_points))
-  list(omega_grid = omega_grid, t_grid = t_grid)
+  make_sample_unique_distance_ks_grid()
 }
 
 make_axial_start_theta <- function(sc_row) {

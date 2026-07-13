@@ -208,6 +208,53 @@ simulate_limit_gaussian_normal <- function(omega_grid, t_grid, mu, sigma, M = 10
   
   return(supremum_values)
 }
+
+compute_theoretical_sample_profile_normal <- function(center, radii, mu, sigma) {
+  theoretical_distance_profile_normal(center, mu, sigma, radii)
+}
+
+compute_sample_ks_sup_normal <- function(sample_x,
+                                         mu,
+                                         sigma,
+                                         h0 = c("simple", "composite"),
+                                         unknown_param = c(NULL, "mu", "sigma", "both")) {
+  h0 <- match.arg(h0)
+  if (h0 == "composite") {
+    unknown_param <- match.arg(unknown_param, choices = c("mu", "sigma", "both"))
+    if (unknown_param == "mu") {
+      mu_hat <- mean(sample_x)
+      sigma_hat <- sigma
+    } else if (unknown_param == "sigma") {
+      mu_hat <- mu
+      sigma_hat <- sqrt(mean((sample_x - mu_hat)^2))
+    } else {
+      mu_hat <- mean(sample_x)
+      sigma_hat <- sqrt(mean((sample_x - mu_hat)^2))
+    }
+  } else {
+    mu_hat <- mu
+    sigma_hat <- sigma
+  }
+
+  n <- length(sample_x)
+  max_diff <- 0
+  for (i in seq_len(n)) {
+    distances_i <- abs(sample_x - sample_x[[i]])
+    order_i <- order(distances_i)
+    sorted_distances_i <- distances_i[order_i]
+    empirical_i <- seq_len(n) / n
+    theoretical_i <- compute_theoretical_sample_profile_normal(
+      center = sample_x[[i]],
+      radii = sorted_distances_i,
+      mu = mu_hat,
+      sigma = sigma_hat
+    )
+    max_diff <- max(max_diff, max(abs(empirical_i - theoretical_i)))
+  }
+
+  sqrt(n) * max_diff
+}
+
 # ============================================================================
 # SIMULATE EMPIRICAL PROCESS (VECTORIZED + PARALLELIZED)
 # Returns a numeric vector of length M with suprema sqrt(n) * sup_{(omega,t)} |F_hat - F_theta|
@@ -215,11 +262,20 @@ simulate_limit_gaussian_normal <- function(omega_grid, t_grid, mu, sigma, M = 10
 # - Requires theoretical_distance_profile_normal(omega_vector, mu, sigma, t_vector) to be defined
 # ============================================================================
 
-simulate_empirical_process_normal <- function(omega_grid, t_grid, n, mu, sigma, M = 10000, n_cores = 7, h0 = c("simple", "composite"),
-  unknown_param = c(NULL, "mu", "sigma", "both")
+simulate_empirical_process_normal <- function(omega_grid,
+                                              t_grid,
+                                              n,
+                                              mu,
+                                              sigma,
+                                              M = 10000,
+                                              n_cores = 7,
+                                              h0 = c("simple", "composite"),
+                                              unknown_param = c(NULL, "mu", "sigma", "both"),
+                                              empirical_ks_mode = c("sample", "grid")
 ) {
   # --- args and sanity checks
   h0 <- match.arg(h0)
+  empirical_ks_mode <- match.arg(empirical_ks_mode)
   if (h0 == "composite") {
     unknown_param <- match.arg(unknown_param, choices = c("mu","sigma","both"))
   } else {
@@ -227,6 +283,7 @@ simulate_empirical_process_normal <- function(omega_grid, t_grid, n, mu, sigma, 
   }
 
   cat("=== Simulating Empirical Process for Normal Distribution ===\n")
+  cat("Empirical KS mode:", empirical_ks_mode, "\n")
 
   n_omega <- length(omega_grid)
   n_t <- length(t_grid)
@@ -257,7 +314,9 @@ simulate_empirical_process_normal <- function(omega_grid, t_grid, n, mu, sigma, 
                       "grid_df", "n_omega", "n_t",
                       "F_theoretical_matrix_global",
                       "theoretical_distance_profile_normal",
-                      "h0", "unknown_param"),
+                      "compute_theoretical_sample_profile_normal",
+                      "compute_sample_ks_sup_normal",
+                      "h0", "unknown_param", "empirical_ks_mode"),
                 envir = environment())
   
   # worker-side load of packages if needed (none required here, but keep safe)
@@ -281,45 +340,55 @@ simulate_empirical_process_normal <- function(omega_grid, t_grid, n, mu, sigma, 
     for (j in seq_along(sim_indices)) {
       # generate sample
       sample_x <- rnorm(n, mean = mu, sd = sigma)
-      
-      # compute distance matrix: n x n_omega (rows: sample, cols: omega)
-      distance_matrix <- outer(sample_x, omega_grid, FUN = function(x,w) abs(x - w))
-      
-      # compute F_hat for all (omega,t) pairs: result n_omega x n_t
-      # For each t_val, proportion of sample points with distance <= t_val (col-wise)
-      F_hat_matrix <- sapply(t_grid, function(t_val) {
-        colMeans(distance_matrix <= t_val)
-      })
-      # ensure dimensions: n_omega x n_t
-      if (!is.matrix(F_hat_matrix)) F_hat_matrix <- matrix(F_hat_matrix, nrow = n_omega, ncol = n_t)
-      
-      # compute theoretical F matrix for this simulation
-      if (h0 == "simple") {
-        F_theoretical_matrix <- F_theoretical_matrix_global
+
+      if (identical(empirical_ks_mode, "sample")) {
+        local_supremums[j] <- compute_sample_ks_sup_normal(
+          sample_x = sample_x,
+          mu = mu,
+          sigma = sigma,
+          h0 = h0,
+          unknown_param = unknown_param
+        )
       } else {
-        # estimate MLE from this sample according to unknown_param
-        if (unknown_param == "mu") {
-          mu_hat <- mean(sample_x)
-          sigma_hat <- sigma
-        } else if (unknown_param == "sigma") {
-          mu_hat <- mu
-          sigma_hat <- sqrt(mean((sample_x - mu_hat)^2))  # population-style estimator (consistent)
-        } else if (unknown_param == "both") {
-          mu_hat <- mean(sample_x)
-          sigma_hat <- sqrt(mean((sample_x - mu_hat)^2))
+        # compute distance matrix: n x n_omega (rows: sample, cols: omega)
+        distance_matrix <- outer(sample_x, omega_grid, FUN = function(x,w) abs(x - w))
+
+        # compute F_hat for all (omega,t) pairs: result n_omega x n_t
+        # For each t_val, proportion of sample points with distance <= t_val (col-wise)
+        F_hat_matrix <- sapply(t_grid, function(t_val) {
+          colMeans(distance_matrix <= t_val)
+        })
+        # ensure dimensions: n_omega x n_t
+        if (!is.matrix(F_hat_matrix)) F_hat_matrix <- matrix(F_hat_matrix, nrow = n_omega, ncol = n_t)
+
+        # compute theoretical F matrix for this simulation
+        if (h0 == "simple") {
+          F_theoretical_matrix <- F_theoretical_matrix_global
         } else {
-          stop("unknown_param must be one of 'mu','sigma','both' when h0 == 'composite'")
+          # estimate MLE from this sample according to unknown_param
+          if (unknown_param == "mu") {
+            mu_hat <- mean(sample_x)
+            sigma_hat <- sigma
+          } else if (unknown_param == "sigma") {
+            mu_hat <- mu
+            sigma_hat <- sqrt(mean((sample_x - mu_hat)^2))  # population-style estimator (consistent)
+          } else if (unknown_param == "both") {
+            mu_hat <- mean(sample_x)
+            sigma_hat <- sqrt(mean((sample_x - mu_hat)^2))
+          } else {
+            stop("unknown_param must be one of 'mu','sigma','both' when h0 == 'composite'")
+          }
+          # compute theoretical distance profile at estimated params
+          F_theoretical_vec <- theoretical_distance_profile_normal(grid_df$omega, mu_hat, sigma_hat, grid_df$t)
+          F_theoretical_matrix <- matrix(F_theoretical_vec, nrow = n_omega, ncol = n_t)
         }
-        # compute theoretical distance profile at estimated params
-        F_theoretical_vec <- theoretical_distance_profile_normal(grid_df$omega, mu_hat, sigma_hat, grid_df$t)
-        F_theoretical_matrix <- matrix(F_theoretical_vec, nrow = n_omega, ncol = n_t)
+
+        # scaled absolute differences
+        scaled_diff_matrix <- sqrt(n) * abs(F_hat_matrix - F_theoretical_matrix)
+
+        # supremum over grid
+        local_supremums[j] <- max(scaled_diff_matrix)
       }
-      
-      # scaled absolute differences
-      scaled_diff_matrix <- sqrt(n) * abs(F_hat_matrix - F_theoretical_matrix)
-      
-      # supremum over grid
-      local_supremums[j] <- max(scaled_diff_matrix)
     }
     
     # return indices + values so master can place them in correct order
@@ -363,15 +432,18 @@ visualize_convergence_to_limit_normal <- function(n_values = c(50, 100, 500),
                                                   n_cores = 7,
                                                   h0 = c("simple","composite"),
                                                   unknown_param = NULL,
+                                                  empirical_ks_mode = c("sample", "grid"),
                                                   n50_adjust_multiplier = 2,
                                                   xlim = NULL,
                                                   qqplot = FALSE,
                                                   qqplot_save = NULL) {
   h0 <- match.arg(h0)
+  empirical_ks_mode <- match.arg(empirical_ks_mode)
   
   cat("=== Visualizing Convergence to Gaussian Limit (Normal Distribution) ===\n")
   cat("Sample sizes to compare:", paste(n_values, collapse = ", "), "\n")
   cat("Distribution: N(μ =", mu, ", σ² =", sigma^2, ")\n")
+  cat("Empirical KS mode:", empirical_ks_mode, "\n")
   
   # Use provided grid if present, otherwise automatic grid computation based on mu and sigma
   if (is.null(omega_grid) || is.null(t_grid)) {
@@ -405,7 +477,8 @@ visualize_convergence_to_limit_normal <- function(n_values = c(50, 100, 500),
   for (n in n_values) {
     cat("Simulating empirical process with n =", n, "...\n")
     empirical_values <- simulate_empirical_process_normal(
-      omega_grid, t_grid, n, mu, sigma, M, n_cores, h0 = h0, unknown_param = unknown_param
+      omega_grid, t_grid, n, mu, sigma, M, n_cores,
+      h0 = h0, unknown_param = unknown_param, empirical_ks_mode = empirical_ks_mode
     )
     empirical_data[[as.character(n)]] <- empirical_values
   }
@@ -575,4 +648,3 @@ visualize_convergence_to_limit_normal <- function(n_values = c(50, 100, 500),
 }
 
 cat("Normal distribution Gaussian process functions loaded successfully!\n")
-

@@ -251,7 +251,7 @@ run_sunspots_cycle24_small_circle_symmetric_mixture_gof <- function(
     input_csv = file.path("real_data", "sunspots", "output", "sunspots_cycle24_s2_all.csv"),
     output_dir = file.path("real_data", "sunspots", "output", "cycle24_small_circle_symmetric_mixture"),
     statistics = c("ks", "cvm"),
-    B = 500L,
+    B = 5000L,
     n_cores = 6L,
     seed = 20260603L,
     M_value = 60L,
@@ -377,10 +377,7 @@ run_sunspots_cycle24_small_circle_symmetric_mixture_gof <- function(
   )
 
   spec <- make_small_circle_symmetric_mixture2_spec(distance_type = distance_type)
-  ks_grid <- list(
-    omega_grid = generate_canonical_lattice(as.integer(M_value), dim = 3),
-    t_grid = seq(1e-8, pi - 1e-8, length.out = as.integer(ks_t_points))
-  )
+  ks_grid <- make_sample_unique_distance_ks_grid()
 
   timing_log("bootstrap", "start")
   bootstrap_start <- proc.time()[["elapsed"]]

@@ -54,11 +54,11 @@ choose_beta_composite_plan <- function(max_hours = 10,
                                        n_cores_outer = 12L) {
   candidate_full <- list(
     n_values = c(50L, 100L, 200L),
-    B = 500L
+    B = 5000L
   )
   candidate_short <- list(
     n_values = c(50L, 100L),
-    B = 500L
+    B = 5000L
   )
 
   candidate_full$estimated_hours <- estimate_beta_composite_hours(
@@ -149,7 +149,7 @@ run_beta_composite_stage <- function(output_dir,
 }
 
 run_beta_comets_stage <- function(output_dir,
-                                  B = 1000L,
+                                  B = 5000L,
                                   statistics = c("ks", "cvm"),
                                   n_cores = 12L,
                                   seed = 20260602L) {

@@ -221,6 +221,728 @@ test_that("normal multiplier bootstrap is reproducible and returns valid structu
   expect_true(is.finite(result_1$inference$cvm$critical_value))
 })
 
+test_that("KS defaults to the sample-based candidate set when no grid is supplied", {
+  x <- c(-1.2, -0.5, 0.2, 0.9, 1.4, 2.1)
+  null <- list(type = "simple", theta = list(mu = 0, sigma = 1))
+
+  result_default <- multiplier_bootstrap_normal(
+    data = x,
+    null = null,
+    statistics = "ks",
+    ks_grid = NULL,
+    B = 8,
+    seed = 42,
+    n_cores = 1
+  )
+
+  result_explicit <- multiplier_bootstrap_normal(
+    data = x,
+    null = null,
+    statistics = "ks",
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    B = 8,
+    seed = 42,
+    n_cores = 1
+  )
+
+  expect_identical(result_default$grid$mode, "sample_points_unique_distances")
+  expect_equal(
+    result_default$bootstrap$statistics$ks,
+    result_explicit$bootstrap$statistics$ks,
+    tolerance = 1e-12
+  )
+  expect_equal(
+    result_default$observed$ks$statistic,
+    result_explicit$observed$ks$statistic,
+    tolerance = 1e-12
+  )
+})
+
+test_that("sample-based KS preparation uses the Proposition 3.4 candidate set", {
+  x <- c(-1, 0, 2)
+  spec <- make_normal_spec(unknown_param = "both")
+  theta_hat <- list(mu = 0, sigma = 1)
+
+  ks_prep <- prepare_ks_observed_data(
+    data = x,
+    spec = spec,
+    theta_hat = theta_hat,
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    control = list()
+  )
+
+  n <- length(x)
+  distance_matrix <- abs(outer(x, x, FUN = "-"))
+  rank_matrix <- t(vapply(seq_len(n), function(i) {
+    as.integer(rank(distance_matrix[i, ], ties.method = "max"))
+  }, integer(n)))
+
+  expect_identical(ks_prep$ks_grid_mode, "sample_points_unique_distances")
+  expect_null(ks_prep$t_grid)
+  expect_equal(dim(ks_prep$distance_matrix), c(n, n))
+  expect_equal(dim(ks_prep$empirical_profile), c(n, n))
+  expect_equal(ks_prep$empirical_profile, rank_matrix / n, tolerance = 1e-12)
+})
+
+test_that("sample-based KS block helpers agree with the full matrix computation", {
+  x <- c(-1, 0, 2, 3)
+  spec <- make_normal_spec(unknown_param = "both")
+  theta_obs <- list(mu = 0, sigma = 1)
+  theta_star <- list(mu = 0.25, sigma = 1.15)
+  normalized_weights <- c(0.7, 1.1, 1.0, 1.2)
+
+  ks_prep <- prepare_ks_observed_data(
+    data = x,
+    spec = spec,
+    theta_hat = theta_obs,
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    control = list()
+  )
+
+  full_weighted <- compute_weighted_sample_profile_matrix(
+    order_matrix = ks_prep$order_matrix,
+    rank_linear_index = ks_prep$rank_linear_index,
+    normalized_weights = normalized_weights
+  )
+  block_weighted <- rbind(
+    compute_weighted_sample_profile_rows(
+      order_matrix = ks_prep$order_matrix,
+      rank_matrix = ks_prep$rank_matrix,
+      normalized_weights = normalized_weights,
+      row_indices = 1:2
+    ),
+    compute_weighted_sample_profile_rows(
+      order_matrix = ks_prep$order_matrix,
+      rank_matrix = ks_prep$rank_matrix,
+      normalized_weights = normalized_weights,
+      row_indices = 3:4
+    )
+  )
+  expect_equal(block_weighted, full_weighted, tolerance = 1e-12)
+
+  full_theoretical <- compute_theoretical_sample_profile_matrix(
+    spec = spec,
+    data = x,
+    distance_matrix = ks_prep$distance_matrix,
+    theta = theta_star,
+    control = list()
+  )
+  block_theoretical <- rbind(
+    compute_theoretical_sample_profile_block(
+      spec = spec,
+      normalized_data = x,
+      distance_matrix = ks_prep$distance_matrix,
+      theta = theta_star,
+      row_indices = 1:2,
+      control = list()
+    ),
+    compute_theoretical_sample_profile_block(
+      spec = spec,
+      normalized_data = x,
+      distance_matrix = ks_prep$distance_matrix,
+      theta = theta_star,
+      row_indices = 3:4,
+      control = list()
+    )
+  )
+  expect_equal(block_theoretical, full_theoretical, tolerance = 1e-12)
+})
+
+test_that("sample-based KS blocked statistic matches the full statistic", {
+  x <- c(-1, 0, 2, 3)
+  spec <- make_normal_spec(unknown_param = "both")
+  theta_obs <- list(mu = 0, sigma = 1)
+  theta_star <- list(mu = 0.25, sigma = 1.15)
+  normalized_weights <- c(0.7, 1.1, 1.0, 1.2)
+  scale_factor <- 1.3
+
+  ks_prep <- prepare_ks_observed_data(
+    data = x,
+    spec = spec,
+    theta_hat = theta_obs,
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    control = list()
+  )
+
+  full_weighted <- compute_weighted_sample_profile_matrix(
+    order_matrix = ks_prep$order_matrix,
+    rank_linear_index = ks_prep$rank_linear_index,
+    normalized_weights = normalized_weights
+  )
+
+  stat_simple_full <- max(abs(scale_factor * sqrt(length(x)) * (full_weighted - ks_prep$empirical_profile)))
+  stat_simple_block <- compute_ks_sample_stat_blocked(
+    spec = spec,
+    normalized_data = x,
+    ks_prep = ks_prep,
+    normalized_weights = normalized_weights,
+    scale_factor = scale_factor,
+    theta_star = NULL,
+    null_type = "simple",
+    control = list(ks_block_size = 2L)
+  )
+  expect_equal(stat_simple_block, stat_simple_full, tolerance = 1e-12)
+
+  full_theoretical_star <- compute_theoretical_sample_profile_matrix(
+    spec = spec,
+    data = x,
+    distance_matrix = ks_prep$distance_matrix,
+    theta = theta_star,
+    control = list()
+  )
+  stat_comp_full <- max(abs(scale_factor * sqrt(length(x)) * (
+    (full_weighted - full_theoretical_star) -
+      (ks_prep$empirical_profile - ks_prep$theoretical_profile)
+  )))
+  stat_comp_block <- compute_ks_sample_stat_blocked(
+    spec = spec,
+    normalized_data = x,
+    ks_prep = ks_prep,
+    normalized_weights = normalized_weights,
+    scale_factor = scale_factor,
+    theta_star = theta_star,
+    null_type = "composite",
+    control = list(ks_block_size = 2L)
+  )
+  expect_equal(stat_comp_block, stat_comp_full, tolerance = 1e-12)
+})
+
+test_that("fast sample-based KS blocked evaluation matches the reference path", {
+  set.seed(2201)
+  x <- normalize_vmf_data(rotasym::r_vMF(10, mu = c(0, 0, 1), kappa = 2.5))
+  spec <- make_vmf_spec(distance_type = "geodesic", unknown_param = "xi")
+  theta_hat <- fit_vmf_theta(x, weights = NULL, null = list(type = "composite"))
+  ks_prep <- prepare_ks_observed_data(
+    data = x,
+    spec = spec,
+    theta_hat = theta_hat,
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    control = list()
+  )
+  prep <- spec_fast_multiplier_prepare(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = NULL,
+    control = list(derivative_mc_size = 1200L, derivative_mc_seed = 2202L)
+  )
+
+  cache <- prepare_fast_ks_sample_cache(
+    S_obs = as.matrix(prep$S_obs),
+    Vhat = as.matrix(prep$Vhat),
+    Psi_aux = as.matrix(prep$Psi_aux),
+    ks_prep = ks_prep,
+    D_ks_info = prep$D_ks
+  )
+  multiplier_spec <- resolve_multiplier_spec(NULL)
+  weight_matrix <- generate_multiplier_matrix(
+    B = 5,
+    n = nrow(x),
+    multiplier_spec = multiplier_spec,
+    seed = 2203L
+  )
+  centered_weight_block <- t(apply(weight_matrix, 1L, normalize_multiplier_weights)) - 1
+
+  ks_ref <- compute_fast_ks_sample_stats_reference(
+    centered_weight_block = centered_weight_block,
+    S_obs = as.matrix(prep$S_obs),
+    H_ks_sample_cache = cache,
+    scale_factor = 1
+  )
+  ks_block <- compute_fast_ks_sample_stats_blocked(
+    centered_weight_block = centered_weight_block,
+    S_obs = as.matrix(prep$S_obs),
+    H_ks_sample_cache = cache,
+    scale_factor = 1,
+    control = list(fast_multiplier_ks_block_size = 3L)
+  )
+
+  expect_equal(ks_block, ks_ref, tolerance = 1e-12)
+})
+
+test_that("sample-based KS lightweight prep reduces retained memory on a large case", {
+  set.seed(2311)
+  x <- stats::rnorm(220, mean = 0.2, sd = 1.1)
+  spec <- make_normal_spec(unknown_param = "both")
+  theta_hat <- spec$fit_theta(
+    data = x,
+    weights = NULL,
+    null = list(type = "composite"),
+    control = list()
+  )
+
+  prep_dense <- prepare_ks_observed_data(
+    data = x,
+    spec = spec,
+    theta_hat = theta_hat,
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    control = list()
+  )
+  prep_light <- prepare_ks_observed_data(
+    data = x,
+    spec = spec,
+    theta_hat = theta_hat,
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    control = list(),
+    light = TRUE
+  )
+
+  expect_false(isTRUE(prep_dense$light))
+  expect_true(isTRUE(prep_light$light))
+  expect_equal(prep_light$statistic, prep_dense$statistic, tolerance = 1e-12)
+  expect_lt(
+    as.numeric(object.size(prep_light)),
+    0.45 * as.numeric(object.size(prep_dense))
+  )
+})
+
+test_that("fast sample-based KS streamed prep matches the cache path and reduces retained memory", {
+  set.seed(2312)
+  x <- mvtnorm::rmvnorm(
+    n = 160,
+    mean = c(0.15, -0.10, 0.20),
+    sigma = matrix(c(
+      1.00, 0.20, 0.05,
+      0.20, 0.85, 0.08,
+      0.05, 0.08, 0.75
+    ), nrow = 3L, byrow = TRUE)
+  )
+  spec <- make_mvnormal_spec(unknown_param = "both")
+  theta_hat <- spec$fit_theta(
+    data = x,
+    weights = NULL,
+    null = list(type = "composite"),
+    control = list()
+  )
+  ks_prep <- prepare_ks_observed_data(
+    data = x,
+    spec = spec,
+    theta_hat = theta_hat,
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    control = list()
+  )
+  prep <- spec_fast_multiplier_prepare(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = NULL,
+    control = list(derivative_mc_size = 250L, derivative_mc_seed = 2313L)
+  )
+
+  cache <- prepare_fast_ks_sample_cache(
+    S_obs = as.matrix(prep$S_obs),
+    Vhat = as.matrix(prep$Vhat),
+    Psi_aux = as.matrix(prep$Psi_aux),
+    ks_prep = ks_prep,
+    D_ks_info = prep$D_ks
+  )
+  stream_prep <- prepare_fast_ks_sample_stream_prep(
+    S_obs = as.matrix(prep$S_obs),
+    Vhat = as.matrix(prep$Vhat),
+    Psi_aux = as.matrix(prep$Psi_aux),
+    ks_prep = ks_prep,
+    D_ks_info = prep$D_ks
+  )
+  multiplier_spec <- resolve_multiplier_spec(NULL)
+  weight_matrix <- generate_multiplier_matrix(
+    B = 4,
+    n = nrow(x),
+    multiplier_spec = multiplier_spec,
+    seed = 2314L
+  )
+  centered_weight_block <- t(apply(weight_matrix, 1L, normalize_multiplier_weights)) - 1
+
+  ks_ref <- compute_fast_ks_sample_stats_reference(
+    centered_weight_block = centered_weight_block,
+    S_obs = as.matrix(prep$S_obs),
+    H_ks_sample_cache = cache,
+    scale_factor = 1
+  )
+  ks_stream <- compute_fast_ks_sample_stats_streamed(
+    centered_weight_block = centered_weight_block,
+    ks_sample_stream_prep = stream_prep,
+    scale_factor = 1,
+    control = list(fast_multiplier_ks_block_size = 12L)
+  )
+
+  expect_equal(ks_stream, ks_ref, tolerance = 1e-12)
+  expect_lt(
+    as.numeric(object.size(stream_prep)),
+    0.70 * as.numeric(object.size(cache))
+  )
+})
+
+test_that("fast CvM streamed evaluation matches the precomputed-block reference", {
+  set.seed(2251)
+  x <- normalize_vmf_data(rotasym::r_vMF(11, mu = c(0, 0, 1), kappa = 2.2))
+  spec <- make_vmf_spec(distance_type = "geodesic", unknown_param = "xi")
+  theta_hat <- fit_vmf_theta(x, weights = NULL, null = list(type = "composite"))
+  ks_grid <- list(
+    omega_grid = generate_canonical_lattice(3, dim = 3),
+    t_grid = c(0.4, 0.9)
+  )
+  ks_prep <- prepare_ks_observed_data(x, spec, theta_hat, ks_grid)
+  cvm_prep <- prepare_cvm_observed_data(
+    x,
+    spec,
+    theta_hat,
+    control = list(vmf_profile_method = "tabulated")
+  )
+  prep <- spec_fast_multiplier_prepare(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    cvm_prep = cvm_prep,
+    control = list(derivative_mc_size = 1200L, derivative_mc_seed = 2252L)
+  )
+
+  H_blocks <- prepare_fast_cvm_H_blocks(
+    S_obs = as.matrix(prep$S_obs),
+    Vhat = as.matrix(prep$Vhat),
+    D_cvm = prep$D_cvm,
+    observed_distance_matrix = cvm_prep$distance_matrix,
+    control = list(fast_multiplier_cvm_block_size = 4L)
+  )
+  stream_prep <- prepare_fast_cvm_stream_prep(
+    S_obs = as.matrix(prep$S_obs),
+    Vhat = as.matrix(prep$Vhat),
+    D_cvm = prep$D_cvm,
+    observed_distance_matrix = cvm_prep$distance_matrix,
+    control = list(fast_multiplier_cvm_block_size = 4L)
+  )
+  multiplier_spec <- resolve_multiplier_spec(NULL)
+  weight_matrix <- generate_multiplier_matrix(
+    B = 5,
+    n = nrow(x),
+    multiplier_spec = multiplier_spec,
+    seed = 2253L
+  )
+  centered_weight_block <- t(apply(weight_matrix, 1L, normalize_multiplier_weights)) - 1
+
+  cvm_ref <- vapply(seq_len(nrow(centered_weight_block)), function(i) {
+    compute_fast_cvm_stat_chunked(
+      centered_weights = centered_weight_block[i, ],
+      H_blocks = H_blocks,
+      scale_factor = 1
+    )
+  }, numeric(1))
+  cvm_stream <- compute_fast_cvm_stats_streamed(
+    centered_weight_block = centered_weight_block,
+    cvm_stream_prep = stream_prep,
+    scale_factor = 1
+  )
+
+  expect_equal(cvm_stream, cvm_ref, tolerance = 1e-12)
+})
+
+test_that("generic CvM lightweight prep reduces retained memory on a large case", {
+  set.seed(2315)
+  x <- mvtnorm::rmvnorm(
+    n = 180,
+    mean = c(0.10, -0.15, 0.25),
+    sigma = matrix(c(
+      1.00, 0.12, 0.04,
+      0.12, 0.90, 0.07,
+      0.04, 0.07, 0.80
+    ), nrow = 3L, byrow = TRUE)
+  )
+  spec <- make_mvnormal_spec(unknown_param = "both")
+  theta_hat <- spec$fit_theta(
+    data = x,
+    weights = NULL,
+    null = list(type = "composite"),
+    control = list()
+  )
+
+  prep_dense <- prepare_cvm_observed_data(
+    data = x,
+    spec = spec,
+    theta_hat = theta_hat,
+    control = list()
+  )
+  prep_light <- prepare_cvm_observed_data(
+    data = x,
+    spec = spec,
+    theta_hat = theta_hat,
+    control = list(),
+    light = TRUE
+  )
+
+  expect_false(isTRUE(prep_dense$light))
+  expect_true(isTRUE(prep_light$light))
+  expect_equal(prep_light$statistic, prep_dense$statistic, tolerance = 1e-12)
+  expect_lt(
+    as.numeric(object.size(prep_light)),
+    0.30 * as.numeric(object.size(prep_dense))
+  )
+})
+
+test_that("streamed fast CvM prep matches the dense route and reduces retained memory", {
+  set.seed(2316)
+  x <- mvtnorm::rmvnorm(
+    n = 180,
+    mean = c(0.10, -0.15, 0.25),
+    sigma = matrix(c(
+      1.00, 0.12, 0.04,
+      0.12, 0.90, 0.07,
+      0.04, 0.07, 0.80
+    ), nrow = 3L, byrow = TRUE)
+  )
+  spec <- make_mvnormal_spec(unknown_param = "both")
+  theta_hat <- spec$fit_theta(
+    data = x,
+    weights = NULL,
+    null = list(type = "composite"),
+    control = list()
+  )
+  cvm_prep_dense <- prepare_cvm_observed_data(
+    data = x,
+    spec = spec,
+    theta_hat = theta_hat,
+    control = list()
+  )
+  cvm_prep_light <- prepare_cvm_observed_data(
+    data = x,
+    spec = spec,
+    theta_hat = theta_hat,
+    control = list(),
+    light = TRUE
+  )
+  fast_prep_dense <- spec_fast_multiplier_prepare(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = NULL,
+    cvm_prep = cvm_prep_dense,
+    control = list(derivative_mc_size = 400L, derivative_mc_seed = 2317L)
+  )
+  fast_prep_light <- spec_fast_multiplier_prepare(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = NULL,
+    cvm_prep = cvm_prep_light,
+    control = list(derivative_mc_size = 400L, derivative_mc_seed = 2317L)
+  )
+  stream_dense <- prepare_fast_cvm_stream_prep(
+    S_obs = as.matrix(fast_prep_dense$S_obs),
+    Vhat = as.matrix(fast_prep_dense$Vhat),
+    D_cvm = fast_prep_dense$D_cvm,
+    observed_distance_matrix = cvm_prep_dense$distance_matrix,
+    control = list(fast_multiplier_cvm_block_size = 12L)
+  )
+  stream_light <- prepare_fast_cvm_stream_prep(
+    S_obs = as.matrix(fast_prep_light$S_obs),
+    Vhat = as.matrix(fast_prep_light$Vhat),
+    D_cvm = fast_prep_light$D_cvm,
+    observed_distance_matrix = NULL,
+    Psi_aux = fast_prep_light$Psi_aux,
+    cvm_prep = cvm_prep_light,
+    control = list(fast_multiplier_cvm_block_size = 12L)
+  )
+  multiplier_spec <- resolve_multiplier_spec(NULL)
+  weight_matrix <- generate_multiplier_matrix(
+    B = 4,
+    n = nrow(x),
+    multiplier_spec = multiplier_spec,
+    seed = 2318L
+  )
+  centered_weight_block <- t(apply(weight_matrix, 1L, normalize_multiplier_weights)) - 1
+
+  cvm_dense <- compute_fast_cvm_stats_streamed(
+    centered_weight_block = centered_weight_block,
+    cvm_stream_prep = stream_dense,
+    scale_factor = 1
+  )
+  cvm_light <- compute_fast_cvm_stats_streamed(
+    centered_weight_block = centered_weight_block,
+    cvm_stream_prep = stream_light,
+    scale_factor = 1
+  )
+
+  expect_equal(cvm_light, cvm_dense, tolerance = 1e-12)
+  expect_lt(
+    as.numeric(object.size(stream_light)),
+    0.65 * as.numeric(object.size(stream_dense))
+  )
+})
+
+test_that("large 1-core fast multiplier run uses the lightweight streamed KS and CvM paths", {
+  set.seed(2319)
+  x <- mvtnorm::rmvnorm(
+    n = 180,
+    mean = c(0.10, -0.15, 0.25),
+    sigma = matrix(c(
+      1.00, 0.12, 0.04,
+      0.12, 0.90, 0.07,
+      0.04, 0.07, 0.80
+    ), nrow = 3L, byrow = TRUE)
+  )
+
+  result <- multiplier_bootstrap_mvnormal(
+    data = x,
+    null = list(type = "composite"),
+    statistics = c("ks", "cvm"),
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    B = 4,
+    seed = 2320L,
+    n_cores = 1,
+    unknown_param = "both",
+    keep = list(
+      observed_process = FALSE,
+      bootstrap_statistics = TRUE,
+      bootstrap_thetas = FALSE
+    ),
+    control = list(
+      derivative_mc_size = 400L,
+      derivative_mc_seed = 2321L,
+      fast_bootstrap_chunk_size = 4L,
+      fast_multiplier_cvm_block_size = 12L
+    ),
+    bootstrap_method = "fast_multiplier"
+  )
+
+  expect_true(isTRUE(result$diagnostics$lightweight_ks_prep))
+  expect_true(isTRUE(result$diagnostics$lightweight_cvm_prep))
+  expect_identical(result$diagnostics$fast_ks_mode, "sample_points_unique_distances_streamed")
+  expect_identical(result$diagnostics$fast_cvm_mode, "sample_points_unique_distances_sorted_rows")
+  expect_true(result$inference$ks$p_value >= 0 && result$inference$ks$p_value <= 1)
+  expect_true(result$inference$cvm$p_value >= 0 && result$inference$cvm$p_value <= 1)
+})
+
+test_that("shared sample caches and correction caching preserve fast KS and CvM values", {
+  set.seed(2322)
+  x <- normalize_vmf_data(rotasym::r_vMF(30, mu = c(0, 0, 1), kappa = 2.5))
+  spec <- make_vmf_spec(distance_type = "geodesic", unknown_param = "xi")
+  theta_hat <- spec$fit_theta(
+    data = x,
+    weights = NULL,
+    null = list(type = "composite"),
+    control = list()
+  )
+  base_control <- list(
+    derivative_mc_size = 250L,
+    derivative_mc_seed = 2323L,
+    fast_bootstrap_chunk_size = 2L,
+    vmf_profile_method = "tabulated"
+  )
+  run_fast <- function(cache_corrections) {
+    multiplier_bootstrap_gof(
+      data = x,
+      spec = spec,
+      null = list(type = "composite"),
+      statistics = c("ks", "cvm"),
+      ks_grid = make_sample_unique_distance_ks_grid(),
+      B = 6L,
+      seed = 2324L,
+      n_cores = 1L,
+      observed_theta_hat = theta_hat,
+      bootstrap_method = "fast_multiplier",
+      keep = list(observed_process = FALSE, bootstrap_statistics = TRUE),
+      control = c(base_control, list(fast_multiplier_cache_corrections = cache_corrections))
+    )
+  }
+
+  uncached <- run_fast(FALSE)
+  cached <- run_fast(TRUE)
+
+  expect_true(cached$diagnostics$shared_sample_ks_cvm_cache)
+  expect_true(cached$diagnostics$shared_sample_correction_cache)
+  expect_gt(cached$diagnostics$sample_correction_cache_bytes, 0)
+  expect_equal(uncached$inference$ks$observed, cached$inference$ks$observed, tolerance = 1e-12)
+  expect_equal(uncached$inference$cvm$observed, cached$inference$cvm$observed, tolerance = 1e-12)
+  expect_equal(uncached$bootstrap$statistics$ks, cached$bootstrap$statistics$ks, tolerance = 1e-12)
+  expect_equal(uncached$bootstrap$statistics$cvm, cached$bootstrap$statistics$cvm, tolerance = 1e-12)
+})
+
+test_that("dense fast CvM H caching preserves bootstrap statistics", {
+  set.seed(2325)
+  x <- normalize_vmf_data(rotasym::r_vMF(28, mu = c(0, 0, 1), kappa = 2.5))
+  spec <- make_vmf_spec(distance_type = "geodesic", unknown_param = "xi")
+  theta_hat <- spec$fit_theta(
+    data = x,
+    weights = NULL,
+    null = list(type = "composite"),
+    control = list()
+  )
+  base_control <- list(
+    derivative_mc_size = 150L,
+    derivative_mc_seed = 2326L,
+    fast_bootstrap_chunk_size = 2L,
+    vmf_profile_method = "tabulated"
+  )
+  run_fast <- function(cache_h) {
+    multiplier_bootstrap_gof(
+      data = x,
+      spec = spec,
+      null = list(type = "composite"),
+      statistics = "cvm",
+      B = 6L,
+      seed = 2327L,
+      n_cores = 1L,
+      observed_theta_hat = theta_hat,
+      bootstrap_method = "fast_multiplier",
+      keep = list(observed_process = TRUE, bootstrap_statistics = TRUE),
+      control = c(base_control, list(fast_multiplier_cache_cvm_h = cache_h))
+    )
+  }
+
+  uncached <- run_fast(FALSE)
+  cached <- run_fast(TRUE)
+  expect_identical(cached$diagnostics$fast_cvm_mode, "dense_matrix")
+  expect_equal(uncached$inference$cvm$observed, cached$inference$cvm$observed, tolerance = 1e-12)
+  expect_equal(uncached$bootstrap$statistics$cvm, cached$bootstrap$statistics$cvm, tolerance = 1e-12)
+})
+
+test_that("lightweight fast preparation agrees with the reestimated observed statistics", {
+  set.seed(2328)
+  x <- normalize_vmf_data(rotasym::r_vMF(24, mu = c(0, 0, 1), kappa = 2.5))
+  spec <- make_vmf_spec(distance_type = "geodesic", unknown_param = "xi")
+  theta_hat <- spec$fit_theta(
+    data = x,
+    weights = NULL,
+    null = list(type = "composite"),
+    control = list()
+  )
+  common_args <- list(
+    data = x,
+    spec = spec,
+    null = list(type = "composite"),
+    statistics = c("ks", "cvm"),
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    B = 4L,
+    seed = 2329L,
+    n_cores = 1L,
+    observed_theta_hat = theta_hat,
+    keep = list(observed_process = FALSE, bootstrap_statistics = TRUE),
+    control = list(
+      derivative_mc_size = 200L,
+      derivative_mc_seed = 2330L,
+      fast_bootstrap_chunk_size = 2L,
+      vmf_profile_method = "legendre",
+      vmf_profile_l_max = 160L,
+      vmf_profile_legendre_tail_tol = 1e-13
+    )
+  )
+
+  fast <- do.call(multiplier_bootstrap_gof, c(common_args, list(bootstrap_method = "fast_multiplier")))
+  slow <- do.call(multiplier_bootstrap_gof, c(common_args, list(bootstrap_method = "reestimated")))
+
+  expect_true(isTRUE(fast$diagnostics$lightweight_ks_prep))
+  expect_true(isTRUE(fast$diagnostics$lightweight_cvm_prep))
+  expect_false(isTRUE(slow$diagnostics$lightweight_ks_prep))
+  expect_false(isTRUE(slow$diagnostics$lightweight_cvm_prep))
+  expect_equal(fast$inference$ks$observed, slow$inference$ks$observed, tolerance = 1e-12)
+  expect_equal(fast$inference$cvm$observed, slow$inference$cvm$observed, tolerance = 1e-12)
+  expect_true(all(is.finite(fast$bootstrap$statistics$ks)))
+  expect_true(all(is.finite(fast$bootstrap$statistics$cvm)))
+  expect_true(all(is.finite(slow$bootstrap$statistics$ks)))
+  expect_true(all(is.finite(slow$bootstrap$statistics$cvm)))
+})
+
 test_that("observed CvM matches the exact double-sum formula", {
   x <- c(-1, 0, 2)
   null <- list(type = "simple", theta = list(mu = 0, sigma = 1))
@@ -463,6 +1185,58 @@ test_that("vMF fast multiplier bootstrap runs and matches the observed statistic
   expect_equal(result_fast$diagnostics$derivative_mc_size, 4000L)
 })
 
+test_that("fast multiplier sample-KS bootstrap is invariant to omega blocking", {
+  set.seed(2301)
+  x <- normalize_vmf_data(rotasym::r_vMF(12, mu = c(0, 0, 1), kappa = 2.8))
+
+  result_default <- multiplier_bootstrap_vmf(
+    data = x,
+    null = list(type = "composite"),
+    statistics = "ks",
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    B = 6,
+    seed = 2302,
+    n_cores = 1,
+    distance_type = "geodesic",
+    unknown_param = "xi",
+    bootstrap_method = "fast_multiplier",
+    control = list(
+      derivative_mc_size = 1500L,
+      derivative_mc_seed = 2303L
+    )
+  )
+  result_blocked <- multiplier_bootstrap_vmf(
+    data = x,
+    null = list(type = "composite"),
+    statistics = "ks",
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    B = 6,
+    seed = 2302,
+    n_cores = 1,
+    distance_type = "geodesic",
+    unknown_param = "xi",
+    bootstrap_method = "fast_multiplier",
+    control = list(
+      derivative_mc_size = 1500L,
+      derivative_mc_seed = 2303L,
+      fast_multiplier_ks_block_size = 2L
+    )
+  )
+
+  expect_identical(result_default$diagnostics$effective_bootstrap_method, "fast_multiplier")
+  expect_identical(result_blocked$diagnostics$effective_bootstrap_method, "fast_multiplier")
+  expect_equal(
+    result_blocked$bootstrap$statistics$ks,
+    result_default$bootstrap$statistics$ks,
+    tolerance = 1e-12
+  )
+  expect_equal(
+    result_blocked$observed$ks$statistic,
+    result_default$observed$ks$statistic,
+    tolerance = 1e-12
+  )
+})
+
 test_that("vMF fast multiplier preparation has the expected dimensions and sign convention", {
   set.seed(778)
   x <- normalize_vmf_data(rotasym::r_vMF(9, mu = c(1, 0, 0), kappa = 2))
@@ -657,6 +1431,8 @@ test_that("cardioid rho near one uses the recorded slow fallback", {
   expect_identical(result$diagnostics$effective_bootstrap_method, "reestimated")
   expect_true(isTRUE(result$diagnostics$fallback_to_reestimated))
   expect_identical(result$diagnostics$fallback_reason, "cardioid_rho_one_boundary")
+  expect_length(result$bootstrap$statistics$ks, 3L)
+  expect_true(all(is.finite(result$bootstrap$statistics$ks)))
 })
 
 test_that("fast multiplier defaults to Vhat from the auxiliary score outer product", {
@@ -1069,6 +1845,161 @@ test_that("beta_mixture2 fast multiplier falls back to slow outside the regular 
 
   expect_true(isTRUE(prep$fallback_to_reestimated))
   expect_identical(prep$fallback_reason, "beta_mixture2_shape_nonregular")
+})
+
+test_that("uniform_beta_mixture fast multiplier falls back to slow outside the regular shape region", {
+  x <- r_sph_uniform_beta_mixture(
+    n = 20,
+    mu = c(0, 0, 1),
+    weight_uniform = 0.2,
+    alpha = 0.9,
+    beta = 2.4
+  )
+  spec <- make_uniform_beta_mixture_spec(distance_type = "geodesic")
+  theta_hat <- list(
+    mu = c(0, 0, 1),
+    weight_uniform = 0.2,
+    alpha = 0.95,
+    beta = 1.4
+  )
+
+  prep <- spec_fast_multiplier_prepare(
+    spec = spec,
+    data = x,
+    theta_hat = theta_hat,
+    ks_prep = NULL,
+    cvm_prep = NULL,
+    control = list(uniform_beta_mixture_fast_shape_regular_eps = 0)
+  )
+
+  expect_true(isTRUE(prep$fallback_to_reestimated))
+  expect_identical(prep$fallback_reason, "uniform_beta_mixture_shape_nonregular")
+})
+
+test_that("uniform_beta_mixture fallback reestimated path is stable across n_cores", {
+  x <- r_sph_uniform_beta_mixture(
+    n = 12,
+    mu = c(0, 0, 1),
+    weight_uniform = 0.2,
+    alpha = 12,
+    beta = 0.8
+  )
+  spec <- make_uniform_beta_mixture_spec(distance_type = "geodesic")
+  theta_hat <- list(
+    mu = c(0, 0, 1),
+    weight_uniform = 0.2,
+    alpha = 12,
+    beta = 0.8
+  )
+  ks_grid <- list(
+    omega_grid = generate_canonical_lattice(4L, dim = 3),
+    t_grid = c(0.4, 0.8)
+  )
+
+  result_1 <- multiplier_bootstrap_gof(
+    data = x,
+    spec = spec,
+    null = list(type = "composite"),
+    statistics = "ks",
+    ks_grid = ks_grid,
+    B = 6L,
+    seed = 1L,
+    n_cores = 1L,
+    bootstrap_method = "fast_multiplier",
+    control = list(uniform_beta_mixture_fast_shape_regular_eps = 0),
+    observed_theta_hat = theta_hat
+  )
+
+  result_2 <- multiplier_bootstrap_gof(
+    data = x,
+    spec = spec,
+    null = list(type = "composite"),
+    statistics = "ks",
+    ks_grid = ks_grid,
+    B = 6L,
+    seed = 1L,
+    n_cores = 2L,
+    bootstrap_method = "fast_multiplier",
+    control = list(uniform_beta_mixture_fast_shape_regular_eps = 0),
+    observed_theta_hat = theta_hat
+  )
+
+  expect_identical(result_1$diagnostics$effective_bootstrap_method, "reestimated")
+  expect_identical(result_2$diagnostics$effective_bootstrap_method, "reestimated")
+  expect_identical(result_1$diagnostics$fallback_reason, "uniform_beta_mixture_shape_nonregular")
+  expect_identical(result_2$diagnostics$fallback_reason, "uniform_beta_mixture_shape_nonregular")
+  expect_equal(result_1$observed$ks$statistic, result_2$observed$ks$statistic, tolerance = 1e-12)
+  expect_equal(result_1$inference$ks$p_value, result_2$inference$ks$p_value, tolerance = 1e-12)
+})
+
+test_that("fallback from fast multiplier rebuilds lightweight precomputations before reestimated bootstrap", {
+  x <- r_sph_uniform_beta_mixture(
+    n = 12,
+    mu = c(0, 0, 1),
+    weight_uniform = 0.2,
+    alpha = 12,
+    beta = 0.8
+  )
+  spec <- make_uniform_beta_mixture_spec(distance_type = "geodesic")
+  theta_hat <- list(
+    mu = c(0, 0, 1),
+    weight_uniform = 0.2,
+    alpha = 12,
+    beta = 0.8
+  )
+
+  result_1 <- multiplier_bootstrap_gof(
+    data = x,
+    spec = spec,
+    null = list(type = "composite"),
+    statistics = c("ks", "cvm"),
+    ks_grid = NULL,
+    B = 4L,
+    seed = 11L,
+    n_cores = 1L,
+    bootstrap_method = "fast_multiplier",
+    keep = list(
+      observed_process = FALSE,
+      bootstrap_statistics = TRUE,
+      bootstrap_thetas = FALSE
+    ),
+    control = list(uniform_beta_mixture_fast_shape_regular_eps = 0),
+    observed_theta_hat = theta_hat
+  )
+
+  result_2 <- multiplier_bootstrap_gof(
+    data = x,
+    spec = spec,
+    null = list(type = "composite"),
+    statistics = c("ks", "cvm"),
+    ks_grid = NULL,
+    B = 4L,
+    seed = 11L,
+    n_cores = 2L,
+    bootstrap_method = "fast_multiplier",
+    keep = list(
+      observed_process = FALSE,
+      bootstrap_statistics = TRUE,
+      bootstrap_thetas = FALSE
+    ),
+    control = list(uniform_beta_mixture_fast_shape_regular_eps = 0),
+    observed_theta_hat = theta_hat
+  )
+
+  expect_identical(result_1$diagnostics$effective_bootstrap_method, "reestimated")
+  expect_identical(result_2$diagnostics$effective_bootstrap_method, "reestimated")
+  expect_identical(result_1$diagnostics$fallback_reason, "uniform_beta_mixture_shape_nonregular")
+  expect_identical(result_2$diagnostics$fallback_reason, "uniform_beta_mixture_shape_nonregular")
+  expect_length(result_1$bootstrap$statistics$ks, 4L)
+  expect_length(result_1$bootstrap$statistics$cvm, 4L)
+  expect_length(result_2$bootstrap$statistics$ks, 4L)
+  expect_length(result_2$bootstrap$statistics$cvm, 4L)
+  expect_true(all(is.finite(result_1$bootstrap$statistics$ks)))
+  expect_true(all(is.finite(result_1$bootstrap$statistics$cvm)))
+  expect_true(all(is.finite(result_2$bootstrap$statistics$ks)))
+  expect_true(all(is.finite(result_2$bootstrap$statistics$cvm)))
+  expect_equal(result_1$inference$ks$p_value, result_2$inference$ks$p_value, tolerance = 1e-12)
+  expect_equal(result_1$inference$cvm$p_value, result_2$inference$cvm$p_value, tolerance = 1e-12)
 })
 
 test_that("fast bootstrap chunking preserves fast multiplier results", {

@@ -186,7 +186,7 @@ run_jp_cardioid_composite_calibration_sequential <- function(
   output_root = file.path("output", "calibration", "bootstrap", "jp_cardioid_composite_M500_B500_NM_bootlocal"),
   n_values = c(50L, 100L, 200L),
   M_outer = 500L,
-  B = 500L,
+  B = 5000L,
   n_cores_outer = 12L,
   statistics = c("ks", "cvm"),
   alphas = c(0.01, 0.05, 0.10),
