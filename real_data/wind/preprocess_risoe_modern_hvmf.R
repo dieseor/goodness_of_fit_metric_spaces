@@ -314,8 +314,8 @@ print_hvmf_set_summary <- function(label, df, fixed_tz = "UTC") {
   cat("  days dropped after height-specific filtering = ", attr(df, "dropped_days"), "\n\n", sep = "")
 }
 
-write_risoe_hvmf_sets <- function(input_nc = "wind/risoe_m_concurent.nc",
-                                  output_dir = "wind/processed",
+write_risoe_hvmf_sets <- function(input_nc = "real_data/wind/risoe_m_concurent.nc",
+                                  output_dir = "real_data/wind/processed",
                                   tie_break = "earliest",
                                   make_plots = TRUE,
                                   fixed_tz = "UTC") {

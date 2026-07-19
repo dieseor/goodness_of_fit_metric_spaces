@@ -29,7 +29,11 @@ apply_height_cleaning <- function(df, height_m, fixed_tz = "UTC") {
     return(df[date_vec < as.Date("2004-12-01"), , drop = FALSE])
   }
 
-  stop("This runner only supports the cleaned 125m series.")
+  if (height_m == 77L) {
+    return(df[date_vec < as.Date("2007-08-01"), , drop = FALSE])
+  }
+
+  stop("Unsupported Risoe height for cleaning.")
 }
 
 build_clean_hvmf_case <- function(selected_df,
@@ -63,7 +67,7 @@ build_clean_hvmf_case <- function(selected_df,
   angle_rad <- direction_deg * pi / 180
 
   out <- data.frame(
-    dataset_id = sprintf("risoe_clean_125m_%s_%s_1996_2003", window_id, pattern_id),
+    dataset_id = sprintf("risoe_clean_%dm_%s_%s_1996_2003", height_m, window_id, pattern_id),
     window = window_id,
     pattern = pattern_id,
     datetime = rows$datetime,
@@ -170,8 +174,11 @@ make_ks_grid_for_case <- function(X,
   )
 }
 
-run_single_risoe_125m_case <- function(config,
-                                       selected_df,
+run_single_risoe_case <- function(config,
+                                  selected_df,
+                                  speed_col,
+                                  direction_col,
+                                  height_m,
                                        B = 5000L,
                                        n_cores = 12L,
                                        bootstrap_method = "reestimated",
@@ -193,9 +200,9 @@ run_single_risoe_125m_case <- function(config,
         window_id = config$window,
         day_pattern = config$day_pattern,
         pattern_id = config$pattern,
-        speed_col = "ws125",
-        direction_col = "wd125",
-        height_m = 125L,
+        speed_col = speed_col,
+        direction_col = direction_col,
+        height_m = height_m,
         fixed_tz = fixed_tz
       )
 
@@ -308,6 +315,17 @@ run_single_risoe_125m_case <- function(config,
         )
       )
     }
+  )
+}
+
+run_single_risoe_125m_case <- function(config, selected_df, ...) {
+  run_single_risoe_case(
+    config = config,
+    selected_df = selected_df,
+    speed_col = "ws125",
+    direction_col = "wd125",
+    height_m = 125L,
+    ...
   )
 }
 

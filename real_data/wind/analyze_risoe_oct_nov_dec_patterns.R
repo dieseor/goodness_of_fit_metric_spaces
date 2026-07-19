@@ -1,5 +1,5 @@
-source(file.path("wind", "preprocess_risoe_modern_hvmf.R"))
-source(file.path("wind", "run_risoe_jensen_like_all_composite.R"))
+source(file.path("real_data", "wind", "preprocess_risoe_modern_hvmf.R"))
+source(file.path("real_data", "wind", "run_risoe_jensen_like_all_composite.R"))
 
 select_noon_all_months <- function(df, fixed_tz = "UTC") {
   df$date <- as.Date(df$datetime, tz = fixed_tz)
@@ -378,8 +378,8 @@ run_composite_benchmark_case <- function(df,
   )
 }
 
-run_risoe_oct_nov_dec_analysis <- function(input_nc = "wind/risoe_m_all.nc",
-                                           output_dir = "wind/oct_nov_dec_analysis",
+run_risoe_oct_nov_dec_analysis <- function(input_nc = "real_data/wind/risoe_m_all.nc",
+                                           output_dir = "real_data/wind/oct_nov_dec_analysis",
                                            years = c(1997:2001, 2003:2007),
                                            day_pattern = c(3L, 7L, 11L, 15L, 19L, 23L, 27L, 30L),
                                            B = 5000L,

@@ -126,6 +126,8 @@ validation_extract_theta_diagnostics <- function(case,
   } else if (identical(case$model, "small_circle_symmetric_mixture2")) {
     out$kappa_hat <- as.numeric(theta_hat$kappa %||% NA_real_)
     out$nu_hat <- as.numeric(theta_hat$nu %||% NA_real_)
+  } else if (identical(case$model, "watson")) {
+    out$kappa_hat <- as.numeric(theta_hat$kappa %||% NA_real_)
   } else if (identical(case$model, "small_circle_weighted_mixture2")) {
     out$weight_hat <- as.numeric(theta_hat$pi %||% NA_real_)
     out$kappa1_hat <- as.numeric(theta_hat$kappa1 %||% NA_real_)
@@ -181,7 +183,7 @@ make_validation_cases <- function(n_override = NULL) {
       spec_fn = function() make_hvmf_spec(unknown_param = "both"),
       wrapper = multiplier_bootstrap_hvmf,
       wrapper_args = list(null = list(type = "composite"), unknown_param = "both"),
-      sample_fn = function(n) rhvmf_h2_gig(n, mu = c(cosh(0.35), sinh(0.35), 0), kappa = 3),
+      sample_fn = function(n) rhvmf_h2_polar(n, mu = c(cosh(0.35), sinh(0.35), 0), kappa = 3),
       control = list()
     ),
     list(
@@ -216,6 +218,16 @@ make_validation_cases <- function(n_override = NULL) {
       wrapper = multiplier_bootstrap_small_circle,
       wrapper_args = list(null = list(type = "composite"), distance_type = "geodesic"),
       sample_fn = function(n) r_sph_small_circle(n, mu = c(0, 0, 1), kappa = 8, nu = 0.3),
+      control = list()
+    ),
+    list(
+      model = "watson",
+      scenario = "watson_kappa8",
+      n = n_value,
+      spec_fn = function() make_watson_spec(distance_type = "geodesic"),
+      wrapper = multiplier_bootstrap_watson,
+      wrapper_args = list(null = list(type = "composite"), distance_type = "geodesic"),
+      sample_fn = function(n) r_sph_watson(n, mu = c(0, 0, 1), kappa = 8),
       control = list()
     ),
     list(

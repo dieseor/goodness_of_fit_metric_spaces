@@ -1,0 +1,8 @@
+stage: pilot_curves
+updated: 2026-07-14 18:19:57
+families: hvmf, lg, normal, vmf
+candidates: kappa_50_delta_0.2, nu_3, rho_0.5
+completed: 3600/3600
+elapsed_seconds: 0.0
+mean_seconds_per_job: 1.930
+eta_seconds: 0.0

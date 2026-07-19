@@ -170,8 +170,18 @@ make_realistic_logistic_gaussian_cases <- function() {
       ambient_dim = length(scenario$sample_params$mu_ilr) + 1L
     )
 
-    omega_grid <- scenario$ks_grid$omega_grid
-    t_grid <- scenario$ks_grid$t_grid
+    # Calibration KS statistics intentionally use every observed centre and
+    # distance.  A quadratic-form benchmark needs a deterministic finite set
+    # of nonzero radii instead, so construct its fixed diagnostic grid from
+    # the scenario's null parameter rather than assuming an obsolete explicit
+    # `scenario$ks_grid` payload.
+    diagnostic_grid <- make_logistic_gaussian_ks_grid(
+      mu_ilr = scenario$sample_params$mu_ilr,
+      Sigma_ilr = scenario$sample_params$Sigma_ilr,
+      ambient_dim = theta$ambient_dim
+    )
+    omega_grid <- diagnostic_grid$omega_grid
+    t_grid <- diagnostic_grid$t_grid
     omega_ilr <- logistic_gaussian_ilr_matrix(omega_grid)
 
     for (i in seq_len(nrow(omega_ilr))) {

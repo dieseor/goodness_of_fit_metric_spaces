@@ -3387,7 +3387,7 @@ prepare_hvmf_fast_multiplier <- function(spec,
 
   sample_fn <- function(n_aux, par) {
     theta_state <- state_from_par(par)
-    rhvmf_h2_gig(n_aux, mu = theta_state$mu, kappa = theta_state$kappa)
+    rhvmf_h2_polar(n_aux, mu = theta_state$mu, kappa = theta_state$kappa)
   }
 
   prepare_fast_multiplier_score_model(
@@ -4572,6 +4572,11 @@ make_axial_truncnorm_mixture2_spec <- function(distance_type = c("euclidean")) {
 small_circle_model_spec_path <- resolve_bootstrap_path("bootstrap", "small_circle_model_spec.R")
 if (!exists("make_small_circle_spec", mode = "function") && file.exists(small_circle_model_spec_path)) {
   source(small_circle_model_spec_path)
+}
+
+watson_model_spec_path <- resolve_bootstrap_path("bootstrap", "watson_model_spec.R")
+if (!exists("make_watson_spec", mode = "function") && file.exists(watson_model_spec_path)) {
+  source(watson_model_spec_path)
 }
 
 small_circle_symmetric_mixture2_model_spec_path <- resolve_bootstrap_path("bootstrap", "small_circle_symmetric_mixture2_model_spec.R")

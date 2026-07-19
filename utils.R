@@ -233,18 +233,23 @@ normalize_hvmf_h2_data <- function(data, tol = 1e-10) {
   data
 }
 
-#' Generate HvMF samples on H^2 using the Nielsen-Okamura GIG mixture
+#' Generate HvMF samples on H^2 by the polar construction
 #'
-#' This sampler targets the hyperboloid model under the Minkowski convention
+#' This implementation follows the radial inverse-CDF construction used in
+#' `oob_balls/simulations_H2`.  In particular, it retains its numerical
+#' regularisation: integration up to `upper = 3` and uniforms in `[0, 0.99)`.
+#' It targets the upper hyperboloid under the Minkowski convention
 #' \eqn{\langle x, y \rangle_M = -x_1 y_1 + x_2 y_2 + x_3 y_3}.
 #'
 #' @param n Number of samples to draw
 #' @param mu Mean direction in H^2
 #' @param kappa Strictly positive concentration parameter
-#' @param ... Unused; reserved for future extensions
 #' @param check Logical flag to validate inputs and outputs
 #' @return An n x 3 matrix with rows in H^2
-rhvmf_h2_gig <- function(n, mu, kappa, ..., check = TRUE) {
+hvmf_polar_sample_core <- local({
+  quantile_cache <- new.env(parent = emptyenv())
+
+  function(n, mu, kappa, delta = 0, check = TRUE) {
   n <- as.integer(n)
   if (length(n) != 1L || !is.finite(n) || n < 1L) {
     stop("`n` must be a strictly positive integer.")
@@ -263,20 +268,75 @@ rhvmf_h2_gig <- function(n, mu, kappa, ..., check = TRUE) {
   if (length(kappa) != 1L || !is.finite(kappa) || kappa <= 0) {
     stop("`kappa` must be a strictly positive finite scalar.")
   }
-
-  if (!requireNamespace("GIGrvg", quietly = TRUE)) {
-    stop("Package 'GIGrvg' is required for rhvmf_h2_gig(). Install it with install.packages(\"GIGrvg\").")
+  delta <- as.numeric(delta)
+  if (length(delta) != 1L || !is.finite(delta) || delta < 0 || delta > pi) {
+    stop("`delta` must be a finite scalar in [0, pi].")
   }
 
-  s <- GIGrvg::rgig(n, lambda = 0.5, chi = 1, psi = kappa^2)
-  if (any(!is.finite(s)) || any(s <= 0)) {
-    stop("The GIG sampler returned nonpositive or non-finite values.")
+  if (!requireNamespace("gbutils", quietly = TRUE)) {
+    stop("Package 'gbutils' is required for the polar HvMF sampler.")
+  }
+  if (!requireNamespace("rotasym", quietly = TRUE)) {
+    stop("Package 'rotasym' is required for the polar HvMF sampler.")
   }
 
-  x1 <- stats::rnorm(n, mean = s * kappa * mu[[2L]], sd = sqrt(s))
-  x2 <- stats::rnorm(n, mean = s * kappa * mu[[3L]], sd = sqrt(s))
-  x0 <- sqrt(1 + x1^2 + x2^2)
-  x <- cbind(x0, x1, x2)
+  chi <- acosh(max(mu[[1L]], 1))
+  theta <- atan2(mu[[3L]], mu[[2L]])
+  upper <- 3
+  cache_key <- paste(formatC(kappa, digits = 17, format = "fg"),
+                     formatC(chi, digits = 17, format = "fg"), sep = "_")
+
+  if (exists(cache_key, envir = quantile_cache, inherits = FALSE)) {
+    quantile_values <- get(cache_key, envir = quantile_cache, inherits = FALSE)
+  } else {
+    f_u <- function(u) {
+      scaled_bessel <- besselI(kappa * sinh(chi) * sinh(u), nu = 0, expon.scaled = TRUE)
+      exp(
+        log(kappa) + kappa - log(2) + u + log1p(-exp(-2 * u)) -
+          kappa / 2 * (exp(chi - u) + exp(-chi + u)) + log(scaled_bessel)
+      )
+    }
+    cdf_u <- function(upper_bounds) {
+      vapply(upper_bounds, function(upper_bound) {
+        stats::integrate(f_u, lower = 0, upper = upper_bound)$value
+      }, numeric(1))
+    }
+    probabilities <- seq(0, 1 - 1e-3, by = 0.01)
+    quantile_values <- data.frame(
+      base = probabilities,
+      quantile_values = vapply(probabilities, function(probability) {
+        gbutils::cdf2quantile(
+          p = probability,
+          lower = 0,
+          upper = upper,
+          cdf = cdf_u
+        )
+      }, numeric(1))
+    )
+    assign(cache_key, quantile_values, envir = quantile_cache)
+  }
+
+  u <- stats::approx(
+    x = quantile_values$base,
+    y = quantile_values$quantile_values,
+    xout = stats::runif(n, min = 0, max = 0.99)
+  )$y
+  lambda <- kappa * sinh(chi) * sinh(u)
+  angular <- numeric(n)
+  signs <- if (delta == 0) rep.int(0, n) else sample(c(-1, 1), size = n, replace = TRUE)
+  zero_lambda <- !is.finite(lambda) | lambda <= .Machine$double.eps
+  if (any(zero_lambda)) {
+    angular[zero_lambda] <- stats::runif(sum(zero_lambda), min = -pi, max = pi)
+  }
+  for (index in which(!zero_lambda)) {
+    unit_draw <- rotasym::r_vMF(
+      n = 1L,
+      mu = c(cos(theta + signs[[index]] * delta), sin(theta + signs[[index]] * delta)),
+      kappa = lambda[[index]]
+    )
+    angular[[index]] <- atan2(unit_draw[[2L]], unit_draw[[1L]])
+  }
+  x <- cbind(cosh(u), sinh(u) * cos(angular), sinh(u) * sin(angular))
 
   if (isTRUE(check)) {
     minkowski_norms <- -x[, 1L]^2 + rowSums(x[, -1L, drop = FALSE]^2)
@@ -289,6 +349,31 @@ rhvmf_h2_gig <- function(n, mu, kappa, ..., check = TRUE) {
   }
 
   x
+  }
+})
+
+rhvmf_h2_polar <- function(n, mu, kappa, check = TRUE) {
+  hvmf_polar_sample_core(n = n, mu = mu, kappa = kappa, delta = 0, check = check)
+}
+
+#' Generate the symmetric angular HvMF alternative on H^2
+#'
+#' The radial mechanism is identical to `rhvmf_h2_polar()`.  Conditional on
+#' the radial coordinate, the angular distribution is the equally weighted
+#' mixture of circular vMF laws centred at `theta - delta` and `theta + delta`.
+#'
+#' @param n Number of samples to draw
+#' @param mu Central direction in H^2
+#' @param kappa Strictly positive concentration parameter
+#' @param delta Nonnegative angular displacement in radians
+#' @param check Logical flag to validate inputs and outputs
+#' @return An n x 3 matrix with rows in H^2
+rhvmf_h2_angular_mixture <- function(n, mu, kappa, delta, check = TRUE) {
+  delta <- as.numeric(delta)
+  if (length(delta) != 1L || !is.finite(delta) || delta < 0 || delta > pi) {
+    stop("`delta` must be a finite scalar in [0, pi].")
+  }
+  hvmf_polar_sample_core(n = n, mu = mu, kappa = kappa, delta = delta, check = check)
 }
 
 #' Closed-form MLE for HvMF on H^2, with optional nonnegative weights
@@ -5516,6 +5601,314 @@ small_circle_mle_s2_weighted <- function(x,
   )
 }
 
+# Dimroth--Watson distribution on S^2.  This is exactly the Bingham--Mardia
+# small-circle distribution with nu = 0, parameterized by kappa >= 0.
+watson_validate_parameters <- function(mu, kappa) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  if (length(mu) != 3L) {
+    stop("The Watson implementation currently supports only S^2, i.e. `mu` of length 3.")
+  }
+  kappa <- as.numeric(kappa)
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa < 0) {
+    stop("`kappa` must be a finite scalar in [0, Inf).")
+  }
+  list(mu = mu, kappa = kappa)
+}
+
+watson_canonicalize_axis <- function(mu, tol = 1e-12) {
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = 3L)
+  first_nonzero <- which(abs(mu) > tol)[1L]
+  if (!is.na(first_nonzero) && mu[[first_nonzero]] < 0) {
+    mu <- -mu
+  }
+  mu
+}
+
+watson_log_norm_constant <- function(kappa) {
+  kappa <- as.numeric(kappa)
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa < 0) {
+    stop("`kappa` must be a finite scalar in [0, Inf).")
+  }
+  # C(kappa) = (1 / 2) integral_{-1}^1 exp(-kappa z^2) dz.
+  small_circle_log_norm_constant(kappa = kappa, nu = 0)
+}
+
+watson_axis_density <- function(z, kappa, log = FALSE) {
+  params <- watson_validate_parameters(mu = c(0, 0, 1), kappa = kappa)
+  z <- as.numeric(z)
+  out <- rep(if (log) -Inf else 0, length(z))
+  valid <- is.finite(z) & z >= -1 & z <= 1
+  if (!any(valid)) return(out)
+  log_density <- if (params$kappa == 0) {
+    rep(log(0.5), sum(valid))
+  } else {
+    -log(2) - watson_log_norm_constant(params$kappa) - params$kappa * z[valid]^2
+  }
+  out[valid] <- if (log) log_density else exp(log_density)
+  out
+}
+
+d_sph_watson_s2 <- function(x, mu, kappa, log = FALSE) {
+  params <- watson_validate_parameters(mu = mu, kappa = kappa)
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  if (ncol(x) != 3L) stop("Watson data must have three columns.")
+  z <- pmin(pmax(as.numeric(x %*% params$mu), -1), 1)
+  log_density <- -watson_log_norm_constant(params$kappa) - params$kappa * z^2
+  if (isTRUE(log)) log_density else exp(log_density)
+}
+
+watson_axis_cdf <- function(z, kappa) {
+  params <- watson_validate_parameters(mu = c(0, 0, 1), kappa = kappa)
+  z <- as.numeric(z)
+  out <- numeric(length(z))
+  out[z <= -1] <- 0
+  out[z >= 1] <- 1
+  active <- which(is.finite(z) & z > -1 & z < 1)
+  if (length(active) == 0L) return(out)
+  if (params$kappa == 0) {
+    out[active] <- (z[active] + 1) / 2
+  } else {
+    root_kappa <- sqrt(params$kappa)
+    out[active] <- 0.5 * (
+      1 + small_circle_erf(root_kappa * z[active]) / small_circle_erf(root_kappa)
+    )
+  }
+  pmin(pmax(out, 0), 1)
+}
+
+watson_axis_second_moment <- function(kappa) {
+  kappa <- as.numeric(kappa)
+  if (length(kappa) != 1L || !is.finite(kappa) || kappa < 0) {
+    stop("`kappa` must be a finite scalar in [0, Inf).")
+  }
+  if (kappa < 1e-4) {
+    return(1 / 3 - 4 * kappa / 45 + 8 * kappa^2 / 945)
+  }
+  root_kappa <- sqrt(kappa)
+  1 / (2 * kappa) - exp(-kappa) / (sqrt(pi) * root_kappa * small_circle_erf(root_kappa))
+}
+
+watson_legendre_coefficients <- function(kappa,
+                                         l_max = 150L,
+                                         quad_n = 1000L,
+                                         tol = 1e-10) {
+  params <- watson_validate_parameters(mu = c(0, 0, 1), kappa = kappa)
+  l_max <- as.integer(l_max)
+  quad_n <- as.integer(quad_n)
+  if (!is.finite(l_max) || l_max < 0L || !is.finite(quad_n) || quad_n < 2L) {
+    stop("`l_max` must be nonnegative and `quad_n` must be an integer >= 2.")
+  }
+  if (params$kappa == 0) {
+    return(list(coefficients = c(1, rep(0, l_max)), a0_error = 0, max_abs_odd = 0))
+  }
+
+  # The Watson axial density is even.  Integrate only on [0, 1] and retain
+  # the even Legendre degrees, whose odd counterparts are exactly zero.
+  # Keep the requested quadrature order after restricting to [0, 1].  Halving
+  # it is faster, but loses visible accuracy for very concentrated laws.
+  half_quad <- small_circle_gauss_legendre(quad_n)
+  z <- (half_quad$nodes + 1) / 2
+  weights <- half_quad$weights / 2
+  even_ell <- seq.int(0L, l_max - (l_max %% 2L), by = 2L)
+  legendre <- small_circle_legendre_matrix(z, l_max = max(even_ell))
+  h <- exp(-params$kappa * z^2 - watson_log_norm_constant(params$kappa))
+  coeffs <- rep(0, l_max + 1L)
+  moments_half <- as.numeric(crossprod(legendre[, even_ell + 1L, drop = FALSE], weights * h))
+  coeffs[even_ell + 1L] <- (2 * even_ell + 1) * moments_half
+  coeffs[[1L]] <- 1
+  a0_error <- abs(moments_half[[1L]] - 1)
+  if (a0_error > tol) {
+    stop(sprintf("Watson Legendre coefficient check failed: |a0 - 1| = %.3e.", a0_error))
+  }
+  odd_idx <- if (length(coeffs) < 2L) integer(0) else seq.int(2L, length(coeffs), by = 2L)
+  max_abs_odd <- if (length(odd_idx) == 0L) 0 else max(abs(coeffs[odd_idx]))
+  list(coefficients = coeffs, a0_error = a0_error, max_abs_odd = max_abs_odd)
+}
+
+watson_projection_cdf_legendre <- function(x, r, coefficients) {
+  x <- pmin(pmax(as.numeric(x), -1), 1)
+  r <- pmin(pmax(as.numeric(r), -1), 1)
+  coefficients <- as.numeric(coefficients)
+  l_max <- length(coefficients) - 1L
+  out <- (x + 1) / 2
+  even_ell <- if (l_max < 2L) integer(0) else seq.int(2L, l_max - (l_max %% 2L), by = 2L)
+  if (length(even_ell) == 0L) return(out)
+  p_r <- as.numeric(small_circle_legendre_matrix(r, l_max = l_max))
+  p_x <- small_circle_legendre_matrix(x, l_max = l_max + 1L)
+  for (ell in even_ell) {
+    out <- out + coefficients[[ell + 1L]] * p_r[[ell + 1L]] *
+      (p_x[, ell + 2L] - p_x[, ell]) / (2 * (2 * ell + 1))
+  }
+  pmin(pmax(out, 0), 1)
+}
+
+watson_projection_cdf_legendre_matrix <- function(x_matrix, r, coefficients) {
+  x_matrix <- pmin(pmax(as.matrix(x_matrix), -1), 1)
+  r <- pmin(pmax(as.numeric(r), -1), 1)
+  if (length(r) != nrow(x_matrix)) stop("`r` must have length nrow(`x_matrix`).")
+  coefficients <- as.numeric(coefficients)
+  l_max <- length(coefficients) - 1L
+  out <- (x_matrix + 1) / 2
+  even_ell <- if (l_max < 2L) integer(0) else seq.int(2L, l_max - (l_max %% 2L), by = 2L)
+  if (length(even_ell) == 0L) return(out)
+  p_r <- small_circle_legendre_matrix(r, l_max = l_max)
+  p_x <- small_circle_legendre_matrix(as.numeric(x_matrix), l_max = l_max + 1L)
+  for (ell in even_ell) {
+    basis <- matrix(
+      (p_x[, ell + 2L] - p_x[, ell]) / (2 * (2 * ell + 1)),
+      nrow = nrow(x_matrix), ncol = ncol(x_matrix)
+    )
+    out <- out + sweep(basis, 1L, coefficients[[ell + 1L]] * p_r[, ell + 1L], "*")
+  }
+  pmin(pmax(out, 0), 1)
+}
+
+watson_profile_matrix_legendre <- function(t_grid, omega_grid, mu, coefficients, distance_type = c("geodesic", "chordal")) {
+  distance_type <- match.arg(distance_type)
+  omega_grid <- jp_normalize_unit_matrix(omega_grid, arg_name = "`omega_grid`", min_ncol = 3L)
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = ncol(omega_grid))
+  t_grid <- as.numeric(t_grid)
+  upper <- if (identical(distance_type, "geodesic")) pi else 2
+  out <- matrix(0, nrow = nrow(omega_grid), ncol = length(t_grid))
+  out[, t_grid >= upper] <- 1
+  active <- which(is.finite(t_grid) & t_grid > 0 & t_grid < upper)
+  if (length(active) == 0L) return(out)
+  thresholds <- sphere_distance_to_dot_threshold(t_grid[active], distance_type)
+  out[, active] <- 1 - watson_projection_cdf_legendre_matrix(
+    matrix(thresholds, nrow = nrow(omega_grid), ncol = length(active), byrow = TRUE),
+    as.numeric(omega_grid %*% mu), coefficients
+  )
+  for (i in seq_len(nrow(out))) out[i, ] <- small_circle_monotone_clip(t_grid, out[i, ], upper)
+  out
+}
+
+watson_sample_profile_matrix_legendre <- function(X, mu, coefficients) {
+  X <- jp_normalize_unit_matrix(X, arg_name = "`X`", min_ncol = 3L)
+  mu <- jp_normalize_unit_vector(mu, arg_name = "`mu`", min_length = ncol(X))
+  dots <- pmin(pmax(X %*% t(X), -1), 1)
+  out <- 1 - watson_projection_cdf_legendre_matrix(dots, as.numeric(X %*% mu), coefficients)
+  for (i in seq_len(nrow(out))) out[i, ] <- small_circle_monotone_clip(acos(dots[i, ]), out[i, ], pi)
+  out
+}
+
+distance_profile_watson <- function(omega,
+                                    t_values,
+                                    mu,
+                                    kappa,
+                                    distance_type = c("geodesic", "chordal"),
+                                    method = c("legendre", "integral"),
+                                    l_max = 150L,
+                                    quad_n = 1000L,
+                                    tol = 1e-10) {
+  distance_type <- match.arg(distance_type)
+  method <- match.arg(method)
+  params <- watson_validate_parameters(mu, kappa)
+  if (identical(method, "integral")) {
+    return(small_circle_distance_profile_integral(omega, t_values, params$mu, params$kappa, 0, distance_type, quad_n))
+  }
+  t_values <- as.numeric(t_values)
+  upper <- if (identical(distance_type, "geodesic")) pi else 2
+  out <- numeric(length(t_values))
+  out[t_values >= upper] <- 1
+  active <- which(is.finite(t_values) & t_values > 0 & t_values < upper)
+  if (length(active) == 0L) return(out)
+  if (params$kappa == 0) {
+    out[active] <- if (identical(distance_type, "geodesic")) (1 - cos(t_values[active])) / 2 else t_values[active]^2 / 4
+    return(out)
+  }
+  omega <- jp_normalize_unit_vector(omega, arg_name = "`omega`", min_length = 3L)
+  coeffs <- watson_legendre_coefficients(params$kappa, l_max, quad_n, tol)$coefficients
+  out[active] <- 1 - watson_projection_cdf_legendre(
+    sphere_distance_to_dot_threshold(t_values[active], distance_type), sum(omega * params$mu), coeffs
+  )
+  small_circle_monotone_clip(t_values, out, upper)
+}
+
+distance_profile_watson_grid <- function(omega_grid,
+                                         mu,
+                                         kappa,
+                                         t_grid,
+                                         distance_type = c("geodesic", "chordal"),
+                                         l_max = 150L,
+                                         quad_n = 1000L,
+                                         tol = 1e-10) {
+  distance_type <- match.arg(distance_type)
+  params <- watson_validate_parameters(mu, kappa)
+  if (params$kappa == 0) {
+    base <- if (identical(distance_type, "geodesic")) (1 - cos(t_grid)) / 2 else t_grid^2 / 4
+    return(matrix(base, nrow = nrow(omega_grid), ncol = length(t_grid), byrow = TRUE))
+  }
+  coeffs <- watson_legendre_coefficients(params$kappa, l_max, quad_n, tol)$coefficients
+  watson_profile_matrix_legendre(t_grid, omega_grid, params$mu, coeffs, distance_type)
+}
+
+distance_profile_watson_cvm_grid <- function(X,
+                                             mu,
+                                             kappa,
+                                             l_max = 150L,
+                                             quad_n = 1000L,
+                                             tol = 1e-10) {
+  params <- watson_validate_parameters(mu, kappa)
+  X <- jp_normalize_unit_matrix(X, arg_name = "`X`", min_ncol = 3L)
+  if (params$kappa == 0) return((1 - pmin(pmax(X %*% t(X), -1), 1)) / 2)
+  coeffs <- watson_legendre_coefficients(params$kappa, l_max, quad_n, tol)$coefficients
+  watson_sample_profile_matrix_legendre(X, params$mu, coeffs)
+}
+
+r_sph_watson <- function(n, mu, kappa, check = TRUE) {
+  # Keeping the same inverse-CDF construction gives bitwise-identical draws
+  # to r_sph_small_circle(..., nu = 0) under a common RNG state.
+  params <- watson_validate_parameters(mu, kappa)
+  r_sph_small_circle(n = n, mu = params$mu, kappa = params$kappa, nu = 0, check = check)
+}
+
+watson_weighted_loglik_s2 <- function(mu, kappa, x, prob_weights = NULL) {
+  params <- watson_validate_parameters(mu, kappa)
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  weights <- if (is.null(prob_weights)) rep(1 / nrow(x), nrow(x)) else jp_normalize_probability_weights(prob_weights, nrow(x))
+  z <- as.numeric(x %*% params$mu)
+  -watson_log_norm_constant(params$kappa) - params$kappa * sum(weights * z^2)
+}
+
+watson_mle_s2_weighted <- function(x, weights = NULL, control = list()) {
+  x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
+  if (ncol(x) != 3L) stop("Watson data must be a non-empty S^2 sample with three columns.")
+  prob_weights <- if (is.null(weights)) rep(1 / nrow(x), nrow(x)) else jp_normalize_probability_weights(weights, nrow(x))
+  s_matrix <- crossprod(sweep(x, 1L, sqrt(prob_weights), "*"))
+  eig <- eigen(s_matrix, symmetric = TRUE)
+  min_idx <- which.min(eig$values)
+  mu_hat <- watson_canonicalize_axis(eig$vectors[, min_idx])
+  q_hat <- max(0, min(1 / 3, eig$values[[min_idx]]))
+  kappa_max <- as.numeric(control$watson_kappa_max %||% 1e6)
+  uniform_tol <- as.numeric(control$watson_uniform_tol %||% 1e-10)
+  if (!is.finite(kappa_max) || kappa_max <= 0 || !is.finite(uniform_tol) || uniform_tol <= 0) {
+    stop("Watson MLE controls `watson_kappa_max` and `watson_uniform_tol` must be positive and finite.")
+  }
+  if (q_hat >= 1 / 3 - uniform_tol) {
+    kappa_hat <- 0
+    boundary <- "uniform"
+  } else if (q_hat <= watson_axis_second_moment(kappa_max)) {
+    kappa_hat <- kappa_max
+    boundary <- "kappa_max"
+  } else {
+    kappa_hat <- stats::uniroot(
+      function(kappa) watson_axis_second_moment(kappa) - q_hat,
+      interval = c(0, kappa_max), tol = control$watson_root_tol %||% 1e-10
+    )$root
+    boundary <- "interior"
+  }
+  list(
+    mu = mu_hat,
+    kappa = kappa_hat,
+    loglik = watson_weighted_loglik_s2(mu_hat, kappa_hat, x, prob_weights),
+    eigenvalues = eig$values,
+    q_hat = q_hat,
+    boundary = boundary,
+    regular = identical(boundary, "interior"),
+    weighted_mle = TRUE
+  )
+}
+
 small_circle_benchmark_nu_optimization <- function(n = 200L,
                                                    n_rep = 40L,
                                                    true_mu = c(0, 0, 1),
@@ -8360,6 +8753,34 @@ distance_profile_beta_mixture2_grid <- function(omega_grid,
       weighted_density = weighted_density,
       distance_type = distance_type
     )
+    # At the two axial directions the projected law is exactly a beta
+    # mixture CDF.  Gauss--Legendre quadrature converges slowly there because
+    # the projection kernel becomes an indicator and beta shapes need not be
+    # integer.  Use the closed form, consistently with the scalar evaluator.
+    thresholds <- sphere_distance_to_dot_threshold(t_grid, distance_type = distance_type)
+    r_values <- as.numeric(omega_grid %*% theta$mu)
+    pos_idx <- which(abs(r_values - 1) <= 1e-12)
+    if (length(pos_idx) > 0L) {
+      out[pos_idx, ] <- 1 - beta_mixture2_cdf_y(
+        y = (thresholds + 1) / 2,
+        weight1 = theta$weight1,
+        alpha1 = theta$alpha1,
+        beta1 = theta$beta1,
+        alpha2 = theta$alpha2,
+        beta2 = theta$beta2
+      )
+    }
+    neg_idx <- which(abs(r_values + 1) <= 1e-12)
+    if (length(neg_idx) > 0L) {
+      out[neg_idx, ] <- beta_mixture2_cdf_y(
+        y = (1 - thresholds) / 2,
+        weight1 = theta$weight1,
+        alpha1 = theta$alpha1,
+        beta1 = theta$beta1,
+        alpha2 = theta$alpha2,
+        beta2 = theta$beta2
+      )
+    }
     return(out)
   }
 
@@ -8416,12 +8837,36 @@ distance_profile_beta_mixture2_cvm_grid <- function(X,
       alpha2 = theta$alpha2,
       beta2 = theta$beta2
     )
-    return(projection_sample_profile_matrix_integral(
+    out <- projection_sample_profile_matrix_integral(
       X = X,
       mu = theta$mu,
       z_nodes = quad$nodes,
       weighted_density = weighted_density
-    ))
+    )
+    r_values <- as.numeric(X %*% theta$mu)
+    pos_idx <- which(abs(r_values - 1) <= 1e-12)
+    if (length(pos_idx) > 0L) {
+      out[pos_idx, ] <- 1 - beta_mixture2_cdf_y(
+        y = (dot_products[pos_idx, , drop = FALSE] + 1) / 2,
+        weight1 = theta$weight1,
+        alpha1 = theta$alpha1,
+        beta1 = theta$beta1,
+        alpha2 = theta$alpha2,
+        beta2 = theta$beta2
+      )
+    }
+    neg_idx <- which(abs(r_values + 1) <= 1e-12)
+    if (length(neg_idx) > 0L) {
+      out[neg_idx, ] <- beta_mixture2_cdf_y(
+        y = (1 - dot_products[neg_idx, , drop = FALSE]) / 2,
+        weight1 = theta$weight1,
+        alpha1 = theta$alpha1,
+        beta1 = theta$beta1,
+        alpha2 = theta$alpha2,
+        beta2 = theta$beta2
+      )
+    }
+    return(pmin(pmax(out, 0), 1))
   }
 
   coeffs <- beta_mixture2_legendre_coefficients(

@@ -5,13 +5,9 @@ on.exit(setwd(oldwd), add = TRUE)
 
 source(file.path("bootstrap", "calibration_study.R"))
 
-test_that("HvMF calibration loader reads prepared H^2 samples from disk", {
-  scenario <- make_hvmf_composite_calibration_scenario(50)
-  sample_data <- load_hvmf_calibration_sample(
-    scenario = scenario,
-    n = 50,
-    replicate_id = 1
-  )
+test_that("HvMF calibration simulates polar H^2 samples in memory", {
+  scenario <- make_hvmf_composite_calibration_scenario(5)
+  sample_data <- simulate_h0_sample(scenario = scenario, n = 50)
 
   expect_true(is.matrix(sample_data))
   expect_equal(dim(sample_data), c(50, 3))
@@ -20,8 +16,8 @@ test_that("HvMF calibration loader reads prepared H^2 samples from disk", {
   expect_true(all(sample_data[, 1] > 0))
 })
 
-test_that("HvMF composite CvM calibration runs on prepared disk samples", {
-  scenario <- make_hvmf_composite_calibration_scenario(50)
+test_that("HvMF composite CvM calibration runs with polar samples", {
+  scenario <- make_hvmf_composite_calibration_scenario(5)
   results <- run_calibration_scenario(
     scenario = scenario,
     n_values = 50,
@@ -42,13 +38,9 @@ test_that("HvMF composite CvM calibration runs on prepared disk samples", {
   expect_true(all(results$p_value >= 0 & results$p_value <= 1))
 })
 
-test_that("HvMF simple KS and CvM calibration runs on prepared disk samples", {
-  scenario <- make_hvmf_simple_calibration_scenario(50)
-  sample_data <- load_hvmf_calibration_sample(
-    scenario = scenario,
-    n = 50,
-    replicate_id = 1
-  )
+test_that("HvMF simple KS and CvM calibration runs with polar samples", {
+  scenario <- make_hvmf_simple_calibration_scenario(5)
+  sample_data <- simulate_h0_sample(scenario = scenario, n = 50)
   ks_grid <- make_hvmf_ks_grid(sample_data, mu = scenario$sample_params$mu)
 
   expect_equal(dim(ks_grid$omega_grid), c(10, 3))

@@ -31,6 +31,11 @@ if (!exists("make_small_circle_spec", mode = "function") && file.exists(small_ci
   source(small_circle_model_spec_path)
 }
 
+watson_model_spec_path <- resolve_multiplier_bootstrap_path("bootstrap", "watson_model_spec.R")
+if (!exists("make_watson_spec", mode = "function") && file.exists(watson_model_spec_path)) {
+  source(watson_model_spec_path)
+}
+
 small_circle_symmetric_mixture2_model_spec_path <- resolve_multiplier_bootstrap_path("bootstrap", "small_circle_symmetric_mixture2_model_spec.R")
 if (!exists("make_small_circle_symmetric_mixture2_spec", mode = "function") &&
     file.exists(small_circle_symmetric_mixture2_model_spec_path)) {
@@ -2241,6 +2246,7 @@ run_reestimated_bootstrap_chunks <- function(weight_matrix,
   model_specs_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "model_specs.R"), winslash = "/", mustWork = TRUE)
   cardioid_model_spec_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "cardioid_model_spec.R"), winslash = "/", mustWork = TRUE)
   small_circle_model_spec_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "small_circle_model_spec.R"), winslash = "/", mustWork = TRUE)
+  watson_model_spec_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "watson_model_spec.R"), winslash = "/", mustWork = TRUE)
   small_circle_symmetric_mixture2_model_spec_path_worker <-
     normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "small_circle_symmetric_mixture2_model_spec.R"), winslash = "/", mustWork = TRUE)
   small_circle_weighted_mixture2_model_spec_path_worker <-
@@ -2256,6 +2262,7 @@ run_reestimated_bootstrap_chunks <- function(weight_matrix,
       "model_specs_path_worker",
       "cardioid_model_spec_path_worker",
       "small_circle_model_spec_path_worker",
+      "watson_model_spec_path_worker",
       "small_circle_symmetric_mixture2_model_spec_path_worker",
       "small_circle_weighted_mixture2_model_spec_path_worker"
     ),
@@ -2266,6 +2273,7 @@ run_reestimated_bootstrap_chunks <- function(weight_matrix,
     source(model_specs_path_worker)
     source(cardioid_model_spec_path_worker)
     source(small_circle_model_spec_path_worker)
+    source(watson_model_spec_path_worker)
     source(small_circle_symmetric_mixture2_model_spec_path_worker)
     source(small_circle_weighted_mixture2_model_spec_path_worker)
     NULL
@@ -2305,6 +2313,10 @@ run_reestimated_bootstrap_chunks <- function(weight_matrix,
     "normalize_small_circle_theta",
     "fit_small_circle_theta",
     "make_small_circle_spec",
+    "normalize_watson_data",
+    "normalize_watson_theta",
+    "fit_watson_theta",
+    "make_watson_spec",
     "normalize_small_circle_symmetric_mixture2_data",
     "normalize_small_circle_symmetric_mixture2_theta",
     "fit_small_circle_symmetric_mixture2_theta",
@@ -3040,6 +3052,41 @@ multiplier_bootstrap_small_circle <- function(data,
   multiplier_bootstrap_gof(
     data = data,
     spec = spec,
+    null = null,
+    statistics = statistics,
+    ks_grid = ks_grid,
+    B = B,
+    alpha = alpha,
+    multipliers = multipliers,
+    n_cores = n_cores,
+    seed = seed,
+    bootstrap_method = bootstrap_method,
+    keep = keep,
+    control = control
+  )
+}
+
+multiplier_bootstrap_watson <- function(data,
+                                        null,
+                                        statistics = c("ks", "cvm"),
+                                        ks_grid = NULL,
+                                        B = 5000,
+                                        alpha = 0.05,
+                                        multipliers = NULL,
+                                        n_cores = 1,
+                                        seed = NULL,
+                                        bootstrap_method = c("reestimated", "fast_multiplier"),
+                                        keep = list(
+                                          observed_process = TRUE,
+                                          bootstrap_statistics = TRUE,
+                                          bootstrap_thetas = FALSE
+                                        ),
+                                        control = list(),
+                                        distance_type = c("chordal", "geodesic")) {
+  distance_type <- match.arg(distance_type)
+  multiplier_bootstrap_gof(
+    data = data,
+    spec = make_watson_spec(distance_type = distance_type),
     null = null,
     statistics = statistics,
     ks_grid = ks_grid,

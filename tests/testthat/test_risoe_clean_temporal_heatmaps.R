@@ -1,4 +1,7 @@
-source(file.path("..", "..", "wind", "plot_risoe_clean_temporal_heatmaps.R"))
+oldwd <- setwd(normalizePath(file.path("..", "..")))
+on.exit(setwd(oldwd), add = TRUE)
+
+source(file.path("real_data", "wind", "plot_risoe_clean_temporal_heatmaps.R"))
 
 test_that("apply_height_cleaning enforces conservative cutoffs", {
   df <- data.frame(

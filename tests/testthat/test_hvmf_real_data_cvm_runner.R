@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("wind", "run_hvmf_real_data_cvm.R"))
+source(file.path("real_data", "wind", "run_hvmf_real_data_cvm.R"))
 
 test_that("coerce_flag_values handles logical-like inputs robustly", {
   expect_equal(coerce_flag_values(c("True", "False", "1", "0", "", "no")), c(TRUE, FALSE, TRUE, FALSE, FALSE, FALSE))

@@ -32,6 +32,12 @@ if (length(missing_packages) > 0L) {
   stop("Missing required package(s): ", paste(missing_packages, collapse = ", "), call. = FALSE)
 }
 
+plot_height_m <- 125L
+plot_speed_col <- "ws125"
+plot_direction_col <- "wd125"
+plot_clean_before <- as.Date("2004-12-01")
+plot_bandwidth_note <- ""
+
 select_noon_all_months <- function(df, fixed_tz = "UTC") {
   date <- as.Date(df$datetime, tz = fixed_tz)
   noon <- as.POSIXct(paste(date, "12:00:00"), tz = fixed_tz)
@@ -68,8 +74,10 @@ build_case <- function(selected, window_id, pattern_id, years = 1996:2003) {
   days <- day_patterns[[pattern_id]]
   keep <- selected$year %in% years & selected$month %in% months & selected$day %in% days
   rows <- selected[keep, , drop = FALSE]
-  rows <- rows[as.Date(rows$datetime, tz = "UTC") < as.Date("2004-12-01"), , drop = FALSE]
-  rows <- rows[is.finite(rows$ws125) & is.finite(rows$wd125) & rows$ws125 > 0, , drop = FALSE]
+  rows <- rows[as.Date(rows$datetime, tz = "UTC") < plot_clean_before, , drop = FALSE]
+  valid <- is.finite(rows[[plot_speed_col]]) &
+    is.finite(rows[[plot_direction_col]]) & rows[[plot_speed_col]] > 0
+  rows <- rows[valid, , drop = FALSE]
   rownames(rows) <- NULL
 
   if (nrow(rows) < 2L) {
@@ -79,8 +87,8 @@ build_case <- function(selected, window_id, pattern_id, years = 1996:2003) {
     stop("More than one observation was selected on the same date.", call. = FALSE)
   }
 
-  speed <- as.numeric(rows$ws125)
-  theta <- ((as.numeric(rows$wd125) %% 360) + 360) %% 360 * pi / 180
+  speed <- as.numeric(rows[[plot_speed_col]])
+  theta <- ((as.numeric(rows[[plot_direction_col]]) %% 360) + 360) %% 360 * pi / 180
   speed_mean <- mean(speed)
   r <- speed / speed_mean
   z <- log(r)
@@ -362,10 +370,10 @@ plot_pattern <- function(cases, pattern_id, output_dir) {
     ggplot2::labs(
       x = expression("Wind direction " * theta * " (0° and 360° identified)"),
       y = expression("Scaled speed " * r == s / bar(s) * " (log scale)"),
-      title = "Risø 125 m wind data on the unwrapped log-speed cylinder",
+      title = sprintf("Risø %d m wind data on the unwrapped log-speed cylinder", plot_height_m),
       subtitle = sprintf(
-        "%s: days %s; closest-to-noon observations, 1996-2003; HDR contours: 25%%, 50%%, 75%%, 90%%",
-        pattern_id, paste(day_patterns[[pattern_id]], collapse = ", ")
+        "%s: days %s; closest-to-noon observations, 1996-2003%s; HDR contours: 25%%, 50%%, 75%%, 90%%",
+        pattern_id, paste(day_patterns[[pattern_id]], collapse = ", "), plot_bandwidth_note
       )
     ) +
     ggplot2::theme_bw(base_size = 10) +
@@ -380,7 +388,10 @@ plot_pattern <- function(cases, pattern_id, output_dir) {
     )
 
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-  stem <- file.path(output_dir, paste0("risoe_125m_log_cylinder_density_contours_", pattern_id))
+  stem <- file.path(
+    output_dir,
+    sprintf("risoe_%dm_log_cylinder_density_contours_%s", plot_height_m, pattern_id)
+  )
   figure_height <- 3 * length(cases) + 1.3
   ggplot2::ggsave(paste0(stem, ".pdf"), p, width = 8.3, height = figure_height, units = "in")
   ggplot2::ggsave(
@@ -436,7 +447,9 @@ run_cylinder_plots <- function(
     plot_pattern(cases, pattern_id, output_dir)
   })
   summary <- do.call(rbind, all_summaries)
-  utils::write.csv(summary, file.path(output_dir, "risoe_125m_log_cylinder_density_contours_summary.csv"),
+  utils::write.csv(summary, file.path(
+    output_dir, sprintf("risoe_%dm_log_cylinder_density_contours_summary.csv", plot_height_m)
+  ),
                    row.names = FALSE)
   invisible(summary)
 }

@@ -1,0 +1,8 @@
+stage: large_delta_screen
+updated: 2026-07-16 18:34:40
+families: hvmf
+candidates: kappa_1_delta_0.6283, kappa_1_delta_0.7854, kappa_1_delta_1.047, kappa_2_delta_0.6283, kappa_2_delta_0.7854, kappa_2_delta_1.047, kappa_5_delta_0.6283, kappa_5_delta_0.7854, kappa_5_delta_1.047
+completed: 900/900
+elapsed_seconds: 462.5
+mean_seconds_per_job: 5.052
+eta_seconds: 0.0

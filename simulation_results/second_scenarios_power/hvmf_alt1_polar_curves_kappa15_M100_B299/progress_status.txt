@@ -1,0 +1,8 @@
+stage: pilot_curves_kappa15
+updated: 2026-07-16 01:43:24
+families: hvmf_alt1_polar
+candidates: kappa_1.5
+completed: 900/900
+elapsed_seconds: 295.4
+mean_seconds_per_job: 2.312
+eta_seconds: 0.0

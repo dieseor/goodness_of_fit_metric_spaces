@@ -1,0 +1,8 @@
+stage: target_n200_beta1_kappa15
+updated: 2026-07-16 01:37:51
+families: hvmf_alt1_polar
+candidates: kappa_1.5
+completed: 100/100
+elapsed_seconds: 48.7
+mean_seconds_per_job: 4.793
+eta_seconds: 0.0

@@ -1,0 +1,8 @@
+stage: final_normal
+updated: 2026-07-16 22:12:10
+families: normal
+candidates: nu_3
+completed: 3000/3000
+elapsed_seconds: 13021.7
+mean_seconds_per_job: 14.505
+eta_seconds: 0.0

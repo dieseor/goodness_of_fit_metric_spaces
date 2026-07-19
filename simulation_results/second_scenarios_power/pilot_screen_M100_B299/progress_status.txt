@@ -1,0 +1,8 @@
+stage: pilot_screen
+updated: 2026-07-14 18:19:57
+families: normal, lg, vmf, hvmf
+candidates: nu_3, nu_4, nu_6, nu_10, nu_20, rho_0.1, rho_0.3, rho_0.5, kappa_5_delta_0.05, kappa_5_delta_0.1, kappa_5_delta_0.2, kappa_25_delta_0.05, kappa_25_delta_0.1, kappa_25_delta_0.2, kappa_50_delta_0.05, kappa_50_delta_0.1, kappa_50_delta_0.2
+completed: 2200/2200
+elapsed_seconds: 0.0
+mean_seconds_per_job: 1.336
+eta_seconds: 0.0

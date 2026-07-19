@@ -146,7 +146,10 @@ test_that("rotational beta-mixture grid and CvM helpers match naive row-wise eva
     jp_normalize_unit_vector(c(0.4, 0.2, 0.89), arg_name = "omega", min_length = 3L)
   )
   t_grid <- seq(0.1, pi - 0.1, length.out = 11)
-  x <- r_sph_beta_mixture2(
+  x <- rbind(
+    theta$mu,
+    -theta$mu,
+    r_sph_beta_mixture2(
     n = 6,
     mu = theta$mu,
     weight1 = theta$weight1,
@@ -154,6 +157,7 @@ test_that("rotational beta-mixture grid and CvM helpers match naive row-wise eva
     beta1 = theta$beta1,
     alpha2 = theta$alpha2,
     beta2 = theta$beta2
+    )
   )
   dot_products <- pmin(pmax(x %*% t(x), -1), 1)
 
@@ -192,6 +196,33 @@ test_that("rotational beta-mixture grid and CvM helpers match naive row-wise eva
       tol = 1e-10
     )
     expect_equal(grid_fast, grid_naive, tolerance = tol_match)
+    if (identical(method, "integral")) {
+      thresholds <- cos(t_grid)
+      expect_equal(
+        grid_fast[1L, ],
+        1 - beta_mixture2_cdf_y(
+          y = (thresholds + 1) / 2,
+          weight1 = theta$weight1,
+          alpha1 = theta$alpha1,
+          beta1 = theta$beta1,
+          alpha2 = theta$alpha2,
+          beta2 = theta$beta2
+        ),
+        tolerance = 1e-12
+      )
+      expect_equal(
+        grid_fast[2L, ],
+        beta_mixture2_cdf_y(
+          y = (1 - thresholds) / 2,
+          weight1 = theta$weight1,
+          alpha1 = theta$alpha1,
+          beta1 = theta$beta1,
+          alpha2 = theta$alpha2,
+          beta2 = theta$beta2
+        ),
+        tolerance = 1e-12
+      )
+    }
 
     cvm_naive <- t(vapply(seq_len(nrow(x)), function(i) {
       distance_profile_beta_mixture2(
@@ -225,6 +256,69 @@ test_that("rotational beta-mixture grid and CvM helpers match naive row-wise eva
     )
     expect_equal(cvm_fast, cvm_naive, tolerance = tol_match)
   }
+})
+
+test_that("rotational beta-mixture Legendre profiles agree with an adaptive off-axis reference", {
+  theta <- beta_mixture2_normalize_theta(list(
+    mu = jp_normalize_unit_vector(c(0.2, -0.35, 0.915), arg_name = "mu", min_length = 3L),
+    weight1 = 0.4,
+    alpha1 = 2.5,
+    beta1 = 8,
+    alpha2 = 9,
+    beta2 = 2.5
+  ))
+  omega <- jp_normalize_unit_vector(c(0.4, 0.2, 0.89), arg_name = "omega", min_length = 3L)
+  t_grid <- c(0.3, 1.3, 2.4)
+  r_value <- sum(omega * theta$mu)
+
+  adaptive_tail <- function(t_value) {
+    threshold <- cos(t_value)
+    breakpoints <- sort(unique(c(
+      -1,
+      pmin(1, pmax(-1, threshold * r_value - sqrt((1 - r_value^2) * (1 - threshold^2)))),
+      pmin(1, pmax(-1, threshold * r_value + sqrt((1 - r_value^2) * (1 - threshold^2)))),
+      1
+    )))
+    integrand <- function(z) {
+      as.numeric(small_circle_projection_kernel(threshold, z, r_value)) *
+        beta_mixture2_density_gz(
+          z = z,
+          weight1 = theta$weight1,
+          alpha1 = theta$alpha1,
+          beta1 = theta$beta1,
+          alpha2 = theta$alpha2,
+          beta2 = theta$beta2
+        )
+    }
+    sum(vapply(seq_len(length(breakpoints) - 1L), function(i) {
+      stats::integrate(
+        integrand,
+        lower = breakpoints[[i]],
+        upper = breakpoints[[i + 1L]],
+        rel.tol = 1e-11,
+        abs.tol = 1e-12,
+        subdivisions = 2000L
+      )$value
+    }, numeric(1)))
+  }
+
+  reference <- vapply(t_grid, adaptive_tail, numeric(1))
+  legendre <- distance_profile_beta_mixture2(
+    omega = omega,
+    t_values = t_grid,
+    mu = theta$mu,
+    weight1 = theta$weight1,
+    alpha1 = theta$alpha1,
+    beta1 = theta$beta1,
+    alpha2 = theta$alpha2,
+    beta2 = theta$beta2,
+    method = "legendre",
+    l_max = 80L,
+    quad_n = 250L,
+    tol = 1e-10
+  )
+
+  expect_equal(legendre, reference, tolerance = 1e-8)
 })
 
 test_that("rotational beta-mixture sampler and weighted MLE behave coherently", {
@@ -444,6 +538,76 @@ test_that("rotational uniform-beta-mixture Legendre and integral profiles agree"
   )
 
   expect_lt(max(abs(legendre - integral)), 5e-4)
+})
+
+test_that("uniform-beta-mixture comet-like Legendre profiles at L = 500 meet the adaptive reference", {
+  # These are the two fitted comet regimes, rotated to mu = (0, 0, 1).
+  # Their beta factors have endpoint exponents below one, so they test the
+  # nonsmooth cases that determine the production truncation order.
+  theta_cases <- list(
+    list(weight_uniform = 0.120405527162476, alpha = 39.2691164506156, beta = 0.768337546730129),
+    list(weight_uniform = 0.321699923235549, alpha = 0.684981608365394, beta = 0.736499406558218)
+  )
+  mu <- c(0, 0, 1)
+  r_values <- c(0, 0.25, 0.5, 0.75, 0.95)
+  t_values <- c(0.05, 0.2, 0.5, 1, 1.5, 2.2, 2.8)
+
+  adaptive_tail <- function(theta, r_value, t_value) {
+    threshold <- cos(t_value)
+    radial_factor <- sqrt((1 - r_value^2) * (1 - threshold^2))
+    breakpoints <- sort(unique(c(
+      -1,
+      pmin(1, pmax(-1, threshold * r_value - radial_factor)),
+      pmin(1, pmax(-1, threshold * r_value + radial_factor)),
+      1
+    )))
+    integrand <- function(z) {
+      as.numeric(small_circle_projection_kernel(threshold, z, r_value)) *
+        uniform_beta_mixture_density_gz(
+          z = z,
+          weight_uniform = theta$weight_uniform,
+          alpha = theta$alpha,
+          beta = theta$beta
+        )
+    }
+    sum(vapply(seq_len(length(breakpoints) - 1L), function(i) {
+      stats::integrate(
+        integrand,
+        lower = breakpoints[[i]],
+        upper = breakpoints[[i + 1L]],
+        rel.tol = 1e-10,
+        abs.tol = 1e-11,
+        subdivisions = 5000L
+      )$value
+    }, numeric(1)))
+  }
+
+  omega_for_r <- function(r_value) {
+    c(sqrt(1 - r_value^2), 0, r_value)
+  }
+
+  for (theta in theta_cases) {
+    errors <- vapply(r_values, function(r_value) {
+      omega <- omega_for_r(r_value)
+      reference <- vapply(t_values, function(t_value) {
+        adaptive_tail(theta, r_value, t_value)
+      }, numeric(1))
+      approximation <- distance_profile_uniform_beta_mixture(
+        omega = omega,
+        t_values = t_values,
+        mu = mu,
+        weight_uniform = theta$weight_uniform,
+        alpha = theta$alpha,
+        beta = theta$beta,
+        method = "legendre",
+        l_max = 500L,
+        quad_n = 300L,
+        tol = 1e-10
+      )
+      max(abs(approximation - reference))
+    }, numeric(1))
+    expect_lt(max(errors), 3e-6)
+  }
 })
 
 test_that("rotational uniform-beta-mixture grid and CvM helpers match naive row-wise evaluation", {

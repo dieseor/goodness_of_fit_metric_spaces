@@ -1,5 +1,5 @@
-source(file.path("wind", "preprocess_risoe_modern_hvmf.R"))
-source(file.path("wind", "run_hvmf_real_data_cvm.R"))
+source(file.path("real_data", "wind", "preprocess_risoe_modern_hvmf.R"))
+source(file.path("real_data", "wind", "run_hvmf_real_data_cvm.R"))
 source(file.path("bootstrap", "multiplier_bootstrap.R"))
 
 jensen_like_day_patterns <- function() {
@@ -143,7 +143,7 @@ make_jensen_like_screening_configs <- function(output_dir = file.path("wind", "j
   configs
 }
 
-run_risoe_jensen_like_screening <- function(input_nc = "wind/risoe_m_concurent.nc",
+run_risoe_jensen_like_screening <- function(input_nc = "real_data/wind/risoe_m_concurent.nc",
                                             output_dir = file.path("wind", "jensen_like_screening"),
                                             B = 5000L,
                                             n_cores = 10L,

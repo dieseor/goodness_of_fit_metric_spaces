@@ -1,0 +1,8 @@
+stage: final_hvmf_angular_kappa2_delta_pi5
+updated: 2026-07-18 08:24:27
+families: hvmf
+candidates: kappa_2_delta_0.6283
+completed: 12000/12000
+elapsed_seconds: 47210.9
+mean_seconds_per_job: 17.176
+eta_seconds: 0.0

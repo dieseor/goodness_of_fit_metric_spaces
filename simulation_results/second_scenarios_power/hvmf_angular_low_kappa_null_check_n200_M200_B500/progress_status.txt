@@ -1,0 +1,8 @@
+stage: low_kappa_null_check
+updated: 2026-07-17 17:38:39
+families: hvmf
+candidates: kappa_1_delta_1.047, kappa_2_delta_0.6283
+completed: 400/400
+elapsed_seconds: 466.2
+mean_seconds_per_job: 5.790
+eta_seconds: 0.0
