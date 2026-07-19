@@ -70,21 +70,6 @@
       "Author": "Alina Beygelzimer [aut] (cover tree library), Sham Kakadet [aut] (cover tree library), John Langford [aut] (cover tree library), Sunil Arya [aut] (ANN library 1.1.2 for the kd-tree approach), David Mount [aut] (ANN library 1.1.2 for the kd-tree approach), Shengqiao Li [aut, cre]",
       "Maintainer": "Shengqiao Li <lishengqiao@yahoo.com>"
     },
-    "GIGrvg": {
-      "Package": "GIGrvg",
-      "Version": "0.8",
-      "Source": "Repository",
-      "Type": "Package",
-      "Title": "Random Variate Generator for the GIG Distribution",
-      "Date": "2023-03-22",
-      "Author": "Josef Leydold and Wolfgang Hormann",
-      "Maintainer": "Josef Leydold <josef.leydold@wu.ac.at>",
-      "Description": "Generator and density function for the Generalized Inverse Gaussian (GIG) distribution.",
-      "License": "GPL (>= 2)",
-      "LazyLoad": "yes",
-      "NeedsCompilation": "yes",
-      "Repository": "CRAN"
-    },
     "KernSmooth": {
       "Package": "KernSmooth",
       "Version": "2.23-24",

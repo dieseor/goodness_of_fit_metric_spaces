@@ -74,6 +74,38 @@ paper_scenario_catalog <- function() {
       Sigma0 = diag(3L),
       mu1 = c(0, 0, 0),
       Sigma1 = sigma_case2_alt
+    ),
+    mvnormal_d2_moderate_location_correlation = list(
+      model = "mvnormal",
+      alternative = "halfway_mixture_opposite_mean_correlation",
+      mu0 = c(1, -1),
+      Sigma0 = matrix(c(1, 0.25, 0.25, 1), nrow = 2L),
+      mu1 = c(-1, 1),
+      Sigma1 = matrix(c(1, -0.25, -0.25, 1), nrow = 2L)
+    ),
+    mvnormal_d2_small_location_rho050 = list(
+      model = "mvnormal",
+      alternative = "halfway_mixture_small_opposite_mean_rho_0_50",
+      mu0 = c(0, 0.5),
+      Sigma0 = matrix(c(1, 0.5, 0.5, 1), nrow = 2L),
+      mu1 = c(0, -0.5),
+      Sigma1 = matrix(c(1, -0.5, -0.5, 1), nrow = 2L)
+    ),
+    mvnormal_d2_small_location_rho075 = list(
+      model = "mvnormal",
+      alternative = "halfway_mixture_small_opposite_mean_rho_0_75",
+      mu0 = c(0, 0.5),
+      Sigma0 = matrix(c(1, 0.75, 0.75, 1), nrow = 2L),
+      mu1 = c(0, -0.5),
+      Sigma1 = matrix(c(1, -0.75, -0.75, 1), nrow = 2L)
+    ),
+    mvnormal_d2_small_location_rho095 = list(
+      model = "mvnormal",
+      alternative = "halfway_mixture_small_opposite_mean_rho_0_95",
+      mu0 = c(0, 0.5),
+      Sigma0 = matrix(c(1, 0.95, 0.95, 1), nrow = 2L),
+      mu1 = c(0, -0.5),
+      Sigma1 = matrix(c(1, -0.95, -0.95, 1), nrow = 2L)
     )
   )
 }
@@ -172,7 +204,11 @@ paper_block_scenarios <- function(block) {
     hvmf = c("hvmf_h2_case1", "hvmf_h2_case2"),
     mvnormal = c(
       "mvnormal_d3_equal_sigma_opposite_mean",
-      "mvnormal_d3_equal_mean_distinct_sigma"
+      "mvnormal_d3_equal_mean_distinct_sigma",
+      "mvnormal_d2_moderate_location_correlation",
+      "mvnormal_d2_small_location_rho050",
+      "mvnormal_d2_small_location_rho075",
+      "mvnormal_d2_small_location_rho095"
     ),
     stop(sprintf("Unsupported block '%s'.", block))
   )
@@ -201,10 +237,10 @@ generate_hvmf_halfway_sample <- function(n, beta, mu0, mu1, kappa) {
   n_null <- n - n_alt
 
   if (n_null > 0L) {
-    sample[!choose_alt, ] <- rhvmf_h2_gig(n = n_null, mu = mu0, kappa = kappa)
+    sample[!choose_alt, ] <- rhvmf_h2_polar(n = n_null, mu = mu0, kappa = kappa)
   }
   if (n_alt > 0L) {
-    sample[choose_alt, ] <- rhvmf_h2_gig(n = n_alt, mu = mu1, kappa = kappa)
+    sample[choose_alt, ] <- rhvmf_h2_polar(n = n_alt, mu = mu1, kappa = kappa)
   }
 
   sample

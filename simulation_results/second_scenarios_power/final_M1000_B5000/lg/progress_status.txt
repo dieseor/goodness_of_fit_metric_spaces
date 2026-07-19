@@ -1,0 +1,8 @@
+stage: final_lg
+updated: 2026-07-17 02:36:25
+families: lg
+candidates: nu_3
+completed: 3000/3000
+elapsed_seconds: 15848.9
+mean_seconds_per_job: 17.662
+eta_seconds: 0.0

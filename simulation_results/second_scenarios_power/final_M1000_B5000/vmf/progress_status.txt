@@ -1,0 +1,8 @@
+stage: final_vmf
+updated: 2026-07-17 06:43:50
+families: vmf
+candidates: rho_0.5
+completed: 3000/3000
+elapsed_seconds: 14837.3
+mean_seconds_per_job: 16.169
+eta_seconds: 0.0

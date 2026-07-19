@@ -1308,7 +1308,7 @@ test_that("vMF score-MC derivative sign agrees with a finite-difference sanity c
 test_that("additional supported models run through the fast multiplier branch", {
   set.seed(204)
 
-  x_hvmf <- rhvmf_h2_gig(12, mu = c(cosh(0.35), sinh(0.35), 0), kappa = 3)
+  x_hvmf <- rhvmf_h2_polar(12, mu = c(cosh(0.35), sinh(0.35), 0), kappa = 3)
   ks_grid_hvmf <- list(
     omega_grid = x_hvmf[1:3, , drop = FALSE],
     t_grid = c(0.3, 0.8)

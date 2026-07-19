@@ -1,0 +1,8 @@
+stage: low_kappa_pilot
+updated: 2026-07-16 18:11:23
+families: hvmf
+candidates: kappa_1_delta_0.2, kappa_2_delta_0.2, kappa_5_delta_0.2
+completed: 2700/2700
+elapsed_seconds: 892.2
+mean_seconds_per_job: 2.328
+eta_seconds: 0.0

@@ -1,0 +1,6 @@
+null: vMF(e1, kappa = 2)
+alternative: C1(e1, rho = 0.5)
+M: 1000
+B: 5000
+cores: 4
+beta: 0, 0.25, 0.5, 1

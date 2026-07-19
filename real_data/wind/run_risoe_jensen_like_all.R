@@ -1,5 +1,5 @@
-source(file.path("wind", "preprocess_risoe_modern_hvmf.R"))
-source(file.path("wind", "run_hvmf_real_data_cvm.R"))
+source(file.path("real_data", "wind", "preprocess_risoe_modern_hvmf.R"))
+source(file.path("real_data", "wind", "run_hvmf_real_data_cvm.R"))
 
 jensen_like_day_patterns <- function() {
   list(
@@ -465,7 +465,7 @@ run_single_risoe_all_simple_case <- function(case_config,
         elapsed_seconds <- as.numeric(difftime(Sys.time(), start_time, units = "secs"))
         output_row <- data.frame(
           dataset_id = case_config$dataset_id,
-          source_file = "wind/risoe_m_all.nc",
+          source_file = "real_data/wind/risoe_m_all.nc",
           height_m = case_config$height_m,
           window_id = case_config$window_id,
           year_start = min(case_config$years),
@@ -525,7 +525,7 @@ run_single_risoe_all_simple_case <- function(case_config,
   if (is.null(output_row)) {
     output_row <- data.frame(
       dataset_id = case_config$dataset_id,
-      source_file = "wind/risoe_m_all.nc",
+      source_file = "real_data/wind/risoe_m_all.nc",
       height_m = case_config$height_m,
       window_id = case_config$window_id,
       year_start = min(case_config$years),
@@ -560,7 +560,7 @@ run_single_risoe_all_simple_case <- function(case_config,
   output_row
 }
 
-run_risoe_jensen_like_all <- function(input_nc = "wind/risoe_m_all.nc",
+run_risoe_jensen_like_all <- function(input_nc = "real_data/wind/risoe_m_all.nc",
                                       output_dir = file.path("wind", "jensen_like_all"),
                                       B = 5000L,
                                       n_cores = 10L,

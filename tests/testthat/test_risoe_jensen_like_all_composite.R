@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("wind", "run_risoe_jensen_like_all_composite.R"))
+source(file.path("real_data", "wind", "run_risoe_jensen_like_all_composite.R"))
 
 test_that("theta-star diagnostics summarize kappa and Minkowski errors", {
   theta_star <- list(

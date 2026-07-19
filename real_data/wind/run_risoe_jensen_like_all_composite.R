@@ -1,4 +1,4 @@
-source(file.path("wind", "run_hvmf_real_data_cvm.R"))
+source(file.path("real_data", "wind", "run_hvmf_real_data_cvm.R"))
 
 rbind_fill_data_frames <- function(data_frames) {
   if (length(data_frames) == 0L) {
@@ -387,14 +387,10 @@ run_hvmf_parametric_composite_check <- function(config_row,
   theta_hat <- list(mu = fit$mu, kappa = fit$kappa)
   observed_cvm <- compute_composite_cvm_observed(X, theta = theta_hat, profile_method = profile_method)
 
-  if (!requireNamespace("GIGrvg", quietly = TRUE)) {
-    stop("Package 'GIGrvg' is required for the parametric composite check.")
-  }
-
   set.seed(seed)
   worker_fun <- function(b) {
     set.seed(seed + b)
-    Xb <- rhvmf_h2_gig(n = nrow(X), mu = fit$mu, kappa = fit$kappa, check = TRUE)
+    Xb <- rhvmf_h2_polar(n = nrow(X), mu = fit$mu, kappa = fit$kappa, check = TRUE)
     fit_b <- hvmf_mle_h2(Xb)
     theta_b <- list(mu = fit_b$mu, kappa = fit_b$kappa)
     cvm_b <- compute_composite_cvm_observed(Xb, theta = theta_b, profile_method = profile_method)

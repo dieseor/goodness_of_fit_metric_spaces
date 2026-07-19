@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("wind", "run_risoe_jensen_like_screening.R"))
+source(file.path("real_data", "wind", "run_risoe_jensen_like_screening.R"))
 
 test_that("month scope and day pattern filters reproduce Jensen-like subsets", {
   df <- data.frame(

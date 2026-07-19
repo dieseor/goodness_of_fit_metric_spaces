@@ -190,14 +190,14 @@ fit_initial_hvmf_theta <- function(data_matrix) {
   )
 }
 
-make_real_data_analysis_configs <- function(results_dir = "wind/results") {
+make_real_data_analysis_configs <- function(results_dir = "real_data/wind/results") {
   dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
 
   list(
     list(
       dataset = "jensen_fig4",
       dataset_type = "jensen",
-      input_csv = "wind/jensen_fig4_reconstructed_dataset1_v1_user_marked.csv",
+      input_csv = "real_data/wind/jensen_fig4_reconstructed_dataset1_v1_user_marked.csv",
       output_rds = file.path(results_dir, "cvm_hvmf_jensen_fig4_result.rds"),
       log_txt = file.path(results_dir, "log_cvm_hvmf_jensen_fig4.txt"),
       seed = 20260524L
@@ -205,7 +205,7 @@ make_real_data_analysis_configs <- function(results_dir = "wind/results") {
     list(
       dataset = "risoe_modern_set_A_77m",
       dataset_type = "modern",
-      input_csv = "wind/processed/risoe_modern_set_A_77m_hvmf.csv",
+      input_csv = "real_data/wind/processed/risoe_modern_set_A_77m_hvmf.csv",
       output_rds = file.path(results_dir, "cvm_hvmf_risoe_modern_set_A_77m_result.rds"),
       log_txt = file.path(results_dir, "log_cvm_hvmf_risoe_modern_set_A_77m.txt"),
       seed = 20260525L
@@ -213,7 +213,7 @@ make_real_data_analysis_configs <- function(results_dir = "wind/results") {
     list(
       dataset = "risoe_modern_set_B_125m",
       dataset_type = "modern",
-      input_csv = "wind/processed/risoe_modern_set_B_125m_hvmf.csv",
+      input_csv = "real_data/wind/processed/risoe_modern_set_B_125m_hvmf.csv",
       output_rds = file.path(results_dir, "cvm_hvmf_risoe_modern_set_B_125m_result.rds"),
       log_txt = file.path(results_dir, "log_cvm_hvmf_risoe_modern_set_B_125m.txt"),
       seed = 20260526L
@@ -362,7 +362,7 @@ run_single_hvmf_real_data_analysis <- function(config,
 }
 
 write_real_data_summary_csv <- function(summary_rows,
-                                        output_csv = "wind/results/cvm_hvmf_real_data_summary.csv") {
+                                        output_csv = "real_data/wind/results/cvm_hvmf_real_data_summary.csv") {
   summary_df <- do.call(rbind, summary_rows)
   write.csv(summary_df, file = output_csv, row.names = FALSE)
   output_csv
@@ -370,7 +370,7 @@ write_real_data_summary_csv <- function(summary_rows,
 
 run_hvmf_real_data_cvm_analyses <- function(B = 5000L,
                                             n_cores = 3L,
-                                            results_dir = "wind/results",
+                                            results_dir = "real_data/wind/results",
                                             alpha = 0.05,
                                             tol = 1e-8) {
   configs <- make_real_data_analysis_configs(results_dir = results_dir)

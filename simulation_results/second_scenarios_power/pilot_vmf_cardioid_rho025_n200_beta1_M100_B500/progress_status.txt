@@ -1,0 +1,8 @@
+stage: pilot_vmf_cardioid_rho025_beta1
+updated: 2026-07-18 02:19:13
+families: vmf
+candidates: rho_0.5
+completed: 200/200
+elapsed_seconds: 256.1
+mean_seconds_per_job: 10.662
+eta_seconds: 0.0

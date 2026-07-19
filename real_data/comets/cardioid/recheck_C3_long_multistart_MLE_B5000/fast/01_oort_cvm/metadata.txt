@@ -1,0 +1,14 @@
+List of 13
+ $ dataset_label  : chr "Oort cardioid CvM"
+ $ statistic      : chr "cvm"
+ $ B              : int 5000
+ $ n              : int 610
+ $ n_cores        : int 4
+ $ seed           : int 20260721
+ $ distance_type  : chr "geodesic"
+ $ ks_grid        : NULL
+ $ engine         : chr "multiplier_bootstrap_gof"
+ $ method         : chr "distance_profiles"
+ $ weighted_mle   : logi TRUE
+ $ completed_at   : POSIXct[1:1], format: "2026-07-15 16:20:42"
+ $ elapsed_seconds: num 122

@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("wind", "run_risoe_jensen_like_all.R"))
+source(file.path("real_data", "wind", "run_risoe_jensen_like_all.R"))
 
 test_that("make_risoe_all_window_configs uses only complete years and exposes max available", {
   complete_years <- c(1996:2001, 2003:2007)

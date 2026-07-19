@@ -1,0 +1,8 @@
+stage: pilot_vmf_null_kappa1_kappa2
+updated: 2026-07-18 01:54:52
+families: vmf
+candidates: kappa_1, kappa_2
+completed: 200/200
+elapsed_seconds: 807.7
+mean_seconds_per_job: 8.030
+eta_seconds: 0.0

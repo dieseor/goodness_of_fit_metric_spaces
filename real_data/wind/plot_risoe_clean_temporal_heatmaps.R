@@ -8,16 +8,16 @@ this_file_path <- function() {
   if (length(frame_files) > 0L) {
     return(normalizePath(frame_files[[length(frame_files)]], winslash = "/", mustWork = TRUE))
   }
-  normalizePath(file.path("wind", "plot_risoe_clean_temporal_heatmaps.R"), winslash = "/", mustWork = TRUE)
+  normalizePath(file.path("real_data", "wind", "plot_risoe_clean_temporal_heatmaps.R"), winslash = "/", mustWork = TRUE)
 }
 
 resolve_repo_path <- function(...) {
   script_dir <- dirname(this_file_path())
-  repo_root <- normalizePath(file.path(script_dir, ".."), winslash = "/", mustWork = TRUE)
+  repo_root <- normalizePath(file.path(script_dir, "..", ".."), winslash = "/", mustWork = TRUE)
   file.path(repo_root, ...)
 }
 
-source(resolve_repo_path("wind", "preprocess_risoe_modern_hvmf.R"))
+source(resolve_repo_path("real_data", "wind", "preprocess_risoe_modern_hvmf.R"))
 source(resolve_repo_path("bootstrap", "model_specs.R"))
 source(resolve_repo_path("bootstrap", "multiplier_bootstrap.R"))
 
@@ -353,7 +353,7 @@ run_composite_benchmark_case <- function(df,
   )
 }
 
-run_risoe_clean_temporal_heatmaps <- function(input_nc = "wind/risoe_m_all.nc",
+run_risoe_clean_temporal_heatmaps <- function(input_nc = "real_data/wind/risoe_m_all.nc",
                                               output_dir = file.path("wind", "clean_temporal_heatmaps"),
                                               years = c(1997:2001, 2003:2007),
                                               day_pattern = c(3L, 7L, 11L, 15L, 19L, 23L, 27L, 30L),

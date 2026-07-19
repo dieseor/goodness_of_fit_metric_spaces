@@ -1,0 +1,8 @@
+stage: reestimated_validation
+updated: 2026-07-14 18:19:57
+families: hvmf
+candidates: kappa_5_delta_0, kappa_25_delta_0, kappa_50_delta_0
+completed: 600/600
+elapsed_seconds: 0.0
+mean_seconds_per_job: 4.334
+eta_seconds: 0.0

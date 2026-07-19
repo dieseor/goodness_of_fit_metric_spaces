@@ -945,36 +945,12 @@ default_jp_composite_calibration_scenarios <- function() {
   )
 }
 
-default_hvmf_calibration_data_dir <- function() {
-  candidates <- c(
-    file.path("data", "hvmf_typeiv_calibration"),
-    file.path("sim_data_hvmf", "hvmf_typeiv_calibration"),
-    file.path("..", "data", "hvmf_typeiv_calibration"),
-    file.path("..", "sim_data_hvmf", "hvmf_typeiv_calibration"),
-    file.path("..", "..", "data", "hvmf_typeiv_calibration"),
-    file.path("..", "..", "sim_data_hvmf", "hvmf_typeiv_calibration")
-  )
-
-  for (candidate in candidates) {
-    if (dir.exists(candidate)) {
-      return(candidate)
-    }
-  }
-
-  stop("Could not resolve HvMF calibration data directory in `data/` or `sim_data_hvmf/`.")
-}
-
-hvmf_typeiv_fixed_mu <- function() {
-  t0 <- stats::qnorm(0.25, mean = 0, sd = 1 / 4)
-  c(
-    cosh(abs(t0)),
-    sinh(abs(t0)) * sign(t0) / sqrt(2),
-    sinh(abs(t0)) * sign(t0) / sqrt(2)
-  )
+hvmf_calibration_fixed_mu <- function() {
+  c(sqrt(2), 1 / sqrt(2), 1 / sqrt(2))
 }
 
 make_hvmf_ks_grid <- function(data,
-                              mu = hvmf_typeiv_fixed_mu(),
+                              mu = hvmf_calibration_fixed_mu(),
                               n_omega = 10L,
                               n_t = 10L,
                               chi_margin = 0.25,
@@ -1027,9 +1003,8 @@ make_hvmf_ks_grid <- function(data,
   )
 }
 
-make_hvmf_composite_calibration_scenario <- function(kappa,
-                                                     data_dir = default_hvmf_calibration_data_dir()) {
-  mu <- hvmf_typeiv_fixed_mu()
+make_hvmf_composite_calibration_scenario <- function(kappa) {
+  mu <- hvmf_calibration_fixed_mu()
   list(
     id = sprintf("hvmf_composite_h2_geodesic_kappa_%d", as.integer(kappa)),
     model = "hvmf",
@@ -1038,14 +1013,12 @@ make_hvmf_composite_calibration_scenario <- function(kappa,
     sample_params = list(mu = mu, kappa = as.numeric(kappa)),
     distance_type = "geodesic",
     unknown_param = "both",
-    ks_grid = NULL,
-    data_dir = data_dir
+    ks_grid = NULL
   )
 }
 
-make_hvmf_simple_calibration_scenario <- function(kappa,
-                                                  data_dir = default_hvmf_calibration_data_dir()) {
-  mu <- hvmf_typeiv_fixed_mu()
+make_hvmf_simple_calibration_scenario <- function(kappa) {
+  mu <- hvmf_calibration_fixed_mu()
   list(
     id = sprintf("hvmf_simple_h2_geodesic_kappa_%d", as.integer(kappa)),
     model = "hvmf",
@@ -1054,23 +1027,16 @@ make_hvmf_simple_calibration_scenario <- function(kappa,
     sample_params = list(mu = mu, kappa = as.numeric(kappa)),
     distance_type = "geodesic",
     unknown_param = "both",
-    ks_grid = NULL,
-    data_dir = data_dir
+    ks_grid = NULL
   )
 }
 
-default_hvmf_simple_calibration_scenarios <- function(data_dir = default_hvmf_calibration_data_dir()) {
-  list(
-    make_hvmf_simple_calibration_scenario(50, data_dir = data_dir),
-    make_hvmf_simple_calibration_scenario(200, data_dir = data_dir)
-  )
+default_hvmf_simple_calibration_scenarios <- function() {
+  lapply(c(5, 25, 50), make_hvmf_simple_calibration_scenario)
 }
 
-default_hvmf_composite_calibration_scenarios <- function(data_dir = default_hvmf_calibration_data_dir()) {
-  list(
-    make_hvmf_composite_calibration_scenario(50, data_dir = data_dir),
-    make_hvmf_composite_calibration_scenario(200, data_dir = data_dir)
-  )
+default_hvmf_composite_calibration_scenarios <- function() {
+  lapply(c(5, 25, 50), make_hvmf_composite_calibration_scenario)
 }
 
 default_bootstrap_calibration_scenarios <- function() {
@@ -1091,69 +1057,6 @@ default_bootstrap_composite_calibration_scenarios <- function() {
     default_beta_mixture2_composite_calibration_scenarios()[[1L]],
     default_logitnormal_mixture2_composite_calibration_scenarios()[[1L]]
   )
-}
-
-list_hvmf_calibration_files <- function(scenario, n) {
-  if (is.null(scenario$data_dir)) {
-    stop("HvMF calibration scenario requires `data_dir`.")
-  }
-
-  folder <- file.path(
-    scenario$data_dir,
-    sprintf("kappa%d", as.integer(scenario$sample_params$kappa)),
-    sprintf("n%d", as.integer(n))
-  )
-  if (!dir.exists(folder)) {
-    stop(sprintf("HvMF calibration data folder not found: %s", folder))
-  }
-
-  files <- list.files(folder, pattern = "\\.csv$", full.names = TRUE)
-  if (length(files) == 0L) {
-    stop(sprintf("No HvMF calibration CSV files found in: %s", folder))
-  }
-
-  sample_ids <- suppressWarnings(as.integer(sub(".*samp_([0-9]+).*", "\\1", basename(files))))
-  if (any(is.na(sample_ids))) {
-    stop(sprintf("Could not parse HvMF sample ids from filenames in: %s", folder))
-  }
-
-  files[order(sample_ids)]
-}
-
-load_hvmf_calibration_sample <- function(scenario, n, replicate_id) {
-  files <- list_hvmf_calibration_files(scenario, n)
-  replicate_id <- as.integer(replicate_id)
-
-  if (!is.finite(replicate_id) || replicate_id < 1L || replicate_id > length(files)) {
-    stop(sprintf(
-      "HvMF replicate_id=%d is out of bounds for n=%d; available range is 1..%d.",
-      replicate_id,
-      as.integer(n),
-      length(files)
-    ))
-  }
-
-  raw_data <- utils::read.csv(files[[replicate_id]])
-  required_columns <- c("V1", "V2", "V3")
-  if (!all(required_columns %in% names(raw_data))) {
-    stop(sprintf(
-      "HvMF calibration file %s does not contain columns %s.",
-      files[[replicate_id]],
-      paste(required_columns, collapse = ", ")
-    ))
-  }
-
-  data_matrix <- as.matrix(raw_data[, required_columns, drop = FALSE])
-  if (nrow(data_matrix) != as.integer(n)) {
-    stop(sprintf(
-      "HvMF calibration file %s has %d rows but n=%d was requested.",
-      files[[replicate_id]],
-      nrow(data_matrix),
-      as.integer(n)
-    ))
-  }
-
-  normalize_hvmf_h2_data(data_matrix)
 }
 
 simulate_h0_sample <- function(scenario, n, replicate_id = NULL) {
@@ -1186,14 +1089,10 @@ simulate_h0_sample <- function(scenario, n, replicate_id = NULL) {
   }
 
   if (identical(scenario$model, "hvmf")) {
-    if (is.null(replicate_id)) {
-      stop("HvMF calibration sampling from disk requires `replicate_id`.")
-    }
-
-    return(load_hvmf_calibration_sample(
-      scenario = scenario,
+    return(rhvmf_h2_polar(
       n = n,
-      replicate_id = replicate_id
+      mu = scenario$sample_params$mu,
+      kappa = scenario$sample_params$kappa
     ))
   }
 
@@ -1786,18 +1685,6 @@ run_calibration_scenario <- function(scenario,
   for (i in seq_along(n_values)) {
     n_value <- as.integer(n_values[[i]])
     n_seed <- if (is.null(seed)) NULL else seed + 100000L * i
-
-    if (identical(scenario$model, "hvmf")) {
-      n_available <- length(list_hvmf_calibration_files(scenario, n_value))
-      if (M_outer > n_available) {
-        stop(sprintf(
-          "HvMF calibration requested M_outer=%d for n=%d, but only %d disk replicates are available.",
-          M_outer,
-          n_value,
-          n_available
-        ))
-      }
-    }
 
     if (isTRUE(verbose)) {
       message(sprintf(

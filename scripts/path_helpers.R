@@ -33,6 +33,11 @@ canonical_comets_small_circle_dir <- function(run_name, speed = NULL, ...) {
   do.call(file.path, as.list(parts))
 }
 
+canonical_comets_watson_dir <- function(run_name = NULL, speed = NULL, ...) {
+  parts <- c(canonical_comets_root("watson"), if (!is.null(run_name)) run_name, if (!is.null(speed)) speed, list(...))
+  do.call(file.path, as.list(parts))
+}
+
 canonical_comets_spherical_cauchy_dir <- function(run_name = NULL, speed = NULL, ...) {
   parts <- c(canonical_comets_root("spherical_cauchy"), if (!is.null(run_name)) run_name, if (!is.null(speed)) speed, list(...))
   do.call(file.path, as.list(parts))

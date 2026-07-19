@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("wind", "preprocess_risoe_modern_hvmf.R"))
+source(file.path("real_data", "wind", "preprocess_risoe_modern_hvmf.R"))
 
 test_that("select_noon_nov_dec keeps one November-December record per day and breaks noon ties early", {
   df <- data.frame(

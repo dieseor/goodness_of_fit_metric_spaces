@@ -1,0 +1,8 @@
+stage: final_vmf_cardioid_kappa2_rho05
+updated: 2026-07-19 03:07:13
+families: vmf
+candidates: rho_0.5
+completed: 12000/12000
+elapsed_seconds: 87899.6
+mean_seconds_per_job: 17.408
+eta_seconds: 0.0

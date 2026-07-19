@@ -1,0 +1,8 @@
+stage: final_hvmf
+updated: 2026-07-17 15:11:05
+families: hvmf
+candidates: kappa_50_delta_0.2
+completed: 3000/3000
+elapsed_seconds: 15681.8
+mean_seconds_per_job: 16.655
+eta_seconds: 0.0
