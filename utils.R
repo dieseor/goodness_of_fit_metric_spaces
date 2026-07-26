@@ -1,6 +1,20 @@
 # Utility Functions for Goodness of Fit in Metric Spaces
 # This file contains helper functions for the project
 
+if (!exists("ensure_distance_profile_cpp_loaded", mode = "function")) {
+  distance_profile_backend_candidates <- c(
+    "distance_profile_backend.R",
+    file.path("..", "distance_profile_backend.R"),
+    file.path("..", "..", "distance_profile_backend.R")
+  )
+  distance_profile_backend_path <- distance_profile_backend_candidates[
+    file.exists(distance_profile_backend_candidates)
+  ][1L]
+  if (!is.na(distance_profile_backend_path)) {
+    source(distance_profile_backend_path)
+  }
+}
+
 # ============================================================================
 # DISTANCE CALCULATION
 # ============================================================================
@@ -155,6 +169,17 @@ theoretical_distance_profile_normal <- function(omega, mu, sigma, t_values) {
   result <- numeric(n)
   valid_t <- t_values > 0
   if (any(valid_t)) {
+    if (exists("distance_profile_backend_current", mode = "function") &&
+        identical(distance_profile_backend_current(), "cpp") &&
+        length(mu) == 1L && length(sigma) == 1L) {
+      return(distance_profile_cpp_call(
+        "cpp_dp_normal_profile",
+        as.numeric(omega),
+        as.numeric(t_values),
+        as.numeric(mu),
+        as.numeric(sigma)
+      ))
+    }
     upper_bound <- (omega[valid_t] + t_values[valid_t] - mu) / sigma
     lower_bound <- (omega[valid_t] - t_values[valid_t] - mu) / sigma
     result[valid_t] <- pnorm(upper_bound) - pnorm(lower_bound)
@@ -4818,6 +4843,11 @@ small_circle_legendre_matrix <- function(x, l_max) {
     stop("`l_max` must be a nonnegative integer.")
   }
 
+  if (exists("distance_profile_backend_current", mode = "function") &&
+      identical(distance_profile_backend_current(), "cpp")) {
+    return(distance_profile_cpp_call("cpp_dp_legendre_matrix", x, l_max))
+  }
+
   out <- matrix(0, nrow = length(x), ncol = l_max + 1L)
   out[, 1L] <- 1
   if (l_max == 0L) {
@@ -4914,6 +4944,17 @@ small_circle_projection_cdf_legendre_matrix <- function(x_matrix,
 
   if (length(r) != nrow(x_matrix) || any(!is.finite(r))) {
     stop("`r` must be a finite vector of length nrow(`x_matrix`).")
+  }
+
+  if (exists("distance_profile_backend_current", mode = "function") &&
+      identical(distance_profile_backend_current(), "cpp")) {
+    return(distance_profile_cpp_call(
+      "cpp_dp_projection_cdf_legendre_matrix",
+      x_matrix,
+      r,
+      coefficients,
+      isTRUE(enforce_bounds)
+    ))
   }
 
   x_matrix <- pmin(pmax(x_matrix, -1), 1)
@@ -10770,5 +10811,55 @@ analyze_single_trajectory <- function(mu_true, kappa_true, sample_sizes, traject
   
   return(results)
 }
+
+install_distance_profile_backend_wrappers(
+  c(
+    "theoretical_distance_profile_normal",
+    "distance_profile_small_circle_weighted_mixture2",
+    "distance_profile_small_circle_weighted_mixture2_grid"
+  ),
+  envir = environment(),
+  cpp_supported = TRUE
+)
+
+install_distance_profile_backend_wrappers(
+  c(
+    "theoretical_distance_profile_hvmf",
+    "theoretical_distance_profile_vmf_s1_chordal",
+    "distance_profile_vmf_s2_integral",
+    "theoretical_distance_profile_vmf",
+    "theoretical_distance_profile_vmf_s2_fast",
+    "distance_profile_vmf_s2_grid",
+    "distance_profile_vmf_s2_legendre",
+    "distance_profile_vmf_s2_legendre_grid",
+    "distance_profile_vmf_s2_legendre_cvm_grid",
+    "distance_profile_vmf_s2_cvm_grid",
+    "distance_profile_spherical_cauchy",
+    "distance_profile_spherical_cauchy_grid",
+    "distance_profile_spherical_cauchy_cvm_grid",
+    "distance_profile_small_circle",
+    "distance_profile_small_circle_grid",
+    "distance_profile_small_circle_cvm_grid",
+    "small_circle_distance_profile_integral",
+    "distance_profile_watson",
+    "distance_profile_watson_grid",
+    "distance_profile_watson_cvm_grid",
+    "distance_profile_small_circle_symmetric_mixture2",
+    "distance_profile_small_circle_symmetric_mixture2_grid",
+    "distance_profile_small_circle_symmetric_mixture2_cvm_grid",
+    "distance_profile_beta_mixture2",
+    "distance_profile_beta_mixture2_grid",
+    "distance_profile_beta_mixture2_cvm_grid",
+    "distance_profile_uniform_beta_mixture",
+    "distance_profile_uniform_beta_mixture_grid",
+    "distance_profile_uniform_beta_mixture_cvm_grid",
+    "distance_profile_logitnormal_mixture2",
+    "distance_profile_logitnormal_mixture2_grid",
+    "distance_profile_logitnormal_mixture2_cvm_grid",
+    "rotational_distance_profile_integral"
+  ),
+  envir = environment(),
+  cpp_supported = FALSE
+)
 
 cat("Utility functions loaded successfully!\n")

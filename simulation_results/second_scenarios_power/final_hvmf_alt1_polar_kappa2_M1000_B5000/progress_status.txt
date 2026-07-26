@@ -1,8 +1,8 @@
 stage: final_alt1_polar_kappa2
-updated: 2026-07-19 17:25:20
+updated: 2026-07-20 00:10:16
 families: hvmf_alt1_polar
 candidates: kappa_2
-completed: 9764/12000
-elapsed_seconds: 91842.2
-mean_seconds_per_job: 18.761
-eta_seconds: 20974.4
+completed: 12000/12000
+elapsed_seconds: 116138.3
+mean_seconds_per_job: 19.299
+eta_seconds: 0.0

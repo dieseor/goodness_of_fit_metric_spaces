@@ -195,4 +195,151 @@ test_that("mvnormal fast multiplier supports the sample-based KS grid", {
   expect_true(result$inference$cvm$p_value >= 0 && result$inference$cvm$p_value <= 1)
   expect_equal(length(result$bootstrap$statistics$ks), 4L)
   expect_equal(length(result$bootstrap$statistics$cvm), 4L)
+  expect_identical(
+    result$diagnostics$fast_multiplier_backend_requested,
+    "cpp"
+  )
+  expect_identical(
+    result$diagnostics$fast_multiplier_backend_effective,
+    "cpp"
+  )
+  expect_true(result$diagnostics$fast_multiplier_fuse_ks_cvm_effective)
+  expect_true(
+    result$diagnostics$fast_multiplier_cache_corrections_effective
+  )
+})
+
+test_that("mvnormal fast R and C++ loops are bitwise identical", {
+  for (d in c(2L, 10L)) {
+    set.seed(1300L + d)
+    x <- mvtnorm::rmvnorm(
+      n = 18L,
+      mean = rep(0, d),
+      sigma = diag(d)
+    )
+    common <- list(
+      data = x,
+      null = list(type = "composite"),
+      statistics = c("ks", "cvm"),
+      B = 11L,
+      seed = 1400L + d,
+      n_cores = 1L,
+      unknown_param = "both",
+      keep = list(
+        observed_process = FALSE,
+        bootstrap_statistics = TRUE,
+        bootstrap_thetas = FALSE
+      ),
+      control = list(
+        derivative_mc_size = 120L,
+        derivative_mc_seed = 1500L + d,
+        fast_bootstrap_chunk_size = 4L
+      ),
+      bootstrap_method = "fast_multiplier"
+    )
+
+    r_fused <- do.call(
+      multiplier_bootstrap_mvnormal,
+      c(common, list(
+        fast_multiplier_backend = "r",
+        fuse_ks_cvm = TRUE,
+        cache_block_corrections = "true"
+      ))
+    )
+    cpp_fused <- do.call(
+      multiplier_bootstrap_mvnormal,
+      c(common, list(
+        fast_multiplier_backend = "cpp",
+        fuse_ks_cvm = TRUE,
+        cache_block_corrections = "true"
+      ))
+    )
+    cpp_uncached <- do.call(
+      multiplier_bootstrap_mvnormal,
+      c(common, list(
+        fast_multiplier_backend = "cpp",
+        fuse_ks_cvm = TRUE,
+        cache_block_corrections = "false"
+      ))
+    )
+    r_unfused <- do.call(
+      multiplier_bootstrap_mvnormal,
+      c(common, list(
+        fast_multiplier_backend = "r",
+        fuse_ks_cvm = FALSE,
+        cache_block_corrections = "true"
+      ))
+    )
+
+    expect_identical(
+      cpp_fused$bootstrap$statistics,
+      r_fused$bootstrap$statistics
+    )
+    expect_identical(
+      cpp_uncached$bootstrap$statistics,
+      r_fused$bootstrap$statistics
+    )
+    expect_identical(
+      r_unfused$bootstrap$statistics,
+      r_fused$bootstrap$statistics
+    )
+    expect_identical(cpp_fused$observed, r_fused$observed)
+    expect_identical(cpp_fused$inference, r_fused$inference)
+    expect_identical(
+      cpp_fused$diagnostics$fast_multiplier_backend_effective,
+      "cpp"
+    )
+    expect_true(
+      cpp_fused$diagnostics$fast_multiplier_fuse_ks_cvm_effective
+    )
+    if (d == 2L) {
+      parallel_common <- common
+      parallel_common$n_cores <- 2L
+      cpp_parallel <- do.call(
+        multiplier_bootstrap_mvnormal,
+        c(parallel_common, list(
+          fast_multiplier_backend = "cpp",
+          fuse_ks_cvm = TRUE,
+          cache_block_corrections = "true"
+        ))
+      )
+      expect_identical(
+        cpp_parallel$bootstrap$statistics,
+        cpp_fused$bootstrap$statistics
+      )
+      expect_identical(cpp_parallel$inference, cpp_fused$inference)
+    }
+  }
+})
+
+test_that("mvnormal fast defaults and cache cutoff are explicit", {
+  defaults <- formals(multiplier_bootstrap_mvnormal)
+  expect_identical(eval(defaults$fast_multiplier_backend), c("cpp", "r"))
+  expect_identical(eval(defaults$fuse_ks_cvm), TRUE)
+  expect_identical(
+    eval(defaults$cache_block_corrections),
+    c("auto", "true", "false")
+  )
+
+  at_cutoff <- resolve_fast_sample_correction_cache(
+    n_centers = 500L,
+    n_thresholds = 500L,
+    n_parameters = 3L
+  )
+  above_cutoff <- resolve_fast_sample_correction_cache(
+    n_centers = 501L,
+    n_thresholds = 501L,
+    n_parameters = 3L
+  )
+  forced <- resolve_fast_sample_correction_cache(
+    n_centers = 501L,
+    n_thresholds = 501L,
+    n_parameters = 3L,
+    control = list(fast_multiplier_cache_corrections = TRUE)
+  )
+
+  expect_true(at_cutoff$enabled)
+  expect_false(above_cutoff$enabled)
+  expect_true(forced$enabled)
+  expect_identical(at_cutoff$n_max, 500L)
 })

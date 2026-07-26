@@ -249,7 +249,7 @@ run_single_distance_profile_analysis <- function(x_comp,
   t_grid <- t_grid_info$t_grid
 
   control <- normalize_logistic_gaussian_screening_control(
-    list(logistic_gaussian_quadform_method = quadform_method)
+    list(mvnormal_quadform_method = quadform_method)
   )
 
   ## For localization of the observed KS maximum, use the same fitted-profile
@@ -533,7 +533,8 @@ run_skyelavas_sensitivity_cli <- function(args = commandArgs(trailingOnly = TRUE
   n_t <- parse_integer_arg(args$n_t, 60L)
   t_grid_tail_prob <- parse_numeric_arg(args$t_grid_tail_prob, 1e-8)
   boundary_epsilon <- parse_optional_numeric_arg(args$boundary_epsilon)
-  quadform_method <- as.character(args$quadform_method %||% "hbe")
+  # EN DUDA (2026-07-26): shared exact dispatcher is the production default.
+  quadform_method <- as.character(args$quadform_method %||% "auto")
   excluded_sample_ids_arg <- as.character(args$excluded_sample_ids %||% "982")
   excluded_sample_ids_arg <- trimws(strsplit(excluded_sample_ids_arg, ",", fixed = TRUE)[[1]])
   run_all_exclusions <- length(excluded_sample_ids_arg) == 1L && identical(tolower(excluded_sample_ids_arg), "all")

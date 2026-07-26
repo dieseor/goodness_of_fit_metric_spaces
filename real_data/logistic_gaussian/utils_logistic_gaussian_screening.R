@@ -17,8 +17,8 @@ suppressPackageStartupMessages({
 logistic_gaussian_screening_warning <- paste(
   "This workflow performs the logistic Gaussian goodness-of-fit analysis through the global bootstrap pipeline used by the calibration code.",
   "The default mode is the composite multiplier bootstrap for the logistic Gaussian model, with weighted re-estimation of the unknown parameters in every bootstrap replicate.",
-  "For numerical stability and runtime control in the real-data screening workflow, the default quadratic-form evaluator is the HBE approximation from sphunif::p_wschisq().",
-  "Exact CompQuadForm routes remain available through the control list, but they are not the production default because they can be unstable or prohibitively slow on some fitted logistic Gaussian configurations.",
+  "The default quadratic-form evaluator is the shared MVN/logistic-Gaussian auto dispatcher: it uses exact CompQuadForm methods with diagnostics and reserves Monte Carlo for a terminal numerical rescue.",
+  "The HBE approximation from sphunif::p_wschisq() remains available only when explicitly requested for historical reproduction or auditing.",
   "For the logistic Gaussian model with Aitchison distance, theoretical distance profiles are evaluated through the global logistic Gaussian model specification used by the calibration code, not by local screening-specific profile code.",
   "The exploratory label plugin_simple_null runs a simple-null plug-in screening: the logistic Gaussian parameters are estimated once from the data, then treated as fixed, the theoretical profile is approximated by Monte Carlo, and the bootstrap samples are generated from that fitted null without re-estimation.",
   "Therefore, plugin_simple_null p-values are exploratory only and are not valid p-values for the composite null."
@@ -26,8 +26,10 @@ logistic_gaussian_screening_warning <- paste(
 
 normalize_logistic_gaussian_screening_control <- function(control = list()) {
   control <- control %||% list()
-  if (is.null(control$logistic_gaussian_quadform_method)) {
-    control$logistic_gaussian_quadform_method <- "hbe"
+  # EN DUDA (2026-07-26): generic shared dispatcher control.  The legacy
+  # logistic-Gaussian name remains accepted by mvnormal_quadform.R.
+  if (is.null(control$mvnormal_quadform_method) && is.null(control$logistic_gaussian_quadform_method)) {
+    control$mvnormal_quadform_method <- "auto"
   }
   control
 }
@@ -2142,7 +2144,7 @@ run_logistic_gaussian_screening <- function(dataset_name,
       omega_grid_type = omega_grid_type,
       t_grid_type = t_grid_type,
       null_mc_size = null_mc_size,
-      quadform_method = control$logistic_gaussian_quadform_method %||% NA_character_,
+      quadform_method = control$mvnormal_quadform_method %||% control$logistic_gaussian_quadform_method %||% NA_character_,
       control = control
     ),
     runtime = list(

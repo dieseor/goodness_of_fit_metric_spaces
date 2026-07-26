@@ -100,7 +100,8 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
   n_cores <- parse_integer_arg(args$n_cores, 1L)
   omega_grid_type <- as.character(args$omega_grid_type %||% "sample_points")
   t_grid_type <- as.character(args$t_grid_type %||% "sample_distances")
-  quadform_method <- as.character(args$quadform_method %||% "hbe")
+  # EN DUDA (2026-07-26): shared exact dispatcher is the production default.
+  quadform_method <- as.character(args$quadform_method %||% "auto")
   output_dir <- as.character(args$output_dir %||% canonical_logistic_gaussian_screening_dir(
     if (identical(bootstrap_mode, "composite_multiplier")) "fast" else "slow"
   ))
@@ -143,7 +144,7 @@ run_logistic_gaussian_dataset_screening_cli <- function(args = commandArgs(trail
     alpha = alpha,
     ridge = ridge,
     n_cores = n_cores,
-    control = list(logistic_gaussian_quadform_method = quadform_method),
+    control = list(mvnormal_quadform_method = quadform_method),
     omega_grid_type = omega_grid_type,
     t_grid_type = t_grid_type,
     make_plots = make_plots,

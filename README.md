@@ -2,30 +2,81 @@
 
 This project explores goodness of fit tests and methods in metric space contexts.
 
-Current supported directional families in the bootstrap pipeline include vMF, HvMF, Jones-Pewsey, spherical cardioid, and spherical Cauchy / Poisson-kernel on S^2.
+The multiplier-bootstrap pipeline covers Euclidean normal and multivariate normal models, logistic-Gaussian models on the simplex, and directional models including vMF, HvMF, Jones--Pewsey, spherical cardioid, spherical Cauchy / Poisson-kernel, small-circle, and Watson-type models.
 
-## Project structure
+## How a goodness-of-fit test is run
+
+The family-specific wrappers have a common execution path:
+
+```
+data and null hypothesis
+        │
+        ▼
+multiplier_bootstrap_<family>()
+bootstrap/multiplier_bootstrap.R       # public wrappers and common engine
+        │
+        ▼
+make_<family>_spec()
+bootstrap/model_specs.R                # common spec interface and adapter loader
+bootstrap/*_model_spec.R               # one file per model family
+        │
+        ├── fit the null parameter and compute distances
+        ├── evaluate theoretical distance profiles
+        │   utils.R                     # shared profile formulae and numerical helpers
+        │   bootstrap/*_model_spec.R    # family-specific profile and fitting code
+        │
+        ▼
+multiplier_bootstrap_gof()
+bootstrap/multiplier_bootstrap.R       # KS/CvM statistics and multiplier resampling
+        │
+        └── optional compiled kernels
+            distance_profile_backend.R # opt-in backend selection and loading
+            cpp/distance_profile_backend.cpp
+```
+
+`utils.R` is therefore the main location for generic mathematical and numerical utilities, including most shared theoretical distance-profile evaluations.  `bootstrap/model_specs.R` defines the model-specification interface and loads all family adapters. Each `bootstrap/*_model_spec.R` file owns the normalization, fitting, distance, profile, and fast-bootstrap components of one model family.
+
+### Fast multivariate-normal loop
+
+For `multiplier_bootstrap_mvnormal(..., bootstrap_method = "fast_multiplier")`,
+the sample-based KS/CvM loop uses C++ by default.  Its independent controls are
+`fast_multiplier_backend = c("cpp", "r")`, `fuse_ks_cvm = TRUE`, and
+`cache_block_corrections = c("auto", "true", "false")`.  Both backends fuse KS
+and CvM by default.  In `"auto"` mode, correction matrices are cached only when
+the sample size is at most 500 and the estimated cache is at most 128 MiB;
+the two explicit values override this policy.
+
+The compiled loop is loaded lazily and is separate from
+`distance_profile_backend`, whose default remains R.  The result diagnostics
+record the requested and effective loop backend, fusion, and cache choices.
+
+## Repository structure
 
 ```
 goodness_of_fit_metric_spaces/
-├── bootstrap/                # Model specs and bootstrap engines
+├── bootstrap/                # Test engine, generic model interface, and model adapters
+│   ├── multiplier_bootstrap.R # Main bootstrap engine and public test wrappers
+│   ├── model_specs.R          # Shared model-spec interface and adapter loader
+│   ├── calibration_study.R    # Simulation/calibration study machinery
+│   └── *_model_spec.R         # One family-specific adapter per file
+├── utils.R                   # Shared distance profiles, distributions, and numerical tools
+├── distance_profile_backend.R # Optional R/C++ backend dispatcher
+├── cpp/                      # C++ kernels used only when the compiled backend is selected
 ├── distance_profiles/        # Distance-profile analyses and diagnostics
+├── convergence_empirical_process/ # Empirical-process convergence experiments
+├── bahadur/                  # Bahadur-efficiency analyses
+├── real_data/                # Data-specific pipelines: comets, wind, sunspots, etc.
+├── simulation_results/       # Outputs from simulation and power studies
 ├── output/
-│   ├── bahadur/              # Bahadur analyses by distribution
-│   ├── calibration/          # Bootstrap calibration outputs
-│   ├── catalog/              # Inventory and migration reports
-│   ├── convergence/          # Empirical process convergence outputs
-│   ├── diagnostics/          # Model diagnostics and quality checks
-│   ├── distance_profiles/    # Distance-profile outputs by distribution
-│   └── real_data/            # Outputs from real datasets (including comets)
-├── scripts/                  # One-off runners and batch entry points
-├── tests/                    # Test scripts
-├── utils.R                   # Shared utilities and model helpers
-└── wind/                     # Wind-related pipelines and outputs
+│   └── ...                   # General diagnostics, calibration, and validation outputs
+├── scripts/                  # Reproducible runners, benchmarks, and plotting entry points
+├── tests/
+│   ├── testthat/             # Automated regression and integration tests
+│   └── *.R                   # Focused numerical checks and experiments
+└── benchmarks/               # Benchmark reports, including the C++ backend assessment
 ```
 
-Output aliases and the intermediate `output/structured/` layer have been removed.
-The project now uses a single direct output tree under `output/`.
+Generated results are kept either in the general `output/` tree, in `simulation_results/`, or next to the relevant real-data pipeline when they are specific to a dataset.
 
 ## Dependencies
 
@@ -48,14 +99,4 @@ To restore the project environment locally:
 Rscript -e "install.packages('remotes', repos='https://cloud.r-project.org')"
 Rscript -e "remotes::install_github('rstudio/renv')"
 Rscript -e "renv::restore()"
-```
-
-## Spherical Cauchy on S^2
-
-The spherical Cauchy / Poisson-kernel family is implemented on S^2 with parameters `(mu, rho)`, where `mu` is a unit vector in `R^3` and `rho` lies in `[0, 1)`. The population distance profile uses a Legendre expansion as the primary path, with numerical safeguards for high `rho` and final clamping to `[0, 1]`.
-
-The sequential calibration launcher for the default geodesic simple/composite study is:
-
-```bash
-Rscript scripts/run_spherical_cauchy_calibration_m500_b500_sequential.R
 ```

@@ -1,0 +1,10 @@
+family: lg
+updated: 2026-07-26 12:54:16
+completed: 2304/48000
+remaining: 45696
+elapsed_seconds: 36734.5
+mean_seconds_per_successful_job: 31.868
+eta_seconds: 728129
+ok: 2304
+nonconforming: 0
+errors: 0

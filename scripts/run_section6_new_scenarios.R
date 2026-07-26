@@ -1,0 +1,672 @@
+#!/usr/bin/env Rscript
+
+# Section 6 power experiments for the revised, dimension-indexed scenarios.
+#
+# This runner deliberately covers Normal, logistic Gaussian, and vMF only.
+# The HvMF scenarios are deferred until the current H^2-only implementation is
+# extended and validated on H^d.  Each Monte Carlo replication requests the
+# sample-point KS statistic and the fast multiplier bootstrap.  The common
+# sample-point KS/CvM bootstrap loop is fused and evaluated by the C++ kernel.
+
+Sys.setenv(RENV_CONFIG_AUTOLOADER_ENABLED = "FALSE")
+
+source("bootstrap/multiplier_bootstrap.R")
+
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
+section6_families <- c("vmf", "hvmf", "normal", "lg")
+
+parse_section6_args <- function(args) {
+  out <- list()
+  for (arg in args[startsWith(args, "--")]) {
+    fields <- strsplit(substring(arg, 3L), "=", fixed = TRUE)[[1L]]
+    out[[fields[[1L]]]] <- if (length(fields) == 1L) "TRUE" else paste(fields[-1L], collapse = "=")
+  }
+  out
+}
+
+parse_section6_csv <- function(value, default, storage.mode = "numeric") {
+  if (is.null(value) || !nzchar(value)) return(default)
+  values <- trimws(strsplit(value, ",", fixed = TRUE)[[1L]])
+  switch(
+    storage.mode,
+    integer = as.integer(values),
+    numeric = as.numeric(values),
+    character = as.character(values),
+    stop("Unsupported storage mode.")
+  )
+}
+
+section6_seed <- function(base_seed, design_id, rep, stream = 0L) {
+  modulus <- 2147483647
+  value <- (as.numeric(base_seed) + 1000003 * as.numeric(design_id) +
+    1009 * as.numeric(rep) + 10000019 * as.numeric(stream)) %% modulus
+  as.integer(value) + 1L
+}
+
+section6_e <- function(d, index = 1L) {
+  out <- numeric(d)
+  out[[as.integer(index)]] <- 1
+  out
+}
+
+section6_sigma <- function(d, sign = c("plus", "minus")) {
+  sign <- match.arg(sign)
+  if (d < 2L) stop("The Section 6 covariance scenarios require d >= 2.")
+  rho <- if (identical(sign, "plus")) 0.75 else -0.75
+  sigma <- diag(d)
+  sigma[1L, 2L] <- rho
+  sigma[2L, 1L] <- rho
+  sigma
+}
+
+r_standardized_multivariate_t <- function(n, d, nu = 3) {
+  n <- as.integer(n)
+  d <- as.integer(d)
+  if (n == 0L) return(matrix(numeric(), nrow = 0L, ncol = d))
+  z <- matrix(stats::rnorm(n * d), nrow = n, ncol = d)
+  w <- stats::rchisq(n, df = nu)
+  z * sqrt((nu - 2) / w)
+}
+
+projected_normal_on_sphere <- function(n, d) {
+  ambient_dim <- as.integer(d) + 1L
+  z <- matrix(stats::rnorm(n * ambient_dim), nrow = n, ncol = ambient_dim)
+  z[, 1L] <- z[, 1L] + sqrt(ambient_dim)
+  z / sqrt(rowSums(z^2))
+}
+
+section6_scenario_catalog <- function() {
+  list(
+    normal_1_mixture = list(
+      family = "normal",
+      alternative = "opposite_location_correlation_mixture",
+      description = "(1-beta/2) N_d(0.5 e1,Sigma_+) + (beta/2) N_d(-0.5 e1,Sigma_-)",
+      generator = "normal_mixture"
+    ),
+    normal_2_t3 = list(
+      family = "normal",
+      alternative = "standardized_multivariate_t3",
+      description = "(1-beta) N_d(0,I_d) + beta t_{3,d}^{std}",
+      generator = "normal_t3"
+    ),
+    lg_1_mixture = list(
+      family = "lg",
+      alternative = "ilr_opposite_location_correlation_mixture",
+      description = "ilr analogue of normal_1_mixture",
+      generator = "lg_mixture"
+    ),
+    lg_2_t3 = list(
+      family = "lg",
+      alternative = "inverse_ilr_standardized_multivariate_t3",
+      description = "inverse-ilr image of (1-beta) N_d(0,I_d) + beta t_{3,d}^{std}",
+      generator = "lg_t3"
+    ),
+    vmf_1_antipodal = list(
+      family = "vmf",
+      alternative = "antipodal_vmf_mixture",
+      description = "(1-beta/2) vMF(e1,d) + (beta/2) vMF(-e1,d)",
+      generator = "vmf_antipodal"
+    ),
+    vmf_2_projected_normal = list(
+      family = "vmf",
+      alternative = "projected_normal_mixture",
+      description = "(1-beta) vMF(e1,1.5d) + beta Law(Z/||Z||), Z~N(sqrt(d+1)e1,I)",
+      generator = "vmf_projected_normal"
+    )
+  )
+}
+
+section6_family_scenarios <- function(family) {
+  catalog <- section6_scenario_catalog()
+  names(catalog)[vapply(catalog, function(x) identical(x$family, family), logical(1))]
+}
+
+make_section6_design <- function(family,
+                                 dimensions = c(2L, 10L),
+                                 n_values = c(50L, 100L, 200L),
+                                 beta_values = c(0, 0.5, 1)) {
+  if (!family %in% section6_families) stop("Unknown Section 6 family.")
+  if (identical(family, "hvmf")) return(data.frame())
+  catalog <- section6_scenario_catalog()
+  scenario_names <- section6_family_scenarios(family)
+  rows <- list()
+  index <- 1L
+  for (scenario in scenario_names) {
+    for (d in sort(unique(as.integer(dimensions)))) {
+      for (n in sort(unique(as.integer(n_values)))) {
+        for (beta in sort(unique(as.numeric(beta_values)))) {
+          rows[[index]] <- data.frame(
+            scenario = scenario,
+            family = family,
+            alternative = catalog[[scenario]]$alternative,
+            description = catalog[[scenario]]$description,
+            d = d,
+            n = n,
+            beta = beta,
+            stringsAsFactors = FALSE
+          )
+          index <- index + 1L
+        }
+      }
+    }
+  }
+  design <- do.call(rbind, rows)
+  design$design_id <- seq_len(nrow(design))
+  design
+}
+
+generate_section6_sample <- function(design_row) {
+  scenario <- as.character(design_row$scenario)
+  d <- as.integer(design_row$d)
+  n <- as.integer(design_row$n)
+  beta <- as.numeric(design_row$beta)
+  e1 <- section6_e(d)
+
+  if (identical(scenario, "normal_1_mixture")) {
+    choose_alt <- stats::runif(n) < beta / 2
+    x <- mvtnorm::rmvnorm(n, mean = 0.5 * e1, sigma = section6_sigma(d, "plus"))
+    if (any(choose_alt)) {
+      x[choose_alt, ] <- mvtnorm::rmvnorm(
+        sum(choose_alt), mean = -0.5 * e1, sigma = section6_sigma(d, "minus")
+      )
+    }
+    return(x)
+  }
+
+  if (identical(scenario, "normal_2_t3")) {
+    choose_alt <- stats::runif(n) < beta
+    x <- matrix(stats::rnorm(n * d), nrow = n, ncol = d)
+    if (any(choose_alt)) x[choose_alt, ] <- r_standardized_multivariate_t(sum(choose_alt), d)
+    return(x)
+  }
+
+  if (identical(scenario, "lg_1_mixture")) {
+    choose_alt <- stats::runif(n) < beta / 2
+    z <- mvtnorm::rmvnorm(n, mean = 0.5 * e1, sigma = section6_sigma(d, "plus"))
+    if (any(choose_alt)) {
+      z[choose_alt, ] <- mvtnorm::rmvnorm(
+        sum(choose_alt), mean = -0.5 * e1, sigma = section6_sigma(d, "minus")
+      )
+    }
+    return(logistic_gaussian_ilr_to_simplex(z, ambient_dim = d + 1L))
+  }
+
+  if (identical(scenario, "lg_2_t3")) {
+    choose_alt <- stats::runif(n) < beta
+    z <- matrix(stats::rnorm(n * d), nrow = n, ncol = d)
+    if (any(choose_alt)) z[choose_alt, ] <- r_standardized_multivariate_t(sum(choose_alt), d)
+    return(logistic_gaussian_ilr_to_simplex(z, ambient_dim = d + 1L))
+  }
+
+  if (identical(scenario, "vmf_1_antipodal")) {
+    mu <- section6_e(d + 1L)
+    choose_alt <- stats::runif(n) < beta / 2
+    x <- rotasym::r_vMF(n, mu = mu, kappa = d)
+    if (any(choose_alt)) x[choose_alt, ] <- rotasym::r_vMF(sum(choose_alt), mu = -mu, kappa = d)
+    return(x)
+  }
+
+  if (identical(scenario, "vmf_2_projected_normal")) {
+    mu <- section6_e(d + 1L)
+    choose_alt <- stats::runif(n) < beta
+    x <- rotasym::r_vMF(n, mu = mu, kappa = 1.5 * d)
+    if (any(choose_alt)) x[choose_alt, ] <- projected_normal_on_sphere(sum(choose_alt), d)
+    return(x)
+  }
+
+  stop(sprintf("Unsupported scenario '%s'.", scenario))
+}
+
+section6_control <- function(derivative_mc_size, derivative_seed, cvm_block_size) {
+  list(
+    derivative_method = "score_mc",
+    derivative_mc_size = as.integer(derivative_mc_size),
+    derivative_mc_seed = as.integer(derivative_seed),
+    fast_multiplier_cvm_block_size = as.integer(cvm_block_size),
+    fast_multiplier_backend = "cpp",
+    fast_multiplier_fuse_ks_cvm = TRUE,
+    fast_multiplier_cache_corrections = "auto",
+    fast_multiplier_stream_chunk_size = 100L,
+    vmf_profile_method = "tabulated",
+    vmf_profile_n_u = 4097L,
+    # EN DUDA (2026-07-26): generic MVN/LG dispatcher control.
+    mvnormal_quadform_method = "auto"
+  )
+}
+
+run_section6_bootstrap <- function(design_row, x, B, seed, derivative_seed,
+                                   derivative_mc_size, cvm_block_size) {
+  family <- as.character(design_row$family)
+  common <- list(
+    data = x,
+    null = list(type = "composite"),
+    statistics = c("ks", "cvm"),
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    B = as.integer(B),
+    alpha = 0.05,
+    n_cores = 1L,
+    seed = as.integer(seed),
+    bootstrap_method = "fast_multiplier",
+    keep = list(observed_process = FALSE, bootstrap_statistics = FALSE, bootstrap_thetas = FALSE),
+    control = section6_control(derivative_mc_size, derivative_seed, cvm_block_size),
+    distance_profile_backend = "r"
+  )
+  if (identical(family, "normal")) {
+    return(do.call(multiplier_bootstrap_mvnormal, c(common, list(
+      unknown_param = "both", fast_multiplier_backend = "cpp", fuse_ks_cvm = TRUE,
+      cache_block_corrections = "auto"
+    ))))
+  }
+  if (identical(family, "lg")) {
+    return(do.call(multiplier_bootstrap_logistic_gaussian, c(common, list(unknown_param = "both"))))
+  }
+  if (identical(family, "vmf")) {
+    return(do.call(multiplier_bootstrap_vmf, c(common, list(
+      unknown_param = "xi", distance_type = "geodesic"
+    ))))
+  }
+  stop(sprintf("Unsupported family '%s'.", family))
+}
+
+empty_section6_results <- function() {
+  data.frame(
+    scenario = character(), family = character(), alternative = character(), d = integer(), n = integer(), beta = numeric(),
+    design_id = integer(), rep = integer(), status = character(), error_message = character(),
+    ks_pvalue = numeric(), cvm_pvalue = numeric(), ks_reject = logical(), cvm_reject = logical(),
+    bootstrap_method_requested = character(), bootstrap_method_effective = character(), fallback_to_reestimated = logical(),
+    ks_grid = character(), fast_multiplier_backend_requested = character(), fast_multiplier_backend_effective = character(),
+    fast_multiplier_fuse_ks_cvm_requested = logical(), fast_multiplier_fuse_ks_cvm_effective = logical(),
+    seed_data = integer(), seed_bootstrap = integer(), seed_derivative = integer(), elapsed_seconds = numeric(),
+    stringsAsFactors = FALSE
+  )
+}
+
+run_section6_job <- function(job, B, base_seed, derivative_mc_size, cvm_block_size) {
+  started <- proc.time()[["elapsed"]]
+  data_seed <- section6_seed(base_seed, job$design_id, job$rep, 0L)
+  bootstrap_seed <- section6_seed(base_seed, job$design_id, job$rep, 1L)
+  derivative_seed <- section6_seed(base_seed, job$design_id, job$rep, 2L)
+  out <- data.frame(
+    scenario = as.character(job$scenario), family = as.character(job$family), alternative = as.character(job$alternative),
+    d = as.integer(job$d), n = as.integer(job$n), beta = as.numeric(job$beta), design_id = as.integer(job$design_id),
+    rep = as.integer(job$rep), status = "ok", error_message = NA_character_,
+    ks_pvalue = NA_real_, cvm_pvalue = NA_real_, ks_reject = NA, cvm_reject = NA,
+    bootstrap_method_requested = "fast_multiplier", bootstrap_method_effective = NA_character_, fallback_to_reestimated = NA,
+    ks_grid = "sample_unique_distances", fast_multiplier_backend_requested = "cpp", fast_multiplier_backend_effective = NA_character_,
+    fast_multiplier_fuse_ks_cvm_requested = TRUE, fast_multiplier_fuse_ks_cvm_effective = NA,
+    seed_data = data_seed, seed_bootstrap = bootstrap_seed, seed_derivative = derivative_seed,
+    elapsed_seconds = NA_real_, stringsAsFactors = FALSE
+  )
+  out <- tryCatch({
+    set.seed(data_seed)
+    x <- generate_section6_sample(job)
+    fit <- run_section6_bootstrap(job, x, B, bootstrap_seed, derivative_seed, derivative_mc_size, cvm_block_size)
+    diagnostics <- fit$diagnostics
+    out$ks_pvalue <- fit$inference$ks$p_value
+    out$cvm_pvalue <- fit$inference$cvm$p_value
+    out$ks_reject <- fit$inference$ks$reject
+    out$cvm_reject <- fit$inference$cvm$reject
+    out$bootstrap_method_effective <- diagnostics$effective_bootstrap_method %||% NA_character_
+    out$fallback_to_reestimated <- isTRUE(diagnostics$fallback_to_reestimated)
+    out$fast_multiplier_backend_effective <- diagnostics$fast_multiplier_backend_effective %||% NA_character_
+    out$fast_multiplier_fuse_ks_cvm_effective <- isTRUE(diagnostics$fast_multiplier_fuse_ks_cvm_effective)
+    if (!identical(out$bootstrap_method_effective, "fast_multiplier") ||
+        !identical(out$fast_multiplier_backend_effective, "cpp") ||
+        !isTRUE(out$fast_multiplier_fuse_ks_cvm_effective)) {
+      out$status <- "nonconforming"
+      out$error_message <- "Requested fast, fused C++ KS/CvM bootstrap was not effective."
+    }
+    out
+  }, error = function(e) {
+    out$status <- "error"
+    out$error_message <- conditionMessage(e)
+    out
+  })
+  out$elapsed_seconds <- proc.time()[["elapsed"]] - started
+  out
+}
+
+section6_write_atomic_csv <- function(x, path) {
+  temporary <- paste0(path, ".tmp")
+  utils::write.csv(x, temporary, row.names = FALSE)
+  if (!file.rename(temporary, path)) stop(sprintf("Could not update '%s'.", path))
+}
+
+section6_design_key <- function(x, include_rep = FALSE) {
+  required <- c("scenario", "d", "n", "beta")
+  if (!all(required %in% names(x))) {
+    stop("Section 6 design rows must contain scenario, d, n, and beta.")
+  }
+  pieces <- list(
+    as.character(x$scenario),
+    as.integer(x$d),
+    as.integer(x$n),
+    formatC(as.numeric(x$beta), digits = 16L, format = "fg", flag = "#")
+  )
+  if (isTRUE(include_rep)) {
+    if (!"rep" %in% names(x)) stop("Replication rows must contain `rep`.")
+    pieces <- c(pieces, list(as.integer(x$rep)))
+  }
+  do.call(paste, c(pieces, sep = "|"))
+}
+
+section6_validate_manifest_design <- function(manifest_path, design, M, B) {
+  if (!file.exists(manifest_path)) return(invisible(TRUE))
+  manifest <- utils::read.csv(manifest_path, stringsAsFactors = FALSE)
+  required <- c("scenario", "d", "n", "beta", "M", "B")
+  if (!all(required %in% names(manifest))) {
+    stop("Existing Section 6 manifest is incomplete; use a new output directory.")
+  }
+  same_design <- setequal(section6_design_key(manifest), section6_design_key(design))
+  same_M <- all(as.integer(manifest$M) == as.integer(M))
+  same_B <- all(as.integer(manifest$B) == as.integer(B))
+  if (!same_design || !same_M || !same_B) {
+    stop(paste(
+      "The existing output directory belongs to a different design or Monte Carlo budget.",
+      "Do not resume into it; use a new output directory or recover matching rows first."
+    ), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+section6_make_manifest <- function(design, M, B, cores, base_seed,
+                                   derivative_mc_size, cvm_block_size) {
+  transform(design,
+    M = as.integer(M), B = as.integer(B), cores = as.integer(cores),
+    base_seed = as.integer(base_seed), derivative_mc_size = as.integer(derivative_mc_size),
+    cvm_block_size = as.integer(cvm_block_size),
+    ks_grid = "sample_unique_distances", bootstrap_method = "fast_multiplier",
+    fast_multiplier_backend = "cpp", fused_ks_cvm_kernel = TRUE
+  )
+}
+
+# Copy only completed, verifiably conforming rows into a fresh directory whose
+# manifest matches the requested design.  This is deliberately non-destructive:
+# the source directory is never modified, and ambiguous duplicate replications
+# cause an error instead of being silently chosen.
+recover_section6_results <- function(source_dir, target_dir, family,
+                                     M = 1000L, B = 5000L,
+                                     dimensions = c(2L, 10L),
+                                     n_values = c(50L, 100L, 200L),
+                                     beta_values = c(0, 0.5, 1),
+                                     cores = 8L,
+                                     base_seed = 20260727L,
+                                     derivative_mc_size = 1000L,
+                                     cvm_block_size = 50L) {
+  source_path <- file.path(source_dir, "raw_results.csv")
+  target_result_path <- file.path(target_dir, "raw_results.csv")
+  target_manifest_path <- file.path(target_dir, "manifest.csv")
+  if (!file.exists(source_path)) stop("The source directory has no raw_results.csv.", call. = FALSE)
+  if (file.exists(target_result_path) || file.exists(target_manifest_path)) {
+    stop("Recovery target already contains results or a manifest; choose a new directory.", call. = FALSE)
+  }
+
+  design <- make_section6_design(family, dimensions, n_values, beta_values)
+  jobs <- merge(design, data.frame(rep = seq_len(as.integer(M))), by = NULL)
+  target_keys <- section6_design_key(jobs, include_rep = TRUE)
+  source <- utils::read.csv(source_path, stringsAsFactors = FALSE)
+  required <- names(empty_section6_results())
+  missing <- setdiff(required, names(source))
+  if (length(missing)) {
+    stop(sprintf("Source results lack required columns: %s.", paste(missing, collapse = ", ")), call. = FALSE)
+  }
+  source_key <- section6_design_key(source, include_rep = TRUE)
+  keep <- source$status == "ok" & source_key %in% target_keys
+  recovered <- source[keep, required, drop = FALSE]
+  recovered_key <- section6_design_key(recovered, include_rep = TRUE)
+  if (anyDuplicated(recovered_key)) {
+    stop("Recovery found duplicate completed replications; refusing to select among them.", call. = FALSE)
+  }
+  conforming <- recovered$bootstrap_method_effective == "fast_multiplier" &
+    recovered$fast_multiplier_backend_effective == "cpp" &
+    recovered$fast_multiplier_fuse_ks_cvm_effective &
+    recovered$ks_grid == "sample_unique_distances" &
+    !recovered$fallback_to_reestimated
+  if (!all(conforming)) {
+    stop("Recovery found completed target rows that do not use the required fused C++ fast bootstrap.", call. = FALSE)
+  }
+  if (!all(recovered$family == family)) {
+    stop("Recovery source contains a family inconsistent with the requested target design.", call. = FALSE)
+  }
+
+  dir.create(target_dir, recursive = TRUE, showWarnings = FALSE)
+  section6_write_atomic_csv(section6_make_manifest(
+    design, M, B, cores, base_seed, derivative_mc_size, cvm_block_size
+  ), target_manifest_path)
+  section6_write_atomic_csv(recovered, target_result_path)
+  section6_write_atomic_csv(summarize_section6_results(recovered), file.path(target_dir, "summary.csv"))
+  started <- Sys.time()
+  section6_write_status(
+    file.path(target_dir, "progress_status.txt"), family, nrow(jobs), nrow(recovered),
+    recovered, started, as.integer(cores)
+  )
+  writeLines(c(
+    sprintf("recovered_at: %s", format(started, tz = "Europe/Madrid")),
+    sprintf("source_dir: %s", normalizePath(source_dir)),
+    sprintf("target_design_rows: %d", nrow(design)),
+    sprintf("target_replications: %d", nrow(jobs)),
+    sprintf("recovered_conforming_replications: %d", nrow(recovered)),
+    "selection: status=ok; matching scenario,d,n,beta,rep; fused C++ fast bootstrap; sample KS",
+    "source_directory_was_not_modified: TRUE"
+  ), file.path(target_dir, "recovery_report.txt"))
+  cat(sprintf("Recovered %d conforming replications into %s\n", nrow(recovered), target_dir))
+  invisible(list(design = design, results = recovered))
+}
+
+summarize_section6_results <- function(results) {
+  ok <- results[results$status == "ok", , drop = FALSE]
+  if (nrow(ok) == 0L) return(data.frame())
+  keys <- interaction(ok$scenario, ok$d, ok$n, ok$beta, drop = TRUE)
+  out <- lapply(split(ok, keys), function(x) data.frame(
+    scenario = x$scenario[[1L]], family = x$family[[1L]], alternative = x$alternative[[1L]],
+    d = x$d[[1L]], n = x$n[[1L]], beta = x$beta[[1L]], M = nrow(x),
+    rejection_ks = mean(x$ks_reject), rejection_cvm = mean(x$cvm_reject), stringsAsFactors = FALSE
+  ))
+  do.call(rbind, out)
+}
+
+section6_write_status <- function(path, family, total, completed, results, started, cores) {
+  elapsed <- as.numeric(difftime(Sys.time(), started, units = "secs"))
+  successful <- results$elapsed_seconds[results$status == "ok"]
+  per_job <- if (length(successful)) mean(successful) else NA_real_
+  eta <- if (is.finite(per_job)) per_job * (total - completed) / cores else NA_real_
+  writeLines(c(
+    sprintf("family: %s", family),
+    sprintf("updated: %s", format(Sys.time(), tz = "Europe/Madrid")),
+    sprintf("completed: %d/%d", completed, total),
+    sprintf("remaining: %d", total - completed),
+    sprintf("elapsed_seconds: %.1f", elapsed),
+    sprintf("mean_seconds_per_successful_job: %s", if (is.finite(per_job)) format(round(per_job, 3), nsmall = 3) else "NA"),
+    sprintf("eta_seconds: %s", if (is.finite(eta)) format(round(eta), scientific = FALSE) else "NA"),
+    sprintf("ok: %d", sum(results$status == "ok")),
+    sprintf("nonconforming: %d", sum(results$status == "nonconforming")),
+    sprintf("errors: %d", sum(results$status == "error"))
+  ), path)
+}
+
+section6_progress <- function(completed, total, started, results, cores, width = 34L) {
+  proportion <- completed / total
+  elapsed <- as.numeric(difftime(Sys.time(), started, units = "secs"))
+  successful <- results$elapsed_seconds[results$status == "ok"]
+  per_job <- if (length(successful)) mean(successful) else NA_real_
+  eta <- if (is.finite(per_job)) per_job * (total - completed) / cores else NA_real_
+  bar <- paste0(strrep("=", floor(width * proportion)), strrep("-", width - floor(width * proportion)))
+  cat(sprintf("\r[%s] %6.2f%%  %d/%d  elapsed %s  ETA %s", bar, 100 * proportion, completed, total,
+    format(round(elapsed), units = "secs"), if (is.finite(eta)) format(round(eta), units = "secs") else "--"))
+  if (completed == total) cat("\n")
+  flush.console()
+}
+
+# A forked worker queue provides one shared job queue.  Whenever a worker
+# returns a replication, a fresh worker is immediately given the next one.
+# Hence heterogeneous n values cannot strand workers at the end of a static
+# batch. Results are checkpointed in small groups. `mcparallel` is used rather
+# than a socket cluster so this also works on macOS installations that disallow
+# opening a local server socket.
+section6_run_dynamic_queue <- function(pending, B, base_seed,
+                                       derivative_mc_size, cvm_block_size,
+                                       cores, checkpoint_results,
+                                       on_checkpoint, on_progress) {
+  if (nrow(pending) == 0L) return(invisible(NULL))
+  workers <- min(as.integer(cores), nrow(pending))
+  next_job <- 1L
+  finished <- 0L
+  buffer <- empty_section6_results()
+  active <- list()
+  on.exit({
+    if (length(active)) {
+      try(parallel:::mckill(unname(active), signal = 2L), silent = TRUE)
+    }
+  }, add = TRUE)
+  submit <- function(index) {
+    process <- parallel::mcparallel(
+      run_section6_job(pending[index, , drop = FALSE], B, base_seed,
+                       derivative_mc_size, cvm_block_size),
+      mc.set.seed = FALSE, silent = TRUE
+    )
+    active[[as.character(process$pid)]] <<- process
+  }
+  for (worker in seq_len(workers)) {
+    submit(next_job)
+    next_job <- next_job + 1L
+  }
+  while (finished < nrow(pending)) {
+    received <- parallel::mccollect(active, wait = FALSE, timeout = -1)
+    if (is.null(received)) next
+    for (pid in names(received)) {
+      active[[pid]] <- NULL
+      result <- received[[pid]]
+      if (!is.data.frame(result) || nrow(result) != 1L) {
+        stop("A Section 6 worker returned an invalid replication result.", call. = FALSE)
+      }
+      buffer <- rbind(buffer, result)
+      finished <- finished + 1L
+      if (next_job <= nrow(pending)) {
+        submit(next_job)
+        next_job <- next_job + 1L
+      }
+      if (nrow(buffer) >= checkpoint_results || finished == nrow(pending)) {
+        on_checkpoint(buffer, finished)
+        buffer <- empty_section6_results()
+      }
+      on_progress(finished)
+    }
+  }
+  invisible(NULL)
+}
+
+run_section6_family <- function(family,
+                                output_dir,
+                                M = 1000L,
+                                B = 5000L,
+                                dimensions = c(2L, 10L),
+                                n_values = c(50L, 100L, 200L),
+                                beta_values = c(0, 0.5, 1),
+                                cores = 8L,
+                                base_seed = 20260727L,
+                                derivative_mc_size = 1000L,
+                                cvm_block_size = 50L,
+                                checkpoint_results = 64L,
+                                show_progress = TRUE) {
+  family <- tolower(family)
+  if (!family %in% section6_families) stop("`family` must be one of vmf, hvmf, normal, or lg.")
+  if (identical(family, "hvmf")) {
+    message("HvMF is intentionally deferred: the current model specification is H^2-only. No jobs were launched.")
+    return(invisible(NULL))
+  }
+  cores <- as.integer(cores)
+  if (!is.finite(cores) || cores < 1L) stop("`cores` must be a positive integer.")
+  if (.Platform$OS.type != "unix" && cores > 1L) stop("This runner requires a Unix platform for outer parallelism.")
+  checkpoint_results <- as.integer(checkpoint_results)
+  if (!is.finite(checkpoint_results) || checkpoint_results < 1L) {
+    stop("`checkpoint_results` must be a positive integer.")
+  }
+  ensure_distance_profile_cpp_loaded()
+
+  design <- make_section6_design(family, dimensions, n_values, beta_values)
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  result_path <- file.path(output_dir, "raw_results.csv")
+  manifest_path <- file.path(output_dir, "manifest.csv")
+  status_path <- file.path(output_dir, "progress_status.txt")
+  summary_path <- file.path(output_dir, "summary.csv")
+  log_path <- file.path(output_dir, "run.log")
+  section6_validate_manifest_design(manifest_path, design, M = M, B = B)
+  if (!file.exists(manifest_path)) {
+    section6_write_atomic_csv(section6_make_manifest(
+      design, M, B, cores, base_seed, derivative_mc_size, cvm_block_size
+    ), manifest_path)
+  }
+  existing <- if (file.exists(result_path)) utils::read.csv(result_path, stringsAsFactors = FALSE) else empty_section6_results()
+  jobs <- merge(design, data.frame(rep = seq_len(as.integer(M))), by = NULL)
+  key <- function(x) paste(x$design_id, x$rep, sep = "|")
+  done <- if (nrow(existing)) {
+    section6_design_key(existing[existing$status == "ok", , drop = FALSE], include_rep = TRUE)
+  } else {
+    character()
+  }
+  pending <- jobs[!section6_design_key(jobs, include_rep = TRUE) %in% done, , drop = FALSE]
+  started <- Sys.time()
+  completed <- nrow(jobs) - nrow(pending)
+  cat(sprintf("%s family=%s M=%d B=%d cores=%d pending=%d\n", format(started, tz = "Europe/Madrid"), family, M, B, cores, nrow(pending)), file = log_path, append = TRUE)
+  section6_write_status(status_path, family, nrow(jobs), completed, existing, started, cores)
+  if (isTRUE(show_progress)) section6_progress(completed, nrow(jobs), started, existing, cores)
+  if (nrow(pending) == 0L) return(invisible(list(results = existing, summary = summarize_section6_results(existing))))
+
+  section6_run_dynamic_queue(
+    pending = pending, B = B, base_seed = base_seed,
+    derivative_mc_size = derivative_mc_size, cvm_block_size = cvm_block_size,
+    cores = cores, checkpoint_results = checkpoint_results,
+    on_checkpoint = function(rows, finished) {
+    existing <<- rbind(existing, rows)
+    existing <- existing[order(existing$design_id, existing$rep), , drop = FALSE]
+    section6_write_atomic_csv(existing, result_path)
+    section6_write_atomic_csv(summarize_section6_results(existing), summary_path)
+    completed <<- nrow(jobs) - nrow(pending) + finished
+    section6_write_status(status_path, family, nrow(jobs), completed, existing, started, cores)
+    cat(sprintf("%s completed=%d/%d\n", format(Sys.time(), tz = "Europe/Madrid"), completed, nrow(jobs)), file = log_path, append = TRUE)
+    },
+    on_progress = function(finished) {
+      if (isTRUE(show_progress)) {
+        section6_progress(nrow(jobs) - nrow(pending) + finished, nrow(jobs), started, existing, cores)
+      }
+    }
+  )
+  invisible(list(results = existing, summary = summarize_section6_results(existing)))
+}
+
+if (sys.nframe() == 0L) {
+  args <- parse_section6_args(commandArgs(trailingOnly = TRUE))
+  family <- tolower(as.character(args$family %||% "vmf"))
+  M <- as.integer(args$M %||% 1000L)
+  B <- as.integer(args$B %||% 5000L)
+  output_dir <- as.character(args$output_dir %||% file.path(
+    "simulation_results", "section6_new_scenarios",
+    sprintf("final_%s_d2_d10_M%d_B%d", family, M, B)
+  ))
+  common <- list(
+    family = family,
+    output_dir = output_dir,
+    M = M,
+    B = B,
+    dimensions = parse_section6_csv(args$dimensions, c(2L, 10L), "integer"),
+    n_values = parse_section6_csv(args$n_values, c(50L, 100L, 200L), "integer"),
+    beta_values = parse_section6_csv(args$beta_values, c(0, 0.5, 1), "numeric"),
+    cores = as.integer(args$cores %||% 8L),
+    base_seed = as.integer(args$seed %||% 20260727L),
+    derivative_mc_size = as.integer(args$derivative_mc_size %||% 1000L),
+    cvm_block_size = as.integer(args$cvm_block_size %||% 50L)
+  )
+  if (!is.null(args$recover_from)) {
+    recovery_common <- common
+    recovery_common$output_dir <- NULL
+    do.call(recover_section6_results, c(
+      list(source_dir = as.character(args$recover_from), target_dir = output_dir), recovery_common
+    ))
+  } else {
+    do.call(run_section6_family, c(common, list(
+      checkpoint_results = as.integer(args$checkpoint_results %||% 64L),
+      show_progress = !identical(tolower(as.character(args$show_progress %||% "true")), "false")
+    )))
+  }
+}
