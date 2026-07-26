@@ -1,0 +1,9 @@
+null: vMF(e3, kappa = 2)
+n: 200
+beta: 0
+M: 1000
+B: 5000
+statistics: KS sample, CvM
+bootstrap: fast_multiplier
+derivative_mc_size: 1000
+fast_multiplier_cvm_block_size: 50

@@ -1,0 +1,10 @@
+family: vmf
+updated: 2026-07-24 23:18:21
+completed: 10004/36000
+remaining: 25996
+elapsed_seconds: 0.0
+mean_seconds_per_successful_job: 9.314
+eta_seconds: 30265
+ok: 10004
+nonconforming: 0
+errors: 0

@@ -21,6 +21,47 @@ if (!exists("new_model_spec", mode = "function")) {
   source(model_specs_path_small_circle)
 }
 
+fast_multiplier_small_circle_norm_constant <- function(kappa, nu) {
+  root_kappa <- sqrt(as.numeric(kappa))
+  (sqrt(pi) / (2 * root_kappa)) * (
+    small_circle_erf(root_kappa * (1 - nu)) +
+      small_circle_erf(root_kappa * (1 + nu))
+  )
+}
+
+fast_multiplier_small_circle_dlogc_dkappa <- function(kappa, nu) {
+  c_value <- fast_multiplier_small_circle_norm_constant(kappa, nu)
+  -1 / (2 * kappa) +
+    (
+      (1 - nu) * exp(-kappa * (1 - nu)^2) +
+        (1 + nu) * exp(-kappa * (1 + nu)^2)
+    ) / (2 * kappa * c_value)
+}
+
+fast_multiplier_small_circle_dlogc_dnu <- function(kappa, nu) {
+  c_value <- fast_multiplier_small_circle_norm_constant(kappa, nu)
+  (
+    exp(-kappa * (1 + nu)^2) -
+      exp(-kappa * (1 - nu)^2)
+  ) / c_value
+}
+
+fast_multiplier_small_circle_component_scores_natural <- function(s,
+                                                                  kappa,
+                                                                  nu) {
+  cbind(
+    -fast_multiplier_small_circle_dlogc_dkappa(kappa, nu) - (s - nu)^2,
+    -fast_multiplier_small_circle_dlogc_dnu(kappa, nu) + 2 * kappa * (s - nu)
+  )
+}
+
+fast_multiplier_small_circle_component_log_density <- function(s,
+                                                               kappa,
+                                                               nu) {
+  -log(fast_multiplier_small_circle_norm_constant(kappa, nu)) -
+    kappa * (s - nu)^2
+}
+
 normalize_small_circle_data <- function(data, control = list()) {
   x <- jp_normalize_unit_matrix(data, arg_name = "`data`", min_ncol = 3L)
   if (ncol(x) != 3L) {

@@ -539,7 +539,7 @@ run_single_power_job <- function(job_row,
             derivative_mc_size = as.integer(derivative_mc_size),
             derivative_mc_seed = as.integer(derivative_seed),
             fast_multiplier_cvm_block_size = as.integer(fast_multiplier_cvm_block_size),
-            logistic_gaussian_quadform_method = logistic_gaussian_quadform_method
+            mvnormal_quadform_method = logistic_gaussian_quadform_method
           ),
           unknown_param = "both"
         )

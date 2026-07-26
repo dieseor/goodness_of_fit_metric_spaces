@@ -211,7 +211,8 @@ run_consolidated_logistic_gaussian_screening <- function(
       bootstrap_mode = "composite_multiplier",
       seed = seed,
       n_cores = n_cores,
-      control = list(logistic_gaussian_quadform_method = "hbe"),
+      # EN DUDA (2026-07-26): use the shared dispatcher rather than implicit HBE.
+      control = list(mvnormal_quadform_method = "auto"),
       omega_grid_type = "sample_points",
       t_grid_type = "sample_distances",
       make_plots = FALSE,

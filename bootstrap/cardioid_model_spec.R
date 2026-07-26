@@ -34,6 +34,30 @@ if (!exists("d_sph_car", mode = "function") || !exists("p_proj_car_gamma", mode 
   source(cardioid_source_path_model_spec)
 }
 
+fast_multiplier_cardioid_legendre <- function(z, k) {
+  z <- as.numeric(z)
+  switch(
+    as.character(as.integer(k)),
+    `1` = z,
+    `2` = (3 * z^2 - 1) / 2,
+    `3` = (5 * z^3 - 3 * z) / 2,
+    `4` = (35 * z^4 - 30 * z^2 + 3) / 8,
+    stop("Fast cardioid support currently covers only k = 1, 2, 3, 4.")
+  )
+}
+
+fast_multiplier_cardioid_legendre_prime <- function(z, k) {
+  z <- as.numeric(z)
+  switch(
+    as.character(as.integer(k)),
+    `1` = rep.int(1, length(z)),
+    `2` = 3 * z,
+    `3` = (15 * z^2 - 3) / 2,
+    `4` = (35 * z^3 - 15 * z) / 2,
+    stop("Fast cardioid support currently covers only k = 1, 2, 3, 4.")
+  )
+}
+
 clip_cardioid_dot_products <- function(dot_products) {
   pmax(pmin(dot_products, 1), -1)
 }
@@ -489,3 +513,9 @@ make_cardioid_spec <- function(k,
     )
   )
 }
+
+install_distance_profile_backend_wrappers(
+  "theoretical_distance_profile_cardioid",
+  envir = environment(),
+  cpp_supported = FALSE
+)

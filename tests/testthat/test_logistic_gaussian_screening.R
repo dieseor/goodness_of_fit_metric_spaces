@@ -36,7 +36,7 @@ test_that("logistic Gaussian composite screening runs on SkyeAFM in smoke size",
   expect_equal(result$screening_type, "logistic_gaussian_composite_or_screening")
   expect_equal(result$bootstrap$mode, "composite_multiplier")
   expect_equal(result$settings$bootstrap_mode, "composite_multiplier")
-  expect_equal(result$settings$quadform_method, "hbe")
+  expect_equal(result$settings$quadform_method, "auto")
   expect_equal(result$bootstrap$engine, "multiplier_bootstrap_logistic_gaussian")
   expect_true(result$inference$ks$p_value >= 0 && result$inference$ks$p_value <= 1)
   expect_true(result$inference$cvm$p_value >= 0 && result$inference$cvm$p_value <= 1)

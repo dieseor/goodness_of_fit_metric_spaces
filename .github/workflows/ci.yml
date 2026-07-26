@@ -26,5 +26,8 @@ jobs:
         run: |
           Rscript -e 'if (dir.exists("tests")) { scripts <- list.files("tests", pattern = "^test_.*\\.R$", full.names = TRUE); if(length(scripts) > 0) for(s in scripts) { cat("Running", s, "\n"); try(source(s)) } }'
 
+      - name: Test optional C++ distance-profile backend
+        run: Rscript -e 'testthat::test_file("tests/testthat/test_cpp_distance_profile_backend.R", stop_on_failure = TRUE)'
+
       - name: Check renv status
         run: Rscript -e 'renv::status()'

@@ -1,0 +1,7 @@
+recovered_at: 2026-07-24 23:25:37
+source_dir: /Users/Diego/Desktop/Codigo/goodness_of_fit_metric_spaces/simulation_results/section6_new_scenarios/final_vmf_d2_d10_M1000_B5000
+target_design_rows: 48
+target_replications: 48000
+recovered_conforming_replications: 13136
+selection: status=ok; matching scenario,d,n,beta,rep; fused C++ fast bootstrap; sample KS
+source_directory_was_not_modified: TRUE

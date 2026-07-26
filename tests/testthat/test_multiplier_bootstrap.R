@@ -543,7 +543,8 @@ test_that("fast sample-based KS streamed prep matches the cache path and reduces
     Vhat = as.matrix(prep$Vhat),
     Psi_aux = as.matrix(prep$Psi_aux),
     ks_prep = ks_prep,
-    D_ks_info = prep$D_ks
+    D_ks_info = prep$D_ks,
+    control = list(fast_multiplier_cache_corrections = FALSE)
   )
   multiplier_spec <- resolve_multiplier_spec(NULL)
   weight_matrix <- generate_multiplier_matrix(

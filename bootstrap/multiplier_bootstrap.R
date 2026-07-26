@@ -17,35 +17,9 @@ resolve_multiplier_bootstrap_path <- function(...) {
 }
 
 model_specs_path <- resolve_multiplier_bootstrap_path("bootstrap", "model_specs.R")
-if (!exists("make_normal_spec", mode = "function")) {
+if (!exists("make_normal_spec", mode = "function") ||
+    !exists("make_small_circle_weighted_mixture2_spec", mode = "function")) {
   source(model_specs_path)
-}
-
-cardioid_model_spec_path <- resolve_multiplier_bootstrap_path("bootstrap", "cardioid_model_spec.R")
-if (!exists("clip_cardioid_dot_products", mode = "function") && file.exists(cardioid_model_spec_path)) {
-  source(cardioid_model_spec_path)
-}
-
-small_circle_model_spec_path <- resolve_multiplier_bootstrap_path("bootstrap", "small_circle_model_spec.R")
-if (!exists("make_small_circle_spec", mode = "function") && file.exists(small_circle_model_spec_path)) {
-  source(small_circle_model_spec_path)
-}
-
-watson_model_spec_path <- resolve_multiplier_bootstrap_path("bootstrap", "watson_model_spec.R")
-if (!exists("make_watson_spec", mode = "function") && file.exists(watson_model_spec_path)) {
-  source(watson_model_spec_path)
-}
-
-small_circle_symmetric_mixture2_model_spec_path <- resolve_multiplier_bootstrap_path("bootstrap", "small_circle_symmetric_mixture2_model_spec.R")
-if (!exists("make_small_circle_symmetric_mixture2_spec", mode = "function") &&
-    file.exists(small_circle_symmetric_mixture2_model_spec_path)) {
-  source(small_circle_symmetric_mixture2_model_spec_path)
-}
-
-small_circle_weighted_mixture2_model_spec_path <- resolve_multiplier_bootstrap_path("bootstrap", "small_circle_weighted_mixture2_model_spec.R")
-if (!exists("make_small_circle_weighted_mixture2_spec", mode = "function") &&
-    file.exists(small_circle_weighted_mixture2_model_spec_path)) {
-  source(small_circle_weighted_mixture2_model_spec_path)
 }
 
 normalize_requested_statistics <- function(statistics) {
@@ -60,6 +34,42 @@ normalize_requested_statistics <- function(statistics) {
   }
 
   statistics
+}
+
+normalize_fast_multiplier_backend <- function(backend = c("cpp", "r")) {
+  backend <- tolower(as.character(backend))
+  if (length(backend) > 1L) {
+    backend <- backend[[1L]]
+  }
+  if (length(backend) != 1L || is.na(backend) ||
+      !backend %in% c("cpp", "r")) {
+    stop("`fast_multiplier_backend` must be either 'cpp' or 'r'.")
+  }
+  backend
+}
+
+normalize_fast_multiplier_fusion <- function(fuse_ks_cvm = TRUE) {
+  if (length(fuse_ks_cvm) != 1L || is.na(fuse_ks_cvm) ||
+      !is.logical(fuse_ks_cvm)) {
+    stop("`fuse_ks_cvm` must be TRUE or FALSE.")
+  }
+  isTRUE(fuse_ks_cvm)
+}
+
+normalize_fast_multiplier_cache <- function(cache_block_corrections = c(
+                                               "auto", "true", "false")) {
+  cache_block_corrections <- tolower(as.character(cache_block_corrections))
+  if (length(cache_block_corrections) > 1L) {
+    cache_block_corrections <- cache_block_corrections[[1L]]
+  }
+  if (length(cache_block_corrections) != 1L ||
+      is.na(cache_block_corrections) ||
+      !cache_block_corrections %in% c("auto", "true", "false")) {
+    stop(
+      "`cache_block_corrections` must be TRUE, FALSE, or one of 'auto', 'true', and 'false'."
+    )
+  }
+  cache_block_corrections
 }
 
 normalize_keep_options <- function(keep) {
@@ -266,6 +276,13 @@ sorted_tie_end_positions <- function(sorted_values) {
   } else {
     as.integer(findInterval(sorted_values, sorted_values))
   }
+}
+
+build_sorted_tie_end_matrix <- function(sorted_distance_matrix) {
+  sorted_distance_matrix <- as.matrix(sorted_distance_matrix)
+  t(vapply(seq_len(nrow(sorted_distance_matrix)), function(i) {
+    sorted_tie_end_positions(sorted_distance_matrix[i, ])
+  }, integer(ncol(sorted_distance_matrix))))
 }
 
 sort_distance_matrix_rows <- function(distance_matrix) {
@@ -808,6 +825,15 @@ compute_weighted_sample_profile_matrix <- function(order_matrix = NULL,
     stop("Weighted sample profile requires either `(order_matrix, rank_linear_index)` or `(order_list, rank_matrix)`.")
   }
 
+  if (identical(distance_profile_backend_current(), "cpp")) {
+    return(distance_profile_cpp_call(
+      "cpp_dp_weighted_sample_profile_linear",
+      order_matrix,
+      as.integer(rank_linear_index),
+      normalized_weights
+    ))
+  }
+
   n <- nrow(order_matrix)
   ordered_weights_matrix <- matrix(
     normalized_weights[order_matrix],
@@ -844,6 +870,14 @@ compute_weighted_sample_profile_rows <- function(order_matrix,
                                                  row_indices) {
   order_block <- order_matrix[row_indices, , drop = FALSE]
   rank_block <- rank_matrix[row_indices, , drop = FALSE]
+  if (identical(distance_profile_backend_current(), "cpp")) {
+    return(distance_profile_cpp_call(
+      "cpp_dp_weighted_sample_profile_rows",
+      order_block,
+      rank_block,
+      normalized_weights
+    ))
+  }
   block_n <- nrow(order_block)
   n_total <- ncol(order_block)
 
@@ -947,6 +981,15 @@ run_bootstrap_chunk <- function(weight_chunk,
                                 keep_bootstrap_thetas = FALSE,
                                 theta_start = NULL,
                                 replicate_indices = NULL) {
+  scoped_backend <- distance_profile_backend_from_control(control)
+  previous_backend <- distance_profile_backend_current()
+  if (!identical(scoped_backend, previous_backend)) {
+    if (identical(scoped_backend, "cpp")) ensure_distance_profile_cpp_loaded()
+    .distance_profile_cpp_state$active_backend <- scoped_backend
+    on.exit({
+      .distance_profile_cpp_state$active_backend <- previous_backend
+    }, add = TRUE)
+  }
   n_reps <- nrow(weight_chunk)
   ks_values <- if (want_ks) numeric(n_reps) else NULL
   cvm_values <- if (want_cvm) numeric(n_reps) else NULL
@@ -1278,12 +1321,16 @@ resolve_fast_sample_correction_cache <- function(n_centers,
     stop("Sample-correction cache dimensions must be strictly positive integers.")
   }
 
-  # Keep the streamed representation memory-light by default.  Callers with
-  # sufficient memory can opt into TRUE or "auto" to trade memory for speed.
-  requested <- control$fast_multiplier_cache_corrections %||% "false"
-  requested <- tolower(as.character(requested))
-  if (length(requested) != 1L || !requested %in% c("auto", "true", "false")) {
-    stop("`control$fast_multiplier_cache_corrections` must be TRUE, FALSE, or 'auto'.")
+  requested <- normalize_fast_multiplier_cache(
+    control$fast_multiplier_cache_corrections %||% "auto"
+  )
+  n_max <- as.integer(
+    control$fast_multiplier_correction_cache_n_max %||% 500L
+  )
+  if (length(n_max) != 1L || !is.finite(n_max) || n_max <= 0L) {
+    stop(
+      "`control$fast_multiplier_correction_cache_n_max` must be a strictly positive integer."
+    )
   }
   max_bytes <- as.numeric(control$fast_multiplier_correction_cache_max_bytes %||% (128 * 1024^2))
   if (!is.finite(max_bytes) || max_bytes <= 0) {
@@ -1297,10 +1344,16 @@ resolve_fast_sample_correction_cache <- function(n_centers,
   } else if (identical(requested, "false")) {
     FALSE
   } else {
-    bytes <= max_bytes
+    n_centers <= n_max && bytes <= max_bytes
   }
 
-  list(enabled = enabled, bytes = bytes, requested = requested, max_bytes = max_bytes)
+  list(
+    enabled = enabled,
+    bytes = bytes,
+    requested = requested,
+    max_bytes = max_bytes,
+    n_max = n_max
+  )
 }
 
 build_fast_sample_correction_cache <- function(Psi_aux_solved,
@@ -1346,7 +1399,12 @@ build_fast_sample_correction_cache <- function(Psi_aux_solved,
     values[idx, ] <- aux_basis_full[selected_counts + 1L, , drop = FALSE]
   }
 
-  list(values = values, bytes = decision$bytes)
+  list(
+    values = values,
+    bytes = decision$bytes,
+    requested = decision$requested,
+    n_max = decision$n_max
+  )
 }
 
 get_fast_sample_correction <- function(stream_prep, center_idx) {
@@ -1430,6 +1488,9 @@ prepare_fast_ks_sample_stream_prep <- function(S_obs,
     aux_sorted_distance_matrix = D_ks_info$aux_sorted_distance_matrix,
     obs_order_matrix = ks_prep$order_matrix,
     obs_sorted_distance_matrix = ks_prep$sorted_distance_matrix,
+    tie_end_matrix = build_sorted_tie_end_matrix(
+      ks_prep$sorted_distance_matrix
+    ),
     n = nrow(S_obs),
     n_aux = nrow(Psi_aux),
     correction_cache = build_fast_sample_correction_cache(
@@ -1478,11 +1539,12 @@ compute_fast_ks_sample_stats_streamed <- function(centered_weight_block,
   for (block_start in seq.int(1L, n_omega, by = omega_block_size)) {
     for (j in block_start:min(block_start + omega_block_size - 1L, n_omega)) {
       obs_order <- ks_sample_stream_prep$obs_order_matrix[j, ]
-      obs_sorted <- ks_sample_stream_prep$obs_sorted_distance_matrix[j, ]
       correction_selected_solved <- get_fast_sample_correction(ks_sample_stream_prep, j)
       ordered_weights <- centered_weight_block[, obs_order, drop = FALSE]
       empirical_selected <- row_cumsums_base(ordered_weights)
-      empirical_selected <- empirical_selected[, sorted_tie_end_positions(obs_sorted), drop = FALSE]
+      empirical_selected <- empirical_selected[
+        , ks_sample_stream_prep$tie_end_matrix[j, ], drop = FALSE
+      ]
       correction_selected <- score_block %*% t(correction_selected_solved)
       process_selected <- scale_factor * (empirical_selected - correction_selected) /
         sqrt(ks_sample_stream_prep$n)
@@ -1491,6 +1553,147 @@ compute_fast_ks_sample_stats_streamed <- function(centered_weight_block,
   }
 
   block_max
+}
+
+compute_fast_sample_ks_cvm_stats_fused_r <- function(
+    centered_weight_block,
+    stream_prep,
+    scale_factor,
+    compute_ks = TRUE,
+    compute_cvm = TRUE) {
+  if (!isTRUE(compute_ks) && !isTRUE(compute_cvm)) {
+    stop("At least one fast statistic must be requested.")
+  }
+
+  score_block <- centered_weight_block %*% stream_prep$S_obs
+  n_reps <- nrow(centered_weight_block)
+  n <- stream_prep$n
+  n_centers <- nrow(stream_prep$obs_order_matrix)
+  ks <- if (compute_ks) rep.int(0, n_reps) else NULL
+  cvm_sum <- if (compute_cvm) rep.int(0, n_reps) else NULL
+
+  for (center_idx in seq_len(n_centers)) {
+    ordered_weights <- centered_weight_block[
+      , stream_prep$obs_order_matrix[center_idx, ], drop = FALSE
+    ]
+    empirical_selected <- row_cumsums_base(ordered_weights)
+    empirical_selected <- empirical_selected[
+      , stream_prep$tie_end_matrix[center_idx, ], drop = FALSE
+    ]
+    correction_selected <- score_block %*% t(
+      get_fast_sample_correction(stream_prep, center_idx)
+    )
+    process_selected <- scale_factor * (
+      empirical_selected - correction_selected
+    ) / sqrt(n)
+    if (compute_ks) {
+      ks <- pmax(ks, apply(abs(process_selected), 1L, max))
+    }
+    if (compute_cvm) {
+      cvm_sum <- cvm_sum + rowSums(process_selected^2)
+    }
+  }
+
+  list(
+    ks = ks,
+    cvm = if (compute_cvm) cvm_sum / (n * n) else NULL
+  )
+}
+
+compute_fast_sample_ks_cvm_stats_cpp <- function(
+    centered_weight_block,
+    stream_prep,
+    scale_factor,
+    compute_ks = TRUE,
+    compute_cvm = TRUE,
+    fuse_ks_cvm = TRUE) {
+  if (!isTRUE(compute_ks) && !isTRUE(compute_cvm)) {
+    stop("At least one fast statistic must be requested.")
+  }
+  ensure_distance_profile_cpp_loaded()
+  score_block <- centered_weight_block %*% stream_prep$S_obs
+  n_reps <- nrow(centered_weight_block)
+  ks <- if (compute_ks) rep.int(0, n_reps) else NULL
+  cvm_sum <- if (compute_cvm) rep.int(0, n_reps) else NULL
+
+  call_kernel <- function(obs_order_matrix,
+                          tie_end_matrix,
+                          correction_matrix,
+                          want_ks,
+                          want_cvm) {
+    distance_profile_cpp_call(
+      "cpp_fast_sample_ks_cvm_stats",
+      centered_weights = centered_weight_block,
+      score_block = score_block,
+      obs_order_matrix = obs_order_matrix,
+      tie_end_matrix = tie_end_matrix,
+      correction_matrix = correction_matrix,
+      scale_factor = scale_factor,
+      compute_ks = want_ks,
+      compute_cvm = want_cvm
+    )
+  }
+  update_results <- function(value, want_ks, want_cvm) {
+    if (want_ks) {
+      ks <<- pmax(ks, value$ks)
+    }
+    if (want_cvm) {
+      cvm_sum <<- cvm_sum + value$cvm_sum
+    }
+  }
+  evaluate <- function(want_ks, want_cvm) {
+    if (!is.null(stream_prep$correction_cache)) {
+      update_results(
+        call_kernel(
+          obs_order_matrix = stream_prep$obs_order_matrix,
+          tie_end_matrix = stream_prep$tie_end_matrix,
+          correction_matrix = stream_prep$correction_cache$values,
+          want_ks = want_ks,
+          want_cvm = want_cvm
+        ),
+        want_ks = want_ks,
+        want_cvm = want_cvm
+      )
+      return(invisible(NULL))
+    }
+
+    for (center_idx in seq_len(nrow(stream_prep$obs_order_matrix))) {
+      update_results(
+        call_kernel(
+          obs_order_matrix = stream_prep$obs_order_matrix[
+            center_idx, , drop = FALSE
+          ],
+          tie_end_matrix = stream_prep$tie_end_matrix[
+            center_idx, , drop = FALSE
+          ],
+          correction_matrix = get_fast_sample_correction(
+            stream_prep, center_idx
+          ),
+          want_ks = want_ks,
+          want_cvm = want_cvm
+        ),
+        want_ks = want_ks,
+        want_cvm = want_cvm
+      )
+    }
+    invisible(NULL)
+  }
+
+  if (isTRUE(fuse_ks_cvm) || !isTRUE(compute_ks) || !isTRUE(compute_cvm)) {
+    evaluate(compute_ks, compute_cvm)
+  } else {
+    evaluate(TRUE, FALSE)
+    evaluate(FALSE, TRUE)
+  }
+
+  list(
+    ks = ks,
+    cvm = if (compute_cvm) {
+      cvm_sum / (stream_prep$n * stream_prep$n)
+    } else {
+      NULL
+    }
+  )
 }
 
 compute_fast_ks_sample_stats_blocked <- function(centered_weight_block,
@@ -1674,6 +1877,9 @@ prepare_fast_cvm_stream_prep <- function(S_obs,
       aux_sorted_distance_matrix = D_cvm$aux_sorted_distance_matrix,
       obs_order_matrix = cvm_prep$order_matrix,
       obs_sorted_distance_matrix = cvm_prep$sorted_distance_matrix,
+      tie_end_matrix = build_sorted_tie_end_matrix(
+        cvm_prep$sorted_distance_matrix
+      ),
       n = n,
       n_aux = nrow(Psi_aux),
       block_size = block_size,
@@ -1727,11 +1933,12 @@ compute_fast_cvm_stats_streamed <- function(centered_weight_block,
       block_end <- min(block_start + cvm_stream_prep$block_size - 1L, n)
       for (center_idx in block_start:block_end) {
         obs_order <- cvm_stream_prep$obs_order_matrix[center_idx, ]
-        obs_sorted <- cvm_stream_prep$obs_sorted_distance_matrix[center_idx, ]
         correction_selected_solved <- get_fast_sample_correction(cvm_stream_prep, center_idx)
         ordered_weights <- centered_weight_block[, obs_order, drop = FALSE]
         empirical_selected <- row_cumsums_base(ordered_weights)
-        empirical_selected <- empirical_selected[, sorted_tie_end_positions(obs_sorted), drop = FALSE]
+        empirical_selected <- empirical_selected[
+          , cvm_stream_prep$tie_end_matrix[center_idx, ], drop = FALSE
+        ]
         process_center <- scale_factor * (
           empirical_selected -
             score_block %*% t(correction_selected_solved)
@@ -1831,6 +2038,15 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
   if (!identical(null$type, "composite")) {
     stop("The fast multiplier branch is only implemented for composite nulls.")
   }
+  fast_backend_requested <- normalize_fast_multiplier_backend(
+    control$fast_multiplier_backend %||% "r"
+  )
+  fusion_requested <- normalize_fast_multiplier_fusion(
+    control$fast_multiplier_fuse_ks_cvm %||% TRUE
+  )
+  cache_requested <- normalize_fast_multiplier_cache(
+    control$fast_multiplier_cache_corrections %||% "auto"
+  )
   fast_prep <- spec_fast_multiplier_prepare(
     spec = spec,
     data = data,
@@ -1910,6 +2126,12 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
       Vhat_rcond = NA_real_,
       Vhat_condition_number = NA_real_,
       fast_parameter_summary = NA_real_,
+      fast_multiplier_backend_requested = fast_backend_requested,
+      fast_multiplier_backend_effective = "r",
+      fast_multiplier_fuse_ks_cvm_requested = fusion_requested,
+      fast_multiplier_fuse_ks_cvm_effective = FALSE,
+      fast_multiplier_cache_corrections_requested = cache_requested,
+      fast_multiplier_cache_corrections_effective = FALSE,
       fallback_to_reestimated = TRUE,
       fallback_reason = fast_prep$fallback_reason %||% NA_character_,
       effective_bootstrap_method = "reestimated"
@@ -1965,6 +2187,58 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
       control = control
     )
   }
+  ks_sample_eligible <- !want_ks || (
+    !is.null(ks_sample_stream_prep) &&
+      identical(
+        ks_sample_stream_prep$mode,
+        "sample_points_unique_distances_streamed"
+      )
+  )
+  cvm_sample_eligible <- !want_cvm || (
+    !is.null(cvm_stream_prep) &&
+      identical(
+        cvm_stream_prep$mode,
+        "sample_points_unique_distances_sorted_rows"
+      )
+  )
+  shared_sample_stream <- if (want_ks && want_cvm &&
+      ks_sample_eligible && cvm_sample_eligible) {
+    identical(
+      ks_sample_stream_prep$obs_order_matrix,
+      cvm_stream_prep$obs_order_matrix
+    ) &&
+      identical(
+        ks_sample_stream_prep$tie_end_matrix,
+        cvm_stream_prep$tie_end_matrix
+      ) &&
+      identical(
+        ks_sample_stream_prep$aux_order_matrix,
+        cvm_stream_prep$aux_order_matrix
+      )
+  } else {
+    TRUE
+  }
+  sample_backend_eligible <- ks_sample_eligible &&
+    cvm_sample_eligible && shared_sample_stream
+  joint_stream_prep <- if (sample_backend_eligible && want_ks) {
+    ks_sample_stream_prep
+  } else if (sample_backend_eligible && want_cvm) {
+    cvm_stream_prep
+  } else {
+    NULL
+  }
+  fast_backend_effective <- if (
+    identical(fast_backend_requested, "cpp") &&
+      sample_backend_eligible &&
+      !is.null(joint_stream_prep)
+  ) {
+    ensure_distance_profile_cpp_loaded()
+    "cpp"
+  } else {
+    "r"
+  }
+  fusion_effective <- isTRUE(fusion_requested) &&
+    want_ks && want_cvm && sample_backend_eligible
   prep_seconds <- proc.time()[["elapsed"]] - prep_start
 
   n_reps <- nrow(weight_matrix)
@@ -1996,8 +2270,39 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
     out_ks <- if (want_ks) numeric(length(block_indices)) else NULL
     out_cvm <- if (want_cvm) numeric(length(block_indices)) else NULL
     centered_weight_block <- weight_matrix[block_indices, , drop = FALSE] - 1
+    joint_stats <- NULL
 
-    if (want_ks && !is.null(ks_sample_stream_prep)) {
+    if (!is.null(joint_stream_prep) &&
+        (identical(fast_backend_effective, "cpp") ||
+          isTRUE(fusion_effective))) {
+      joint_stats <- if (identical(fast_backend_effective, "cpp")) {
+        compute_fast_sample_ks_cvm_stats_cpp(
+          centered_weight_block = centered_weight_block,
+          stream_prep = joint_stream_prep,
+          scale_factor = scale_factor,
+          compute_ks = want_ks,
+          compute_cvm = want_cvm,
+          fuse_ks_cvm = fusion_effective
+        )
+      } else {
+        compute_fast_sample_ks_cvm_stats_fused_r(
+          centered_weight_block = centered_weight_block,
+          stream_prep = joint_stream_prep,
+          scale_factor = scale_factor,
+          compute_ks = want_ks,
+          compute_cvm = want_cvm
+        )
+      }
+      if (want_ks) {
+        out_ks[] <- joint_stats$ks
+      }
+      if (want_cvm) {
+        out_cvm[] <- joint_stats$cvm
+      }
+    }
+
+    if (is.null(joint_stats) && want_ks &&
+        !is.null(ks_sample_stream_prep)) {
       out_ks[] <- compute_fast_ks_sample_stats_streamed(
         centered_weight_block = centered_weight_block,
         ks_sample_stream_prep = ks_sample_stream_prep,
@@ -2009,12 +2314,13 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
     for (j in seq_along(block_indices)) {
       b <- block_indices[[j]]
       centered_weights <- as.numeric(centered_weight_block[j, ])
-      if (want_ks && is.null(ks_sample_stream_prep)) {
+      if (is.null(joint_stats) && want_ks &&
+          is.null(ks_sample_stream_prep)) {
         process_ks <- scale_factor * drop(crossprod(centered_weights, H_ks)) / sqrt(nrow(S_obs))
         out_ks[[j]] <- max(abs(process_ks))
       }
     }
-    if (want_cvm) {
+    if (is.null(joint_stats) && want_cvm) {
       out_cvm[] <- compute_fast_cvm_stats_streamed(
         centered_weight_block = centered_weight_block,
         cvm_stream_prep = cvm_stream_prep,
@@ -2087,6 +2393,13 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
     Vhat_rcond = fast_prep$vhat_diagnostics$Vhat_rcond %||% NA_real_,
     Vhat_condition_number = fast_prep$vhat_diagnostics$Vhat_condition_number %||% NA_real_,
     fast_parameter_summary = fast_prep$vhat_diagnostics$par0 %||% NA_real_,
+    fast_multiplier_backend_requested = fast_backend_requested,
+    fast_multiplier_backend_effective = fast_backend_effective,
+    fast_multiplier_fuse_ks_cvm_requested = fusion_requested,
+    fast_multiplier_fuse_ks_cvm_effective = fusion_effective,
+    fast_multiplier_cache_corrections_requested = cache_requested,
+    fast_multiplier_cache_corrections_effective =
+      any(correction_cache_bytes > 0),
     fallback_to_reestimated = FALSE,
     fallback_reason = NA_character_,
     effective_bootstrap_method = "fast_multiplier"
@@ -2244,13 +2557,6 @@ run_reestimated_bootstrap_chunks <- function(weight_matrix,
 
   utils_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("utils.R"), winslash = "/", mustWork = TRUE)
   model_specs_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "model_specs.R"), winslash = "/", mustWork = TRUE)
-  cardioid_model_spec_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "cardioid_model_spec.R"), winslash = "/", mustWork = TRUE)
-  small_circle_model_spec_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "small_circle_model_spec.R"), winslash = "/", mustWork = TRUE)
-  watson_model_spec_path_worker <- normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "watson_model_spec.R"), winslash = "/", mustWork = TRUE)
-  small_circle_symmetric_mixture2_model_spec_path_worker <-
-    normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "small_circle_symmetric_mixture2_model_spec.R"), winslash = "/", mustWork = TRUE)
-  small_circle_weighted_mixture2_model_spec_path_worker <-
-    normalizePath(resolve_multiplier_bootstrap_path("bootstrap", "small_circle_weighted_mixture2_model_spec.R"), winslash = "/", mustWork = TRUE)
 
   cl <- parallel::makeCluster(n_cores_effective)
   on.exit(parallel::stopCluster(cl), add = TRUE)
@@ -2259,23 +2565,13 @@ run_reestimated_bootstrap_chunks <- function(weight_matrix,
     cl,
     c(
       "utils_path_worker",
-      "model_specs_path_worker",
-      "cardioid_model_spec_path_worker",
-      "small_circle_model_spec_path_worker",
-      "watson_model_spec_path_worker",
-      "small_circle_symmetric_mixture2_model_spec_path_worker",
-      "small_circle_weighted_mixture2_model_spec_path_worker"
+      "model_specs_path_worker"
     ),
     envir = environment()
   )
   parallel::clusterEvalQ(cl, {
     source(utils_path_worker)
     source(model_specs_path_worker)
-    source(cardioid_model_spec_path_worker)
-    source(small_circle_model_spec_path_worker)
-    source(watson_model_spec_path_worker)
-    source(small_circle_symmetric_mixture2_model_spec_path_worker)
-    source(small_circle_weighted_mixture2_model_spec_path_worker)
     NULL
   })
 
@@ -2596,6 +2892,18 @@ multiplier_bootstrap_gof <- function(data,
       fast_cvm_mode = chunk_results[[1L]]$fast_cvm_mode %||% NA_character_,
       sample_correction_cache_bytes = chunk_results[[1L]]$sample_correction_cache_bytes %||% NA_real_,
       shared_sample_correction_cache = chunk_results[[1L]]$shared_sample_correction_cache %||% NA,
+      fast_multiplier_backend_requested =
+        chunk_results[[1L]]$fast_multiplier_backend_requested %||% NA_character_,
+      fast_multiplier_backend_effective =
+        chunk_results[[1L]]$fast_multiplier_backend_effective %||% NA_character_,
+      fast_multiplier_fuse_ks_cvm_requested =
+        chunk_results[[1L]]$fast_multiplier_fuse_ks_cvm_requested %||% NA,
+      fast_multiplier_fuse_ks_cvm_effective =
+        chunk_results[[1L]]$fast_multiplier_fuse_ks_cvm_effective %||% NA,
+      fast_multiplier_cache_corrections_requested =
+        chunk_results[[1L]]$fast_multiplier_cache_corrections_requested %||% NA_character_,
+      fast_multiplier_cache_corrections_effective =
+        chunk_results[[1L]]$fast_multiplier_cache_corrections_effective %||% NA,
       Vhat_dim = chunk_results[[1L]]$Vhat_dim %||% NA_integer_,
       score_mean_aux = chunk_results[[1L]]$score_mean_aux %||% NA_real_,
       score_mean_aux_norm = chunk_results[[1L]]$score_mean_aux_norm %||% NA_real_,
@@ -2618,6 +2926,76 @@ multiplier_bootstrap_gof <- function(data,
   result
 }
 
+.multiplier_bootstrap_gof_backend_implementation <- multiplier_bootstrap_gof
+
+multiplier_bootstrap_gof <- function(data,
+                                     spec,
+                                     null,
+                                     statistics = c("ks", "cvm"),
+                                     ks_grid = NULL,
+                                     B = 5000,
+                                     alpha = 0.05,
+                                     multipliers = NULL,
+                                     n_cores = 1,
+                                     seed = NULL,
+                                     observed_theta_hat = NULL,
+                                     bootstrap_method = c("reestimated", "fast_multiplier"),
+                                     keep = list(
+                                       observed_process = TRUE,
+                                       bootstrap_statistics = TRUE,
+                                       bootstrap_thetas = FALSE
+                                     ),
+                                     control = list(),
+                                     distance_profile_backend = c("r", "cpp")) {
+  backend <- normalize_distance_profile_backend(distance_profile_backend)
+  spec_name <- as.character(spec$name)
+  is_jones_pewsey <- length(spec_name) == 1L && !is.na(spec_name) && grepl("^jp_", spec_name)
+  if (is_jones_pewsey && identical(backend, "r")) {
+    return(.multiplier_bootstrap_gof_backend_implementation(
+      data = data,
+      spec = spec,
+      null = null,
+      statistics = statistics,
+      ks_grid = ks_grid,
+      B = B,
+      alpha = alpha,
+      multipliers = multipliers,
+      n_cores = n_cores,
+      seed = seed,
+      observed_theta_hat = observed_theta_hat,
+      bootstrap_method = bootstrap_method,
+      keep = keep,
+      control = control
+    ))
+  }
+  if (identical(backend, "cpp")) {
+    assert_distance_profile_cpp_spec_available(spec$name)
+  }
+  control$distance_profile_backend <- backend
+  result <- with_distance_profile_backend(
+    backend,
+    .multiplier_bootstrap_gof_backend_implementation(
+      data = data,
+      spec = spec,
+      null = null,
+      statistics = statistics,
+      ks_grid = ks_grid,
+      B = B,
+      alpha = alpha,
+      multipliers = multipliers,
+      n_cores = n_cores,
+      seed = seed,
+      observed_theta_hat = observed_theta_hat,
+      bootstrap_method = bootstrap_method,
+      keep = keep,
+      control = control
+    )
+  )
+  result$diagnostics$distance_profile_backend_requested <- backend
+  result$diagnostics$distance_profile_backend_effective <- backend
+  result
+}
+
 multiplier_bootstrap_normal <- function(data,
                                         null,
                                         statistics = c("ks", "cvm"),
@@ -2634,7 +3012,8 @@ multiplier_bootstrap_normal <- function(data,
                                           bootstrap_thetas = FALSE
                                         ),
                                         control = list(),
-                                        unknown_param = NULL) {
+                                        unknown_param = NULL,
+                                        distance_profile_backend = c("r", "cpp")) {
   spec <- make_normal_spec(unknown_param = unknown_param)
   multiplier_bootstrap_gof(
     data = data,
@@ -2649,7 +3028,8 @@ multiplier_bootstrap_normal <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -2669,9 +3049,25 @@ multiplier_bootstrap_mvnormal <- function(data,
                                             bootstrap_thetas = FALSE
                                           ),
                                           control = list(),
-                                          unknown_param = "both") {
+                                          unknown_param = "both",
+                                          distance_profile_backend = c("r", "cpp"),
+                                          fast_multiplier_backend = c("cpp", "r"),
+                                          fuse_ks_cvm = TRUE,
+                                          cache_block_corrections = c(
+                                            "auto", "true", "false"
+                                          )) {
+  fast_multiplier_backend <- normalize_fast_multiplier_backend(
+    fast_multiplier_backend
+  )
+  fuse_ks_cvm <- normalize_fast_multiplier_fusion(fuse_ks_cvm)
+  cache_block_corrections <- normalize_fast_multiplier_cache(
+    cache_block_corrections
+  )
+  control$fast_multiplier_backend <- fast_multiplier_backend
+  control$fast_multiplier_fuse_ks_cvm <- fuse_ks_cvm
+  control$fast_multiplier_cache_corrections <- cache_block_corrections
   spec <- make_mvnormal_spec(unknown_param = unknown_param)
-  multiplier_bootstrap_gof(
+  result <- multiplier_bootstrap_gof(
     data = data,
     spec = spec,
     null = null,
@@ -2684,8 +3080,24 @@ multiplier_bootstrap_mvnormal <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
+  result$diagnostics$fast_multiplier_backend_requested <-
+    fast_multiplier_backend
+  result$diagnostics$fast_multiplier_fuse_ks_cvm_requested <-
+    fuse_ks_cvm
+  result$diagnostics$fast_multiplier_cache_corrections_requested <-
+    cache_block_corrections
+  if (!identical(
+      result$diagnostics$effective_bootstrap_method,
+      "fast_multiplier"
+  )) {
+    result$diagnostics$fast_multiplier_backend_effective <- "r"
+    result$diagnostics$fast_multiplier_fuse_ks_cvm_effective <- FALSE
+    result$diagnostics$fast_multiplier_cache_corrections_effective <- FALSE
+  }
+  result
 }
 
 multiplier_bootstrap_vmf <- function(data,
@@ -2705,7 +3117,8 @@ multiplier_bootstrap_vmf <- function(data,
                                      ),
                                      control = list(),
                                      distance_type = c("chordal", "geodesic"),
-                                     unknown_param = "xi") {
+                                     unknown_param = "xi",
+                                     distance_profile_backend = c("r", "cpp")) {
   distance_type <- match.arg(distance_type)
   spec <- make_vmf_spec(
     distance_type = distance_type,
@@ -2725,7 +3138,8 @@ multiplier_bootstrap_vmf <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -2782,7 +3196,8 @@ multiplier_bootstrap_hvmf <- function(data,
                                         bootstrap_thetas = FALSE
                                       ),
                                       control = list(),
-                                      unknown_param = "both") {
+                                      unknown_param = "both",
+                                      distance_profile_backend = c("r", "cpp")) {
   spec <- make_hvmf_spec(unknown_param = unknown_param)
 
   multiplier_bootstrap_gof(
@@ -2798,7 +3213,8 @@ multiplier_bootstrap_hvmf <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -2818,7 +3234,8 @@ multiplier_bootstrap_logistic_gaussian <- function(data,
                                                      bootstrap_thetas = FALSE
                                                    ),
                                                    control = list(),
-                                                   unknown_param = "both") {
+                                                   unknown_param = "both",
+                                                   distance_profile_backend = c("r", "cpp")) {
   spec <- make_logistic_gaussian_spec(unknown_param = unknown_param)
 
   multiplier_bootstrap_gof(
@@ -2834,7 +3251,8 @@ multiplier_bootstrap_logistic_gaussian <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -2854,7 +3272,8 @@ multiplier_bootstrap_beta_mixture2 <- function(data,
                                                             bootstrap_thetas = FALSE
                                                           ),
                                                           control = list(),
-                                                          distance_type = c("chordal", "geodesic")) {
+                                                          distance_type = c("chordal", "geodesic"),
+                                                          distance_profile_backend = c("r", "cpp")) {
   distance_type <- match.arg(distance_type)
   spec <- make_beta_mixture2_spec(distance_type = distance_type)
 
@@ -2871,7 +3290,8 @@ multiplier_bootstrap_beta_mixture2 <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -2891,7 +3311,8 @@ multiplier_bootstrap_uniform_beta_mixture <- function(data,
                                                         bootstrap_thetas = FALSE
                                                       ),
                                                       control = list(),
-                                                      distance_type = c("chordal", "geodesic")) {
+                                                      distance_type = c("chordal", "geodesic"),
+                                                      distance_profile_backend = c("r", "cpp")) {
   distance_type <- match.arg(distance_type)
   spec <- make_uniform_beta_mixture_spec(distance_type = distance_type)
 
@@ -2908,7 +3329,8 @@ multiplier_bootstrap_uniform_beta_mixture <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -2926,9 +3348,10 @@ multiplier_bootstrap_logitnormal_mixture2 <- function(data,
                                                                    observed_process = TRUE,
                                                                    bootstrap_statistics = TRUE,
                                                                    bootstrap_thetas = FALSE
-                                                                 ),
-                                                                 control = list(),
-                                                                 distance_type = c("chordal", "geodesic")) {
+                                                                   ),
+                                                                   control = list(),
+                                                                   distance_type = c("chordal", "geodesic"),
+                                                                   distance_profile_backend = c("r", "cpp")) {
   distance_type <- match.arg(distance_type)
   spec <- make_logitnormal_mixture2_spec(distance_type = distance_type)
 
@@ -2945,7 +3368,8 @@ multiplier_bootstrap_logitnormal_mixture2 <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -2967,7 +3391,8 @@ multiplier_bootstrap_cardioid <- function(data,
                                           ),
                                           control = list(),
                                           distance_type = c("chordal", "geodesic"),
-                                          unknown_param = "both") {
+                                          unknown_param = "both",
+                                          distance_profile_backend = c("r", "cpp")) {
   distance_type <- match.arg(distance_type)
   spec <- make_cardioid_spec(
     k = as.integer(k),
@@ -2988,7 +3413,8 @@ multiplier_bootstrap_cardioid <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -3006,9 +3432,10 @@ multiplier_bootstrap_spherical_cauchy <- function(data,
                                                     observed_process = TRUE,
                                                     bootstrap_statistics = TRUE,
                                                     bootstrap_thetas = FALSE
-                                                  ),
-                                                  control = list(),
-                                                  distance_type = c("chordal", "geodesic")) {
+                                                    ),
+                                                    control = list(),
+                                                    distance_type = c("chordal", "geodesic"),
+                                                    distance_profile_backend = c("r", "cpp")) {
   distance_type <- match.arg(distance_type)
   spec <- make_spherical_cauchy_spec(distance_type = distance_type)
 
@@ -3025,7 +3452,8 @@ multiplier_bootstrap_spherical_cauchy <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -3043,9 +3471,10 @@ multiplier_bootstrap_small_circle <- function(data,
                                                 observed_process = TRUE,
                                                 bootstrap_statistics = TRUE,
                                                 bootstrap_thetas = FALSE
-                                              ),
-                                              control = list(),
-                                              distance_type = c("chordal", "geodesic")) {
+                                                ),
+                                                control = list(),
+                                                distance_type = c("chordal", "geodesic"),
+                                                distance_profile_backend = c("r", "cpp")) {
   distance_type <- match.arg(distance_type)
   spec <- make_small_circle_spec(distance_type = distance_type)
 
@@ -3062,7 +3491,8 @@ multiplier_bootstrap_small_circle <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -3080,9 +3510,10 @@ multiplier_bootstrap_watson <- function(data,
                                           observed_process = TRUE,
                                           bootstrap_statistics = TRUE,
                                           bootstrap_thetas = FALSE
-                                        ),
-                                        control = list(),
-                                        distance_type = c("chordal", "geodesic")) {
+                                          ),
+                                          control = list(),
+                                          distance_type = c("chordal", "geodesic"),
+                                          distance_profile_backend = c("r", "cpp")) {
   distance_type <- match.arg(distance_type)
   multiplier_bootstrap_gof(
     data = data,
@@ -3097,7 +3528,8 @@ multiplier_bootstrap_watson <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -3115,9 +3547,10 @@ multiplier_bootstrap_small_circle_symmetric_mixture2 <- function(data,
                                                                    observed_process = TRUE,
                                                                    bootstrap_statistics = TRUE,
                                                                    bootstrap_thetas = FALSE
-                                                                 ),
-                                                                 control = list(),
-                                                                 distance_type = c("chordal", "geodesic")) {
+                                                                   ),
+                                                                   control = list(),
+                                                                   distance_type = c("chordal", "geodesic"),
+                                                                   distance_profile_backend = c("r", "cpp")) {
   distance_type <- match.arg(distance_type)
   spec <- make_small_circle_symmetric_mixture2_spec(distance_type = distance_type)
 
@@ -3134,7 +3567,8 @@ multiplier_bootstrap_small_circle_symmetric_mixture2 <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -3152,9 +3586,10 @@ multiplier_bootstrap_small_circle_weighted_mixture2 <- function(data,
                                                                   observed_process = TRUE,
                                                                   bootstrap_statistics = TRUE,
                                                                   bootstrap_thetas = FALSE
-                                                                ),
-                                                                control = list(),
-                                                                distance_type = c("chordal", "geodesic")) {
+                                                                  ),
+                                                                  control = list(),
+                                                                  distance_type = c("chordal", "geodesic"),
+                                                                  distance_profile_backend = c("r", "cpp")) {
   distance_type <- match.arg(distance_type)
   spec <- make_small_circle_weighted_mixture2_spec(distance_type = distance_type)
 
@@ -3171,7 +3606,8 @@ multiplier_bootstrap_small_circle_weighted_mixture2 <- function(data,
     seed = seed,
     bootstrap_method = bootstrap_method,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
 
@@ -3189,7 +3625,8 @@ multiplier_bootstrap_axial_truncnorm_mixture2 <- function(data,
                                                              bootstrap_statistics = TRUE,
                                                              bootstrap_thetas = FALSE
                                                            ),
-                                                           control = list()) {
+                                                           control = list(),
+                                                           distance_profile_backend = c("r", "cpp")) {
   spec <- make_axial_truncnorm_mixture2_spec(distance_type = "euclidean")
   multiplier_bootstrap_gof(
     data = data,
@@ -3203,6 +3640,7 @@ multiplier_bootstrap_axial_truncnorm_mixture2 <- function(data,
     n_cores = n_cores,
     seed = seed,
     keep = keep,
-    control = control
+    control = control,
+    distance_profile_backend = distance_profile_backend
   )
 }
