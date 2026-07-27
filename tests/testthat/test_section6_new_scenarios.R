@@ -74,3 +74,148 @@ test_that("Section 6 fast bootstrap uses the fused C++ sample kernel", {
     expect_identical(result$ks_grid, "sample_unique_distances")
   }
 })
+
+test_that("Section 6 manifest validation covers every execution setting except cores", {
+  design <- section6_env$make_section6_design(
+    family = "lg",
+    dimensions = 2L,
+    n_values = 50L,
+    beta_values = 0
+  )
+  manifest <- section6_env$section6_make_manifest(
+    design = design,
+    M = 10L,
+    B = 99L,
+    cores = 2L,
+    base_seed = 123L,
+    derivative_mc_size = 200L,
+    cvm_block_size = 25L
+  )
+  manifest_path <- tempfile(fileext = ".csv")
+  on.exit(unlink(manifest_path, force = TRUE), add = TRUE)
+  write.csv(manifest, manifest_path, row.names = FALSE)
+
+  validate <- function() {
+    section6_env$section6_validate_manifest_design(
+      manifest_path = manifest_path,
+      design = design,
+      M = 10L,
+      B = 99L,
+      base_seed = 123L,
+      derivative_mc_size = 200L,
+      cvm_block_size = 25L
+    )
+  }
+  expect_invisible(validate())
+
+  changed_cores <- manifest
+  changed_cores$cores <- 32L
+  write.csv(changed_cores, manifest_path, row.names = FALSE)
+  expect_invisible(validate())
+
+  mismatches <- list(
+    base_seed = 124L,
+    derivative_mc_size = 201L,
+    cvm_block_size = 26L,
+    ks_grid = "different_grid",
+    fast_multiplier_backend = "r",
+    fused_ks_cvm_kernel = FALSE
+  )
+  for (field in names(mismatches)) {
+    incompatible <- manifest
+    incompatible[[field]] <- mismatches[[field]]
+    write.csv(incompatible, manifest_path, row.names = FALSE)
+    expect_error(validate(), field, fixed = TRUE)
+  }
+})
+
+test_that("Section 6 output locks are exclusive and record their owner", {
+  output_dir <- tempfile("section6-lock-")
+  dir.create(output_dir)
+  on.exit(unlink(output_dir, recursive = TRUE, force = TRUE), add = TRUE)
+
+  old_slurm_job_id <- Sys.getenv("SLURM_JOB_ID", unset = NA_character_)
+  on.exit({
+    if (is.na(old_slurm_job_id)) {
+      Sys.unsetenv("SLURM_JOB_ID")
+    } else {
+      Sys.setenv(SLURM_JOB_ID = old_slurm_job_id)
+    }
+  }, add = TRUE)
+  Sys.setenv(SLURM_JOB_ID = "test-job-123")
+
+  lock <- section6_env$section6_acquire_output_lock(output_dir)
+  owner_path <- file.path(
+    section6_env$section6_output_lock_path(output_dir),
+    "owner.txt"
+  )
+  owner <- readLines(owner_path, warn = FALSE)
+  expect_true(any(owner == "slurm_job_id: test-job-123"))
+  expect_true(any(startsWith(owner, "hostname: ")))
+  expect_true(any(startsWith(owner, "pid: ")))
+  expect_error(
+    section6_env$section6_acquire_output_lock(output_dir),
+    "already locked",
+    fixed = TRUE
+  )
+  expect_true(section6_env$section6_release_output_lock(lock))
+  expect_false(dir.exists(section6_env$section6_output_lock_path(output_dir)))
+})
+
+test_that("Section 6 output locks are released after a controlled error", {
+  output_dir <- tempfile("section6-lock-error-")
+  dir.create(output_dir)
+  on.exit(unlink(output_dir, recursive = TRUE, force = TRUE), add = TRUE)
+
+  fail_while_locked <- function() {
+    lock <- section6_env$section6_acquire_output_lock(output_dir)
+    on.exit(section6_env$section6_release_output_lock(lock), add = TRUE)
+    stop("controlled failure")
+  }
+
+  expect_error(fail_while_locked(), "controlled failure", fixed = TRUE)
+  expect_false(dir.exists(section6_env$section6_output_lock_path(output_dir)))
+})
+
+test_that("Section 6 runner releases its lock when manifest validation fails", {
+  output_dir <- tempfile("section6-runner-lock-error-")
+  dir.create(output_dir)
+  on.exit(unlink(output_dir, recursive = TRUE, force = TRUE), add = TRUE)
+
+  design <- section6_env$make_section6_design(
+    family = "lg",
+    dimensions = 2L,
+    n_values = 50L,
+    beta_values = 0
+  )
+  manifest <- section6_env$section6_make_manifest(
+    design = design,
+    M = 1L,
+    B = 9L,
+    cores = 1L,
+    base_seed = 123L,
+    derivative_mc_size = 100L,
+    cvm_block_size = 25L
+  )
+  write.csv(manifest, file.path(output_dir, "manifest.csv"), row.names = FALSE)
+
+  expect_error(
+    section6_env$run_section6_family(
+      family = "lg",
+      output_dir = output_dir,
+      M = 1L,
+      B = 9L,
+      dimensions = 2L,
+      n_values = 50L,
+      beta_values = 0,
+      cores = 1L,
+      base_seed = 124L,
+      derivative_mc_size = 100L,
+      cvm_block_size = 25L,
+      show_progress = FALSE
+    ),
+    "base_seed",
+    fixed = TRUE
+  )
+  expect_false(dir.exists(section6_env$section6_output_lock_path(output_dir)))
+})
