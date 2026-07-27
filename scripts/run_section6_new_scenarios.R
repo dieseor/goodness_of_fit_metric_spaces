@@ -333,6 +333,76 @@ section6_write_atomic_csv <- function(x, path) {
   if (!file.rename(temporary, path)) stop(sprintf("Could not update '%s'.", path))
 }
 
+section6_output_lock_path <- function(output_dir) {
+  file.path(output_dir, ".section6.lock")
+}
+
+section6_acquire_output_lock <- function(output_dir) {
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  lock_path <- section6_output_lock_path(output_dir)
+  acquired <- dir.create(lock_path, showWarnings = FALSE)
+  if (!isTRUE(acquired)) {
+    owner_path <- file.path(lock_path, "owner.txt")
+    owner <- if (file.exists(owner_path)) {
+      paste(readLines(owner_path, warn = FALSE), collapse = "; ")
+    } else {
+      "owner metadata unavailable"
+    }
+    stop(sprintf(
+      "Section 6 output directory '%s' is already locked by another process or job (%s).",
+      output_dir, owner
+    ), call. = FALSE)
+  }
+
+  initialized <- FALSE
+  on.exit({
+    if (!initialized && dir.exists(lock_path)) {
+      unlink(lock_path, recursive = TRUE, force = TRUE)
+    }
+  }, add = TRUE)
+
+  hostname <- unname(Sys.info()[["nodename"]])
+  if (is.null(hostname) || is.na(hostname) || !nzchar(hostname)) {
+    hostname <- "unknown"
+  }
+  slurm_job_id <- Sys.getenv("SLURM_JOB_ID", unset = "")
+  if (!nzchar(slurm_job_id)) slurm_job_id <- "unavailable"
+  acquired_at <- format(Sys.time(), "%Y-%m-%dT%H:%M:%OS6Z", tz = "UTC")
+  owner_token <- paste(hostname, Sys.getpid(), acquired_at, sep = "|")
+  owner <- c(
+    sprintf("slurm_job_id: %s", slurm_job_id),
+    sprintf("hostname: %s", hostname),
+    sprintf("pid: %d", Sys.getpid()),
+    sprintf("acquired_at_utc: %s", acquired_at),
+    sprintf("owner_token: %s", owner_token)
+  )
+  writeLines(owner, file.path(lock_path, "owner.txt"))
+  initialized <- TRUE
+
+  structure(
+    list(path = lock_path, owner_token = owner_token),
+    class = "section6_output_lock"
+  )
+}
+
+section6_release_output_lock <- function(lock) {
+  if (is.null(lock) || is.null(lock$path) || !dir.exists(lock$path)) {
+    return(invisible(FALSE))
+  }
+  owner_path <- file.path(lock$path, "owner.txt")
+  owner <- if (file.exists(owner_path)) readLines(owner_path, warn = FALSE) else character()
+  expected <- sprintf("owner_token: %s", lock$owner_token)
+  if (!expected %in% owner) {
+    warning(sprintf(
+      "Refusing to release Section 6 lock '%s' because its owner token changed.",
+      lock$path
+    ), call. = FALSE)
+    return(invisible(FALSE))
+  }
+  unlink(lock$path, recursive = TRUE, force = TRUE)
+  invisible(!dir.exists(lock$path))
+}
+
 section6_design_key <- function(x, include_rep = FALSE) {
   required <- c("scenario", "d", "n", "beta")
   if (!all(required %in% names(x))) {
@@ -351,20 +421,47 @@ section6_design_key <- function(x, include_rep = FALSE) {
   do.call(paste, c(pieces, sep = "|"))
 }
 
-section6_validate_manifest_design <- function(manifest_path, design, M, B) {
+section6_validate_manifest_design <- function(manifest_path, design, M, B,
+                                              base_seed,
+                                              derivative_mc_size,
+                                              cvm_block_size) {
   if (!file.exists(manifest_path)) return(invisible(TRUE))
   manifest <- utils::read.csv(manifest_path, stringsAsFactors = FALSE)
-  required <- c("scenario", "d", "n", "beta", "M", "B")
+  required <- c(
+    "scenario", "d", "n", "beta", "M", "B", "base_seed",
+    "derivative_mc_size", "cvm_block_size", "ks_grid",
+    "fast_multiplier_backend", "fused_ks_cvm_kernel"
+  )
   if (!all(required %in% names(manifest))) {
     stop("Existing Section 6 manifest is incomplete; use a new output directory.")
   }
-  same_design <- setequal(section6_design_key(manifest), section6_design_key(design))
-  same_M <- all(as.integer(manifest$M) == as.integer(M))
-  same_B <- all(as.integer(manifest$B) == as.integer(B))
-  if (!same_design || !same_M || !same_B) {
-    stop(paste(
-      "The existing output directory belongs to a different design or Monte Carlo budget.",
-      "Do not resume into it; use a new output directory or recover matching rows first."
+
+  checks <- c(
+    design = setequal(section6_design_key(manifest), section6_design_key(design)),
+    M = all(as.integer(manifest$M) == as.integer(M)),
+    B = all(as.integer(manifest$B) == as.integer(B)),
+    base_seed = all(as.integer(manifest$base_seed) == as.integer(base_seed)),
+    derivative_mc_size = all(
+      as.integer(manifest$derivative_mc_size) == as.integer(derivative_mc_size)
+    ),
+    cvm_block_size = all(
+      as.integer(manifest$cvm_block_size) == as.integer(cvm_block_size)
+    ),
+    ks_grid = all(as.character(manifest$ks_grid) == "sample_unique_distances"),
+    fast_multiplier_backend = all(
+      as.character(manifest$fast_multiplier_backend) == "cpp"
+    ),
+    fused_ks_cvm_kernel = all(as.logical(manifest$fused_ks_cvm_kernel))
+  )
+  checks[is.na(checks)] <- FALSE
+  if (!all(checks)) {
+    stop(sprintf(
+      paste(
+        "The existing output directory has an incompatible Section 6 manifest",
+        "(mismatched fields: %s). Do not resume into it; use a new output",
+        "directory or recover matching rows first."
+      ),
+      paste(names(checks)[!checks], collapse = ", ")
     ), call. = FALSE)
   }
   invisible(TRUE)
@@ -398,6 +495,9 @@ recover_section6_results <- function(source_dir, target_dir, family,
   target_result_path <- file.path(target_dir, "raw_results.csv")
   target_manifest_path <- file.path(target_dir, "manifest.csv")
   if (!file.exists(source_path)) stop("The source directory has no raw_results.csv.", call. = FALSE)
+  dir.create(target_dir, recursive = TRUE, showWarnings = FALSE)
+  output_lock <- section6_acquire_output_lock(target_dir)
+  on.exit(section6_release_output_lock(output_lock), add = TRUE)
   if (file.exists(target_result_path) || file.exists(target_manifest_path)) {
     stop("Recovery target already contains results or a manifest; choose a new directory.", call. = FALSE)
   }
@@ -430,7 +530,6 @@ recover_section6_results <- function(source_dir, target_dir, family,
     stop("Recovery source contains a family inconsistent with the requested target design.", call. = FALSE)
   }
 
-  dir.create(target_dir, recursive = TRUE, showWarnings = FALSE)
   section6_write_atomic_csv(section6_make_manifest(
     design, M, B, cores, base_seed, derivative_mc_size, cvm_block_size
   ), target_manifest_path)
@@ -586,12 +685,19 @@ run_section6_family <- function(family,
 
   design <- make_section6_design(family, dimensions, n_values, beta_values)
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  output_lock <- section6_acquire_output_lock(output_dir)
+  on.exit(section6_release_output_lock(output_lock), add = TRUE)
   result_path <- file.path(output_dir, "raw_results.csv")
   manifest_path <- file.path(output_dir, "manifest.csv")
   status_path <- file.path(output_dir, "progress_status.txt")
   summary_path <- file.path(output_dir, "summary.csv")
   log_path <- file.path(output_dir, "run.log")
-  section6_validate_manifest_design(manifest_path, design, M = M, B = B)
+  section6_validate_manifest_design(
+    manifest_path, design, M = M, B = B,
+    base_seed = base_seed,
+    derivative_mc_size = derivative_mc_size,
+    cvm_block_size = cvm_block_size
+  )
   if (!file.exists(manifest_path)) {
     section6_write_atomic_csv(section6_make_manifest(
       design, M, B, cores, base_seed, derivative_mc_size, cvm_block_size
