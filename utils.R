@@ -258,127 +258,561 @@ normalize_hvmf_h2_data <- function(data, tol = 1e-10) {
   data
 }
 
-#' Generate HvMF samples on H^2 by the polar construction
-#'
-#' This implementation follows the radial inverse-CDF construction used in
-#' `oob_balls/simulations_H2`.  In particular, it retains its numerical
-#' regularisation: integration up to `upper = 3` and uniforms in `[0, 0.99)`.
-#' It targets the upper hyperboloid under the Minkowski convention
-#' \eqn{\langle x, y \rangle_M = -x_1 y_1 + x_2 y_2 + x_3 y_3}.
-#'
-#' @param n Number of samples to draw
-#' @param mu Mean direction in H^2
-#' @param kappa Strictly positive concentration parameter
-#' @param check Logical flag to validate inputs and outputs
-#' @return An n x 3 matrix with rows in H^2
-hvmf_polar_sample_core <- local({
-  quantile_cache <- new.env(parent = emptyenv())
-
-  function(n, mu, kappa, delta = 0, check = TRUE) {
-  n <- as.integer(n)
-  if (length(n) != 1L || !is.finite(n) || n < 1L) {
-    stop("`n` must be a strictly positive integer.")
-  }
-
-  if (isTRUE(check)) {
-    mu <- as.numeric(normalize_hvmf_h2_data(mu, tol = 1e-10)[1L, , drop = TRUE])
+#' Validate data on the upper sheet of a unit hyperboloid
+#' @param data Numeric matrix with rows in H^q
+#' @param q Optional intrinsic dimension, inferred as `ncol(data) - 1`
+#' @param tol Tolerance for checking \eqn{\langle x, x \rangle_M = -1}
+#' @return Numeric matrix with `q + 1` columns
+normalize_hvmf_hq_data <- function(data, q = NULL, tol = 1e-10) {
+  if (is.vector(data)) {
+    data <- matrix(as.numeric(data), nrow = 1L)
   } else {
-    mu <- as.numeric(mu)
+    data <- as.matrix(data)
   }
 
-  kappa <- as.numeric(kappa)
-  if (length(mu) != 3L || any(!is.finite(mu))) {
-    stop("`mu` must be a finite numeric vector of length 3.")
+  if (nrow(data) == 0L || ncol(data) < 3L) {
+    stop("`data` must be a non-empty n x (q + 1) matrix with q >= 2.")
   }
+
+  inferred_q <- ncol(data) - 1L
+  if (is.null(q)) {
+    q <- inferred_q
+  } else {
+    q_numeric <- as.numeric(q)
+    if (length(q_numeric) != 1L || !is.finite(q_numeric) ||
+        q_numeric < 2 || q_numeric != floor(q_numeric)) {
+      stop("`q` must be an integer greater than or equal to 2.")
+    }
+    q <- as.integer(q_numeric)
+    if (inferred_q != q) {
+      stop("`data` must have exactly q + 1 columns.")
+    }
+  }
+
+  if (any(!is.finite(data))) {
+    stop("HvMF data must be finite.")
+  }
+  if (any(data[, 1L] <= 0)) {
+    stop("HvMF data rows must satisfy x[1] > 0.")
+  }
+
+  minkowski_norms <- -data[, 1L]^2 + rowSums(data[, -1L, drop = FALSE]^2)
+  if (any(abs(minkowski_norms + 1) > tol)) {
+    stop("HvMF data rows must satisfy <x, x>_M = -1 up to tolerance.")
+  }
+
+  data
+}
+
+hvmf_validate_dimension <- function(q) {
+  q_numeric <- as.numeric(q)
+  if (length(q_numeric) != 1L || !is.finite(q_numeric) ||
+      q_numeric < 2 || q_numeric != floor(q_numeric)) {
+    stop("`q` must be an integer greater than or equal to 2.")
+  }
+  as.integer(q_numeric)
+}
+
+hvmf_validate_kappa <- function(kappa) {
+  kappa <- as.numeric(kappa)
   if (length(kappa) != 1L || !is.finite(kappa) || kappa <= 0) {
     stop("`kappa` must be a strictly positive finite scalar.")
   }
-  delta <- as.numeric(delta)
-  if (length(delta) != 1L || !is.finite(delta) || delta < 0 || delta > pi) {
-    stop("`delta` must be a finite scalar in [0, pi].")
+  kappa
+}
+
+#' Log normalising constant of the HvMF distribution on H^q
+#' @param q Intrinsic hyperboloid dimension
+#' @param kappa Strictly positive concentration parameter
+#' @return Logarithm of \eqn{c_q^{HvMF}(kappa)}
+hvmf_log_normalizing_constant <- function(q, kappa) {
+  q <- hvmf_validate_dimension(q)
+  kappa <- hvmf_validate_kappa(kappa)
+  order <- (q - 1) / 2
+  scaled_bessel_k <- besselK(kappa, nu = order, expon.scaled = TRUE)
+  if (!is.finite(scaled_bessel_k) || scaled_bessel_k <= 0) {
+    stop("Could not evaluate the scaled Bessel K function for the HvMF normalising constant.")
   }
 
+  kappa - log(2) - order * log(2 * pi / kappa) - log(scaled_bessel_k)
+}
+
+#' Radial density in hyperbolic-spherical coordinates for HvMF on H^q
+#' @param u Nonnegative radial coordinates
+#' @param q Intrinsic hyperboloid dimension
+#' @param kappa Strictly positive concentration parameter
+#' @param chi Nonnegative radial coordinate of the mean direction
+#' @param log Return log-density values
+#' @return Density or log-density values
+hvmf_radial_density <- function(u, q, kappa, chi, log = FALSE) {
+  q <- hvmf_validate_dimension(q)
+  kappa <- hvmf_validate_kappa(kappa)
+  chi <- as.numeric(chi)
+  if (length(chi) != 1L || !is.finite(chi) || chi < 0) {
+    stop("`chi` must be a finite nonnegative scalar.")
+  }
+  if (!requireNamespace("rotasym", quietly = TRUE)) {
+    stop("Package 'rotasym' is required for the HvMF radial density.")
+  }
+
+  u <- as.numeric(u)
+  log_density <- rep.int(-Inf, length(u))
+  valid <- is.finite(u) & u > 0 & u < log(.Machine$double.xmax) - 2
+  if (any(valid)) {
+    u_valid <- u[valid]
+    lambda <- kappa * sinh(chi) * sinh(u_valid)
+    log_radial_jacobian <- (q - 1) * log(sinh(u_valid))
+    log_angular_integral <- -rotasym::c_vMF(p = q, kappa = lambda, log = TRUE)
+    base_exponent <- -kappa * cosh(chi) * cosh(u_valid)
+
+    stable <- is.finite(lambda) & lambda > 1e-6
+    if (any(stable)) {
+      order <- q / 2 - 1
+      scaled_bessel_i <- besselI(
+        lambda[stable],
+        nu = order,
+        expon.scaled = TRUE
+      )
+      log_angular_integral[stable] <-
+        (q / 2) * log(2 * pi) +
+        log(scaled_bessel_i) -
+        order * log(lambda[stable])
+      base_exponent[stable] <- -kappa * cosh(u_valid[stable] - chi)
+    }
+
+    log_density[valid] <-
+      hvmf_log_normalizing_constant(q = q, kappa = kappa) +
+      log_radial_jacobian + base_exponent + log_angular_integral
+  }
+
+  if (isTRUE(log)) log_density else exp(log_density)
+}
+
+#' Radial CDF in hyperbolic-spherical coordinates for HvMF on H^q
+#' @param u Radial coordinates
+#' @inheritParams hvmf_radial_density
+#' @param rel.tol Relative integration tolerance
+#' @param abs.tol Absolute integration tolerance
+#' @return CDF values
+hvmf_radial_cdf <- function(u,
+                            q,
+                            kappa,
+                            chi,
+                            rel.tol = 1e-8,
+                            abs.tol = 1e-10) {
+  q <- hvmf_validate_dimension(q)
+  kappa <- hvmf_validate_kappa(kappa)
+  chi <- as.numeric(chi)
+  if (length(chi) != 1L || !is.finite(chi) || chi < 0) {
+    stop("`chi` must be a finite nonnegative scalar.")
+  }
+
+  u <- as.numeric(u)
+  output <- numeric(length(u))
+  output[is.infinite(u) & u > 0] <- 1
+  finite_positive <- is.finite(u) & u > 0
+  if (any(finite_positive)) {
+    output[finite_positive] <- vapply(u[finite_positive], function(upper_bound) {
+      integral <- stats::integrate(
+        hvmf_radial_density,
+        lower = 0,
+        upper = upper_bound,
+        q = q,
+        kappa = kappa,
+        chi = chi,
+        rel.tol = rel.tol,
+        abs.tol = abs.tol,
+        stop.on.error = FALSE
+      )
+      if (!identical(integral$message, "OK") || !is.finite(integral$value)) {
+        stop(sprintf("Could not integrate the HvMF radial density up to u = %.8g.", upper_bound))
+      }
+      integral$value
+    }, numeric(1))
+  }
+  pmin(pmax(output, 0), 1)
+}
+
+#' Build a regularised radial quantile table
+#' @inheritParams hvmf_radial_density
+#' @param p_max Largest probability included in the inverse-CDF table
+#' @param probability_step Probability-grid spacing
+#' @param upper Initial upper bracket for numerical inversion
+#' @return Data frame with probability and radial-quantile columns
+hvmf_build_radial_quantile_table <- function(q,
+                                             kappa,
+                                             chi,
+                                             p_max = 0.99,
+                                             probability_step = 0.01,
+                                             upper = 3) {
+  q <- hvmf_validate_dimension(q)
+  kappa <- hvmf_validate_kappa(kappa)
+  chi <- as.numeric(chi)
+  p_max <- as.numeric(p_max)
+  probability_step <- as.numeric(probability_step)
+  upper <- as.numeric(upper)
+
+  if (length(chi) != 1L || !is.finite(chi) || chi < 0) {
+    stop("`chi` must be a finite nonnegative scalar.")
+  }
+  if (length(p_max) != 1L || !is.finite(p_max) || p_max <= 0 || p_max >= 1) {
+    stop("`p_max` must be a finite scalar in (0, 1).")
+  }
+  if (length(probability_step) != 1L || !is.finite(probability_step) ||
+      probability_step <= 0 || probability_step > p_max) {
+    stop("`probability_step` must be a finite scalar in (0, p_max].")
+  }
+  if (length(upper) != 1L || !is.finite(upper) || upper <= 0) {
+    stop("`upper` must be a strictly positive finite scalar.")
+  }
   if (!requireNamespace("gbutils", quietly = TRUE)) {
     stop("Package 'gbutils' is required for the polar HvMF sampler.")
   }
-  if (!requireNamespace("rotasym", quietly = TRUE)) {
-    stop("Package 'rotasym' is required for the polar HvMF sampler.")
+
+  cdf_u <- function(upper_bounds) {
+    hvmf_radial_cdf(
+      u = upper_bounds,
+      q = q,
+      kappa = kappa,
+      chi = chi,
+      rel.tol = 1e-8,
+      abs.tol = 1e-10
+    )
   }
 
-  chi <- acosh(max(mu[[1L]], 1))
-  theta <- atan2(mu[[3L]], mu[[2L]])
-  upper <- 3
-  cache_key <- paste(formatC(kappa, digits = 17, format = "fg"),
-                     formatC(chi, digits = 17, format = "fg"), sep = "_")
+  effective_upper <- upper
+  upper_cdf <- cdf_u(effective_upper)
+  while (upper_cdf < p_max) {
+    effective_upper <- 2 * effective_upper
+    if (!is.finite(effective_upper) || effective_upper > 96) {
+      stop("Could not bracket the requested HvMF radial quantiles.")
+    }
+    upper_cdf <- cdf_u(effective_upper)
+  }
 
-  if (exists(cache_key, envir = quantile_cache, inherits = FALSE)) {
-    quantile_values <- get(cache_key, envir = quantile_cache, inherits = FALSE)
-  } else {
-    f_u <- function(u) {
-      scaled_bessel <- besselI(kappa * sinh(chi) * sinh(u), nu = 0, expon.scaled = TRUE)
-      exp(
-        log(kappa) + kappa - log(2) + u + log1p(-exp(-2 * u)) -
-          kappa / 2 * (exp(chi - u) + exp(-chi + u)) + log(scaled_bessel)
+  probabilities <- seq(0, p_max, by = probability_step)
+  if (tail(probabilities, 1L) < p_max) {
+    probabilities <- c(probabilities, p_max)
+  }
+  probabilities <- unique(pmin(probabilities, p_max))
+
+  quantile_values <- vapply(probabilities, function(probability) {
+    if (probability == 0) {
+      return(0)
+    }
+    gbutils::cdf2quantile(
+      p = probability,
+      lower = 0,
+      upper = effective_upper,
+      cdf = cdf_u
+    )
+  }, numeric(1))
+
+  output <- data.frame(
+    base = probabilities,
+    quantile_values = quantile_values
+  )
+  attr(output, "upper") <- effective_upper
+  output
+}
+
+#' Mean-direction projection density for HvMF on H^q
+#' @param y Values of \eqn{-\langle X, mu\rangle_M} in \eqn{[1, infinity)}
+#' @param q Intrinsic hyperboloid dimension
+#' @param kappa Strictly positive concentration parameter
+#' @param log Return log-density values
+#' @return Density or log-density values
+hvmf_mean_projection_density <- function(y, q, kappa, log = FALSE) {
+  q <- hvmf_validate_dimension(q)
+  kappa <- hvmf_validate_kappa(kappa)
+  y <- as.numeric(y)
+
+  log_density <- rep.int(-Inf, length(y))
+  valid <- is.finite(y) & y >= 1
+  if (any(valid)) {
+    y_valid <- y[valid]
+    power <- (q - 2) / 2
+    log_polynomial <- if (power == 0) {
+      numeric(length(y_valid))
+    } else {
+      polynomial_log_base <- rep.int(-Inf, length(y_valid))
+      above_boundary <- y_valid > 1
+      polynomial_log_base[above_boundary] <-
+        2 * log(y_valid[above_boundary]) +
+        log1p(-1 / y_valid[above_boundary]^2)
+      power * polynomial_log_base
+    }
+    log_sphere_area <- log(2) + (q / 2) * log(pi) - lgamma(q / 2)
+    log_density[valid] <-
+      hvmf_log_normalizing_constant(q = q, kappa = kappa) +
+      log_sphere_area + log_polynomial - kappa * y_valid
+  }
+
+  if (isTRUE(log)) log_density else exp(log_density)
+}
+
+#' Mean-direction projection CDF for HvMF on H^q
+#' @inheritParams hvmf_mean_projection_density
+#' @return CDF values
+hvmf_mean_projection_cdf <- function(y, q, kappa) {
+  q <- hvmf_validate_dimension(q)
+  kappa <- hvmf_validate_kappa(kappa)
+  y <- as.numeric(y)
+
+  output <- numeric(length(y))
+  output[is.infinite(y) & y > 0] <- 1
+  finite_valid <- is.finite(y) & y > 1
+  if (any(finite_valid)) {
+    output[finite_valid] <- vapply(y[finite_valid], function(upper_bound) {
+      integral <- stats::integrate(
+        hvmf_mean_projection_density,
+        lower = 1,
+        upper = upper_bound,
+        q = q,
+        kappa = kappa,
+        rel.tol = 1e-8,
+        abs.tol = 1e-10,
+        stop.on.error = FALSE
+      )
+      if (!identical(integral$message, "OK") || !is.finite(integral$value)) {
+        stop(sprintf("Could not integrate the HvMF projection density up to y = %.8g.", upper_bound))
+      }
+      integral$value
+    }, numeric(1))
+  }
+  pmin(pmax(output, 0), 1)
+}
+
+#' Core polar construction for HvMF samples on H^q
+#'
+#' @param n Number of samples to draw
+#' @param mu Mean direction in H^q
+#' @param kappa Strictly positive concentration parameter
+#' @param delta Symmetric conditional-angular displacement
+#' @param tangent Tangent direction for the angular displacement
+#' @param check Logical flag to validate inputs and outputs
+#' @param p_max Largest probability used by the regularised radial table
+#' @param probability_step Probability-grid spacing
+#' @param upper Initial upper bracket for radial quantiles
+#' @return An n x (q + 1) matrix with rows in H^q
+hvmf_polar_sample_core <- local({
+  quantile_cache <- new.env(parent = emptyenv())
+
+  function(n,
+           mu,
+           kappa,
+           delta = 0,
+           tangent = NULL,
+           check = TRUE,
+           p_max = 0.99,
+           probability_step = 0.01,
+           upper = 3) {
+    n_numeric <- as.numeric(n)
+    if (length(n_numeric) != 1L || !is.finite(n_numeric) ||
+        n_numeric < 1 || n_numeric != floor(n_numeric)) {
+      stop("`n` must be a strictly positive integer.")
+    }
+    n <- as.integer(n_numeric)
+
+    mu <- as.numeric(mu)
+    if (length(mu) < 3L || any(!is.finite(mu))) {
+      stop("`mu` must be a finite numeric vector of length q + 1 with q >= 2.")
+    }
+    q <- length(mu) - 1L
+    if (isTRUE(check)) {
+      mu <- as.numeric(normalize_hvmf_hq_data(mu, q = q, tol = 1e-10)[1L, , drop = TRUE])
+    }
+
+    kappa <- hvmf_validate_kappa(kappa)
+    delta <- as.numeric(delta)
+    if (length(delta) != 1L || !is.finite(delta) || delta < 0 || delta > pi) {
+      stop("`delta` must be a finite scalar in [0, pi].")
+    }
+    p_max <- as.numeric(p_max)
+    probability_step <- as.numeric(probability_step)
+    upper <- as.numeric(upper)
+    if (length(p_max) != 1L || !is.finite(p_max) || p_max <= 0 || p_max >= 1) {
+      stop("`p_max` must be a finite scalar in (0, 1).")
+    }
+    if (length(probability_step) != 1L || !is.finite(probability_step) ||
+        probability_step <= 0 || probability_step > p_max) {
+      stop("`probability_step` must be a finite scalar in (0, p_max].")
+    }
+    if (length(upper) != 1L || !is.finite(upper) || upper <= 0) {
+      stop("`upper` must be a strictly positive finite scalar.")
+    }
+    if (!requireNamespace("rotasym", quietly = TRUE)) {
+      stop("Package 'rotasym' is required for the polar HvMF sampler.")
+    }
+
+    spatial_norm <- sqrt(sum(mu[-1L]^2))
+    chi <- asinh(spatial_norm)
+    mean_direction <- if (spatial_norm > sqrt(.Machine$double.eps)) {
+      mu[-1L] / spatial_norm
+    } else {
+      c(1, rep.int(0, q - 1L))
+    }
+
+    tangent_direction <- NULL
+    if (delta > 0) {
+      if (is.null(tangent)) {
+        if (q != 2L) {
+          stop("`tangent` is required for a positive angular displacement when q > 2.")
+        }
+        tangent_direction <- c(-mean_direction[[2L]], mean_direction[[1L]])
+      } else {
+        tangent <- as.numeric(tangent)
+        if (length(tangent) != q || any(!is.finite(tangent))) {
+          stop("`tangent` must be a finite numeric vector of length q.")
+        }
+        tangent_residual <- tangent - sum(tangent * mean_direction) * mean_direction
+        tangent_norm <- sqrt(sum(tangent_residual^2))
+        if (!is.finite(tangent_norm) || tangent_norm <= 1e-10) {
+          stop("`tangent` must have a nonzero component orthogonal to the spatial mean direction.")
+        }
+        tangent_direction <- tangent_residual / tangent_norm
+      }
+    }
+
+    cache_key <- paste(
+      q,
+      formatC(kappa, digits = 17, format = "fg"),
+      formatC(chi, digits = 17, format = "fg"),
+      formatC(p_max, digits = 17, format = "fg"),
+      formatC(probability_step, digits = 17, format = "fg"),
+      formatC(upper, digits = 17, format = "fg"),
+      sep = "_"
+    )
+    if (exists(cache_key, envir = quantile_cache, inherits = FALSE)) {
+      quantile_table <- get(cache_key, envir = quantile_cache, inherits = FALSE)
+    } else {
+      quantile_table <- hvmf_build_radial_quantile_table(
+        q = q,
+        kappa = kappa,
+        chi = chi,
+        p_max = p_max,
+        probability_step = probability_step,
+        upper = upper
+      )
+      assign(cache_key, quantile_table, envir = quantile_cache)
+    }
+
+    radial_probability <- stats::runif(n, min = 0, max = p_max)
+    u <- stats::approx(
+      x = quantile_table$base,
+      y = quantile_table$quantile_values,
+      xout = radial_probability,
+      rule = 2
+    )$y
+    lambda <- kappa * sinh(chi) * sinh(u)
+    signs <- if (delta == 0) {
+      rep.int(0, n)
+    } else {
+      sample(c(-1, 1), size = n, replace = TRUE)
+    }
+    angular_part <- matrix(NA_real_, nrow = n, ncol = q)
+    zero_lambda <- !is.finite(lambda) | lambda <= .Machine$double.eps
+
+    if (any(zero_lambda)) {
+      if (q == 2L) {
+        uniform_angles <- stats::runif(sum(zero_lambda), min = -pi, max = pi)
+        angular_part[zero_lambda, ] <- cbind(cos(uniform_angles), sin(uniform_angles))
+      } else {
+        angular_part[zero_lambda, ] <- rotasym::r_unif_sphere(
+          n = sum(zero_lambda),
+          p = q
+        )
+      }
+    }
+
+    for (index in which(!zero_lambda)) {
+      conditional_mean <- if (delta == 0) {
+        mean_direction
+      } else {
+        cos(delta) * mean_direction +
+          signs[[index]] * sin(delta) * tangent_direction
+      }
+      angular_part[index, ] <- rotasym::r_vMF(
+        n = 1L,
+        mu = conditional_mean,
+        kappa = lambda[[index]]
       )
     }
-    cdf_u <- function(upper_bounds) {
-      vapply(upper_bounds, function(upper_bound) {
-        stats::integrate(f_u, lower = 0, upper = upper_bound)$value
-      }, numeric(1))
-    }
-    probabilities <- seq(0, 1 - 1e-3, by = 0.01)
-    quantile_values <- data.frame(
-      base = probabilities,
-      quantile_values = vapply(probabilities, function(probability) {
-        gbutils::cdf2quantile(
-          p = probability,
-          lower = 0,
-          upper = upper,
-          cdf = cdf_u
-        )
-      }, numeric(1))
-    )
-    assign(cache_key, quantile_values, envir = quantile_cache)
-  }
 
-  u <- stats::approx(
-    x = quantile_values$base,
-    y = quantile_values$quantile_values,
-    xout = stats::runif(n, min = 0, max = 0.99)
-  )$y
-  lambda <- kappa * sinh(chi) * sinh(u)
-  angular <- numeric(n)
-  signs <- if (delta == 0) rep.int(0, n) else sample(c(-1, 1), size = n, replace = TRUE)
-  zero_lambda <- !is.finite(lambda) | lambda <= .Machine$double.eps
-  if (any(zero_lambda)) {
-    angular[zero_lambda] <- stats::runif(sum(zero_lambda), min = -pi, max = pi)
-  }
-  for (index in which(!zero_lambda)) {
-    unit_draw <- rotasym::r_vMF(
-      n = 1L,
-      mu = c(cos(theta + signs[[index]] * delta), sin(theta + signs[[index]] * delta)),
-      kappa = lambda[[index]]
-    )
-    angular[[index]] <- atan2(unit_draw[[2L]], unit_draw[[1L]])
-  }
-  x <- cbind(cosh(u), sinh(u) * cos(angular), sinh(u) * sin(angular))
+    x <- cbind(cosh(u), sinh(u) * angular_part)
 
-  if (isTRUE(check)) {
-    minkowski_norms <- -x[, 1L]^2 + rowSums(x[, -1L, drop = FALSE]^2)
-    if (any(!is.finite(x)) || any(abs(minkowski_norms + 1) > 1e-8)) {
-      stop("Sampler output does not satisfy <x, x>_M = -1 up to tolerance.")
+    if (isTRUE(check)) {
+      minkowski_norms <- -x[, 1L]^2 + rowSums(x[, -1L, drop = FALSE]^2)
+      if (any(!is.finite(x)) || any(abs(minkowski_norms + 1) > 1e-8)) {
+        stop("Sampler output does not satisfy <x, x>_M = -1 up to tolerance.")
+      }
+      if (any(x[, 1L] <= 0)) {
+        stop("Sampler output must satisfy x[1] > 0.")
+      }
     }
-    if (any(x[, 1L] <= 0)) {
-      stop("Sampler output must satisfy x[1] > 0.")
-    }
-  }
 
-  x
+    x
   }
 })
 
+#' Generate HvMF samples on H^q
+#' @param n Number of samples to draw
+#' @param mu Mean direction in H^q, represented by a vector of length `q + 1`
+#' @param kappa Strictly positive concentration parameter
+#' @param check Logical flag to validate inputs and outputs
+#' @param p_max Largest probability used by the regularised radial table
+#' @param probability_step Probability-grid spacing
+#' @param upper Initial upper bracket for radial quantiles
+#' @return An n x (q + 1) matrix with rows in H^q
+rhvmf_polar <- function(n,
+                        mu,
+                        kappa,
+                        check = TRUE,
+                        p_max = 0.99,
+                        probability_step = 0.01,
+                        upper = 3) {
+  hvmf_polar_sample_core(
+    n = n,
+    mu = mu,
+    kappa = kappa,
+    delta = 0,
+    check = check,
+    p_max = p_max,
+    probability_step = probability_step,
+    upper = upper
+  )
+}
+
+#' Generate a symmetric conditional-angular HvMF mixture on H^q
+#' @inheritParams rhvmf_polar
+#' @param delta Angular displacement in radians
+#' @param tangent Tangent direction defining the two displaced conditional
+#'   vMF means. It is inferred when `q = 2` and required for `q > 2`.
+#' @return An n x (q + 1) matrix with rows in H^q
+rhvmf_angular_mixture <- function(n,
+                                  mu,
+                                  kappa,
+                                  delta,
+                                  tangent = NULL,
+                                  check = TRUE,
+                                  p_max = 0.99,
+                                  probability_step = 0.01,
+                                  upper = 3) {
+  hvmf_polar_sample_core(
+    n = n,
+    mu = mu,
+    kappa = kappa,
+    delta = delta,
+    tangent = tangent,
+    check = check,
+    p_max = p_max,
+    probability_step = probability_step,
+    upper = upper
+  )
+}
+
 rhvmf_h2_polar <- function(n, mu, kappa, check = TRUE) {
-  hvmf_polar_sample_core(n = n, mu = mu, kappa = kappa, delta = 0, check = check)
+  rhvmf_polar(n = n, mu = mu, kappa = kappa, check = check)
 }
 
 #' Generate the symmetric angular HvMF alternative on H^2
@@ -394,11 +828,14 @@ rhvmf_h2_polar <- function(n, mu, kappa, check = TRUE) {
 #' @param check Logical flag to validate inputs and outputs
 #' @return An n x 3 matrix with rows in H^2
 rhvmf_h2_angular_mixture <- function(n, mu, kappa, delta, check = TRUE) {
-  delta <- as.numeric(delta)
-  if (length(delta) != 1L || !is.finite(delta) || delta < 0 || delta > pi) {
-    stop("`delta` must be a finite scalar in [0, pi].")
-  }
-  hvmf_polar_sample_core(n = n, mu = mu, kappa = kappa, delta = delta, check = check)
+  rhvmf_angular_mixture(
+    n = n,
+    mu = mu,
+    kappa = kappa,
+    delta = delta,
+    tangent = NULL,
+    check = check
+  )
 }
 
 #' Closed-form MLE for HvMF on H^2, with optional nonnegative weights
@@ -479,6 +916,172 @@ hvmf_mle_h2 <- function(data, weights = NULL, tol = 1e-10) {
     W = W,
     xi_inner = xi_inner,
     resultant = S
+  )
+}
+
+#' Minkowski pseudo-inner product in R^(q+1)
+#' @param x,y Finite numeric vectors of the same length q + 1, with q >= 2
+#' @return The value -x_1 y_1 + sum_{j=2}^{q+1} x_j y_j
+hvmf_minkowski_inner_product <- function(x, y) {
+  x <- as.numeric(x)
+  y <- as.numeric(y)
+  if (length(x) < 3L || length(x) != length(y) ||
+      any(!is.finite(x)) || any(!is.finite(y))) {
+    stop("`x` and `y` must be finite vectors of the same length q + 1, with q >= 2.")
+  }
+  -x[[1L]] * y[[1L]] + sum(x[-1L] * y[-1L])
+}
+
+#' Mean-resultant ratio of the HvMF distribution on H^q
+#' @param q Intrinsic dimension q >= 2
+#' @param kappa Positive concentration
+#' @return K_{(q+1)/2}(kappa) / K_{(q-1)/2}(kappa)
+hvmf_mean_resultant_ratio <- function(q, kappa) {
+  q <- hvmf_validate_dimension(q)
+  kappa <- hvmf_validate_kappa(kappa)
+  nu <- (q - 1) / 2
+  numerator <- besselK(kappa, nu = nu + 1, expon.scaled = TRUE)
+  denominator <- besselK(kappa, nu = nu, expon.scaled = TRUE)
+  value <- numerator / denominator
+  if (!is.finite(value) || value <= 1) {
+    stop("Could not evaluate the HvMF mean-resultant ratio.")
+  }
+  value
+}
+
+#' Recover the HvMF concentration from a mean-resultant ratio
+#' @param q Intrinsic dimension q >= 2
+#' @param ratio Value strictly greater than one
+#' @return Positive concentration parameter
+hvmf_kappa_from_mean_resultant_ratio <- function(q, ratio) {
+  q <- hvmf_validate_dimension(q)
+  ratio <- as.numeric(ratio)
+  if (length(ratio) != 1L || !is.finite(ratio) || ratio <= 1) {
+    stop("`ratio` must be a strictly greater than one finite scalar.")
+  }
+
+  objective <- function(kappa) hvmf_mean_resultant_ratio(q, kappa) - ratio
+  lower <- 1e-8
+  upper <- max(1, 1 / (ratio - 1))
+  while (objective(upper) > 0) {
+    upper <- 2 * upper
+    if (!is.finite(upper) || upper > 1e12) {
+      stop("Could not bracket the HvMF concentration MLE.")
+    }
+  }
+  stats::uniroot(objective, lower = lower, upper = upper, tol = 1e-10)$root
+}
+
+#' Maximum-likelihood estimator for HvMF on H^q
+#'
+#' For q = 2 this delegates to the established closed-form implementation.
+#' For q > 2 the location is the normalised Minkowski resultant and the
+#' concentration solves K_{(q+1)/2}(kappa)/K_{(q-1)/2}(kappa) = R/W.
+#'
+#' @param data Numeric n x (q + 1) matrix with rows in H^q
+#' @param weights Optional nonnegative weights
+#' @param tol Numerical tolerance for hyperboloid checks and degeneracy
+#' @return List with `mu`, `kappa`, `R`, `W`, and the weighted resultant
+hvmf_mle_hq <- function(data, weights = NULL, tol = 1e-10) {
+  x <- normalize_hvmf_hq_data(data, tol = tol)
+  q <- ncol(x) - 1L
+  if (q == 2L) return(hvmf_mle_h2(x, weights = weights, tol = tol))
+
+  n <- nrow(x)
+  if (is.null(weights)) weights <- rep.int(1, n)
+  weights <- as.numeric(weights)
+  if (length(weights) != n || any(!is.finite(weights)) || any(weights < 0)) {
+    stop("`weights` must be a finite nonnegative vector of length nrow(data).")
+  }
+  W <- sum(weights)
+  if (!is.finite(W) || W <= 0) stop("sum(weights) must be strictly positive.")
+
+  resultant <- colSums(x * weights)
+  resultant_norm_sq <- -hvmf_minkowski_inner_product(resultant, resultant)
+  if (!is.finite(resultant_norm_sq) || resultant_norm_sq <= 0) {
+    stop("The weighted resultant has non-positive or non-finite hyperbolic norm.")
+  }
+  R <- sqrt(resultant_norm_sq)
+  ratio <- R / W
+  if (!is.finite(ratio) || ratio <= 1 + tol) {
+    stop("Degenerate or near-degenerate HvMF MLE: R/W must be greater than one.")
+  }
+  mu <- resultant / R
+  if (mu[[1L]] <= 0 || abs(hvmf_minkowski_inner_product(mu, mu) + 1) > 100 * tol) {
+    stop("Internal HvMF MLE check failed for the estimated mean direction.")
+  }
+  kappa <- hvmf_kappa_from_mean_resultant_ratio(q, ratio)
+  list(
+    xi = mu, mu = mu, kappa = kappa, q = q, R = R, W = W,
+    resultant = resultant, resultant_ratio = ratio,
+    xi_inner = hvmf_minkowski_inner_product(mu, mu)
+  )
+}
+
+#' Pairwise geodesic distances on H^q
+#' @param omega_grid Matrix of H^q reference points
+#' @param data Matrix of H^q observations
+#' @param tol Numerical clipping tolerance
+#' @return Matrix with rows indexed by `omega_grid` and columns by `data`
+hvmf_distance_matrix_hq <- function(omega_grid, data, tol = 1e-12) {
+  omega_matrix <- normalize_hvmf_hq_data(omega_grid, tol = tol)
+  data_matrix <- normalize_hvmf_hq_data(data, q = ncol(omega_matrix) - 1L, tol = tol)
+  minkowski_data <- data_matrix
+  minkowski_data[, 1L] <- -minkowski_data[, 1L]
+  acosh(pmax(-(omega_matrix %*% t(minkowski_data)), 1))
+}
+
+#' Tabulated radial distance profile for an HvMF distribution on H^q
+#'
+#' This is the distribution of d(X, omega), where d(mu, omega) = `chi`.
+#' The table is built only up to the largest requested radius, so it evaluates
+#' the CDF itself rather than renormalising a truncated law.
+hvmf_distance_profile_tabulated <- function(t_values,
+                                            q,
+                                            kappa,
+                                            chi,
+                                            grid_size = 4097L) {
+  q <- hvmf_validate_dimension(q)
+  kappa <- hvmf_validate_kappa(kappa)
+  chi <- as.numeric(chi)
+  t_values <- as.numeric(t_values)
+  grid_size <- as.integer(grid_size)
+  if (length(chi) != 1L || !is.finite(chi) || chi < 0) {
+    stop("`chi` must be a finite nonnegative scalar.")
+  }
+  if (any(!is.finite(t_values)) || any(t_values < 0)) {
+    stop("`t_values` must be finite and nonnegative.")
+  }
+  if (!is.finite(grid_size) || grid_size < 3L) {
+    stop("`grid_size` must be an integer of at least three.")
+  }
+  upper <- max(t_values)
+  if (upper == 0) return(rep.int(0, length(t_values)))
+
+  grid <- seq(0, upper, length.out = grid_size)
+  density <- hvmf_radial_density(grid, q = q, kappa = kappa, chi = chi)
+  increments <- diff(grid) * (density[-1L] + density[-length(density)]) / 2
+  cdf <- c(0, cumsum(increments))
+  values <- stats::approx(grid, cdf, xout = t_values, rule = 2)$y
+  pmin(pmax(values, 0), 1)
+}
+
+#' Theoretical HvMF distance profile on H^q
+#' @param omega,mu Points on H^q
+#' @param kappa Positive concentration
+#' @param t_values Nonnegative radii
+#' @param grid_size Number of points in the radial CDF table
+hvmf_distance_profile_hq <- function(omega, mu, kappa, t_values,
+                                     grid_size = 4097L) {
+  omega <- as.numeric(omega)
+  mu <- as.numeric(mu)
+  q <- length(mu) - 1L
+  normalize_hvmf_hq_data(omega, q = q)
+  normalize_hvmf_hq_data(mu, q = q)
+  chi <- acosh(pmax(-hvmf_minkowski_inner_product(mu, omega), 1))
+  hvmf_distance_profile_tabulated(
+    t_values = t_values, q = q, kappa = kappa, chi = chi,
+    grid_size = grid_size
   )
 }
 

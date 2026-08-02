@@ -45,6 +45,10 @@ renv/cache/
 *.dll
 */packrat/
 
+# Ignore temporary files
+simulation_results/**/progress_status.txt
+simulation_results/**/recovery_report.txt
+
 # Ignore large debug files
 debug_*.csv
 

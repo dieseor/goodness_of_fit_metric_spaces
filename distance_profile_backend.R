@@ -43,6 +43,42 @@ distance_profile_backend_current <- function() {
   .distance_profile_cpp_state$active_backend
 }
 
+# Rcpp::sourceCpp() uses a cache directory shared by independent R sessions.
+# Serialise compilation/loading for this project: without a lock, two sessions
+# can observe the cache while its shared object is being replaced.
+with_distance_profile_cpp_cache_lock <- function(cache_dir, code,
+                                                 timeout_seconds = 1200,
+                                                 stale_seconds = 900) {
+  lock_dir <- file.path(cache_dir, ".distance_profile_sourcecpp.lock")
+  deadline <- Sys.time() + timeout_seconds
+  acquired <- FALSE
+  repeat {
+    if (isTRUE(dir.create(lock_dir, showWarnings = FALSE))) {
+      acquired <- TRUE
+      break
+    }
+    lock_info <- suppressWarnings(file.info(lock_dir))
+    lock_age <- as.numeric(difftime(
+      Sys.time(), lock_info$mtime[[1L]], units = "secs"
+    ))
+    if (is.finite(lock_age) && lock_age > stale_seconds) {
+      unlink(lock_dir, recursive = TRUE, force = TRUE)
+      next
+    }
+    if (Sys.time() >= deadline) {
+      stop(sprintf(
+        "Timed out after %d seconds waiting for the C++ distance-profile cache lock.",
+        timeout_seconds
+      ), call. = FALSE)
+    }
+    Sys.sleep(0.05)
+  }
+  on.exit({
+    if (acquired) unlink(lock_dir, recursive = TRUE, force = TRUE)
+  }, add = TRUE)
+  force(code)
+}
+
 with_distance_profile_backend <- function(backend, expr) {
   backend <- normalize_distance_profile_backend(backend)
   previous <- .distance_profile_cpp_state$active_backend
@@ -93,22 +129,33 @@ ensure_distance_profile_cpp_loaded <- function() {
     dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
   }
 
-  tryCatch(
+  source_cpp <- function(rebuild) {
     Rcpp::sourceCpp(
       file = source_file,
       env = .distance_profile_cpp_state$exports,
       cacheDir = cache_dir,
-      rebuild = FALSE,
+      rebuild = rebuild,
       showOutput = FALSE,
       verbose = FALSE
-    ),
-    error = function(e) {
-      stop(sprintf(
-        "Failed to compile or load the C++ distance-profile backend: %s",
-        conditionMessage(e)
-      ), call. = FALSE)
+    )
+  }
+  with_distance_profile_cpp_cache_lock(cache_dir, {
+    first_attempt <- tryCatch(
+      source_cpp(rebuild = FALSE),
+      error = function(error) error
+    )
+    if (inherits(first_attempt, "error")) {
+      tryCatch(
+        source_cpp(rebuild = TRUE),
+        error = function(error) {
+          stop(sprintf(
+            "Failed to compile or load the C++ distance-profile backend: %s",
+            conditionMessage(error)
+          ), call. = FALSE)
+        }
+      )
     }
-  )
+  })
 
   .distance_profile_cpp_state$loaded <- TRUE
   invisible(.distance_profile_cpp_state$exports)

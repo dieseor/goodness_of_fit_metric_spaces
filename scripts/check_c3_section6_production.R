@@ -14,7 +14,19 @@ main <- function() {
   family <- tolower(as.character(args$family %||% ""))
   output_dir <- as.character(args$output_dir %||% "")
   base_seed <- suppressWarnings(as.integer(args$seed %||% NA_integer_))
+  derivative_method <- tolower(as.character(
+    args$derivative_method %||% "quadrature"
+  ))
   mode <- tolower(as.character(args$mode %||% "preflight"))
+  dimensions <- parse_section6_csv(
+    args$dimensions,
+    c(2L, 10L),
+    "integer"
+  )
+  allow_new <- identical(
+    tolower(as.character(args$allow_new %||% "false")),
+    "true"
+  )
 
   if (!family %in% c("normal", "lg")) {
     stop("`--family` must be either 'normal' or 'lg'.", call. = FALSE)
@@ -28,6 +40,24 @@ main <- function() {
   if (!mode %in% c("preflight", "final")) {
     stop("`--mode` must be either 'preflight' or 'final'.", call. = FALSE)
   }
+  if (!identical(derivative_method, "quadrature")) {
+    stop("Section 6 Normal/LG production requires `--derivative_method=quadrature`.",
+         call. = FALSE)
+  }
+  if (!length(dimensions) || anyNA(dimensions) ||
+      any(!is.finite(dimensions)) || any(dimensions < 2L)) {
+    stop("`--dimensions` must contain integers greater than or equal to 2.",
+         call. = FALSE)
+  }
+  dimensions <- sort(unique(as.integer(dimensions)))
+
+  production_design <- make_section6_design(
+    family = family,
+    dimensions = dimensions,
+    n_values = c(50L, 100L, 200L, 400L),
+    beta_values = c(0, 0.5, 1)
+  )
+  expected_rows <- nrow(production_design) * 1000L
 
   manifest_path <- file.path(output_dir, "manifest.csv")
   result_path <- file.path(output_dir, "raw_results.csv")
@@ -35,6 +65,33 @@ main <- function() {
   results_exist <- file.exists(result_path)
 
   if (!manifest_exists && !results_exist) {
+    if (identical(mode, "preflight") && isTRUE(allow_new)) {
+      existing_entries <- if (dir.exists(output_dir)) {
+        list.files(
+          output_dir,
+          all.files = TRUE,
+          no.. = TRUE
+        )
+      } else {
+        character()
+      }
+      if (length(existing_entries)) {
+        stop(sprintf(
+          paste(
+            "The requested new production output directory is not empty:",
+            "'%s'. Refusing to initialize it."
+          ),
+          output_dir
+        ), call. = FALSE)
+      }
+      cat("Production preflight passed for a new output directory.\n")
+      cat(sprintf("family: %s\n", family))
+      cat(sprintf("dimensions: %s\n", paste(dimensions, collapse = ",")))
+      cat(sprintf("output_dir: %s\n", output_dir))
+      cat(sprintf("completed: 0/%d\n", expected_rows))
+      cat(sprintf("pending: %d\n", expected_rows))
+      return(invisible(TRUE))
+    }
     if (identical(mode, "preflight") && identical(family, "normal")) {
       stop(paste(
         "The Normal production output has not been initialized.",
@@ -80,12 +137,6 @@ main <- function() {
   output_lock <- section6_acquire_output_lock(output_dir)
   on.exit(section6_release_output_lock(output_lock), add = TRUE)
 
-  production_design <- make_section6_design(
-    family = family,
-    dimensions = c(2L, 10L),
-    n_values = c(50L, 100L, 200L, 400L),
-    beta_values = c(0, 0.5, 1)
-  )
   section6_validate_manifest_design(
     manifest_path = manifest_path,
     design = production_design,
@@ -93,7 +144,8 @@ main <- function() {
     B = 5000L,
     base_seed = base_seed,
     derivative_mc_size = 1000L,
-    cvm_block_size = 50L
+    cvm_block_size = 50L,
+    derivative_method = derivative_method
   )
 
   results <- utils::read.csv(result_path, stringsAsFactors = FALSE)
@@ -105,8 +157,11 @@ main <- function() {
       paste(missing, collapse = ", ")
     ), call. = FALSE)
   }
-  if (nrow(results) > 48000L) {
-    stop("Production results contain more than 48000 rows.", call. = FALSE)
+  if (nrow(results) > expected_rows) {
+    stop(sprintf(
+      "Production results contain more than %d rows.",
+      expected_rows
+    ), call. = FALSE)
   }
 
   production_jobs <- merge(
@@ -141,8 +196,18 @@ main <- function() {
     results$bootstrap_method_effective == "fast_multiplier" &
     results$fast_multiplier_backend_requested == "cpp" &
     results$fast_multiplier_backend_effective == "cpp" &
+    results$fast_multiplier_cpp_kernel_requested == "contiguous_double" &
+    results$fast_multiplier_cpp_kernel_effective == "contiguous_double" &
     results$fast_multiplier_fuse_ks_cvm_requested &
     results$fast_multiplier_fuse_ks_cvm_effective &
+    results$derivative_method_requested == "quadrature" &
+    results$derivative_method_effective == "quadrature" &
+    results$derivative_method_selection_source == "explicit" &
+    results$quadrature_algorithm == "joint_ruben_gamma_mixture" &
+    is.finite(results$quadrature_abs_tol) &
+    results$quadrature_abs_tol > 0 &
+    is.finite(results$quadrature_max_residual_error_estimate) &
+    results$quadrature_max_residual_error_estimate <= results$quadrature_abs_tol * 1.01 &
     results$ks_grid == "sample_unique_distances" &
     !results$fallback_to_reestimated
   if (!isTRUE(all(conforming))) {
@@ -165,18 +230,20 @@ main <- function() {
   }
 
   completed <- nrow(results)
-  if (identical(mode, "final") && completed != 48000L) {
+  if (identical(mode, "final") && completed != expected_rows) {
     stop(sprintf(
-      "Final production validation found %d/48000 rows.",
-      completed
+      "Final production validation found %d/%d rows.",
+      completed,
+      expected_rows
     ), call. = FALSE)
   }
 
   cat(sprintf("Production %s validation passed.\n", mode))
   cat(sprintf("family: %s\n", family))
+  cat(sprintf("dimensions: %s\n", paste(dimensions, collapse = ",")))
   cat(sprintf("output_dir: %s\n", output_dir))
-  cat(sprintf("completed: %d/48000\n", completed))
-  cat(sprintf("pending: %d\n", 48000L - completed))
+  cat(sprintf("completed: %d/%d\n", completed, expected_rows))
+  cat(sprintf("pending: %d\n", expected_rows - completed))
 
   if (identical(mode, "final")) {
     elapsed <- as.numeric(results$elapsed_seconds)
@@ -186,9 +253,10 @@ main <- function() {
     }
     summary <- data.frame(
       family = family,
+      dimensions = paste(dimensions, collapse = ","),
       status = "ok",
       completed_rows = completed,
-      pending_rows = 48000L - completed,
+      pending_rows = expected_rows - completed,
       duplicate_keys = anyDuplicated(result_keys),
       nonconforming_rows = sum(!conforming),
       replication_elapsed_total_seconds = sum(elapsed),

@@ -233,7 +233,10 @@ run_single_risoe_case <- function(config,
           bootstrap_statistics = TRUE,
           bootstrap_thetas = FALSE
         ),
-        control = list(hvmf_profile_method = "tabulated"),
+        control = list(
+          derivative_method = "quadrature",
+          hvmf_profile_method = "tabulated"
+        ),
         unknown_param = "both"
       )
 
@@ -249,6 +252,10 @@ run_single_risoe_case <- function(config,
         ks_grid_mode = ks_grid_mode,
         ks_n_omega = if (identical(ks_grid_mode, "manual")) ks_n_omega else NA_integer_,
         ks_n_t = if (identical(ks_grid_mode, "manual")) ks_n_t else NA_integer_,
+        derivative_method_requested = "quadrature",
+        derivative_method_effective =
+          result$diagnostics$derivative_method_effective %||%
+          result$diagnostics$derivative_method %||% NA_character_,
         elapsed_seconds = elapsed_seconds,
         status = "ok",
         error_message = NA_character_,
@@ -288,6 +295,8 @@ run_single_risoe_case <- function(config,
         ks_grid_mode = ks_grid_mode,
         ks_n_omega = if (identical(ks_grid_mode, "manual")) ks_n_omega else NA_integer_,
         ks_n_t = if (identical(ks_grid_mode, "manual")) ks_n_t else NA_integer_,
+        derivative_method_requested = "quadrature",
+        derivative_method_effective = NA_character_,
         elapsed_seconds = elapsed_seconds,
         status = "error",
         error_message = safe_error_message(e),

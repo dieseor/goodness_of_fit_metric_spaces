@@ -94,19 +94,23 @@ run_power_bootstrap <- function(family, x, B, seed, bootstrap_method, hvmf_small
   }
   if (identical(family, "lg")) {
     return(do.call(multiplier_bootstrap_logistic_gaussian, c(common, list(
-      unknown_param = "both", control = list(derivative_mc_size = 1000L, derivative_mc_seed = seed + 7L)
+      unknown_param = "both", control = list(derivative_method = "quadrature")
     ))))
   }
   if (identical(family, "vmf")) {
     return(do.call(multiplier_bootstrap_vmf, c(common, list(
       unknown_param = "xi", distance_type = "geodesic",
-      control = list(derivative_mc_size = 1000L, derivative_mc_seed = seed + 7L, vmf_profile_method = "tabulated", vmf_profile_n_u = 4097L)
+      control = list(
+        derivative_method = "quadrature",
+        vmf_profile_method = "tabulated",
+        vmf_profile_n_u = 4097L
+      )
     ))))
   }
   if (identical(family, "hvmf")) {
     return(do.call(multiplier_bootstrap_hvmf, c(common, list(
       unknown_param = "both", control = list(
-        derivative_mc_size = 1000L, derivative_mc_seed = seed + 7L,
+        derivative_method = "quadrature",
         hvmf_profile_method = "tabulated",
         hvmf_profile_n_y = if (isTRUE(hvmf_small_grid)) 257L else 4097L
       )
@@ -153,6 +157,7 @@ make_design <- function(catalog, n_values, beta_values) {
 empty_power_results <- function() {
   data.frame(family = character(), candidate = character(), n = integer(), beta = numeric(), design_id = integer(), rep = integer(),
              method = character(), ks_pvalue = numeric(), cvm_pvalue = numeric(), ks_reject = logical(), cvm_reject = logical(),
+             derivative_method_requested = character(), derivative_method_effective = character(),
              elapsed_seconds = numeric(), status = character(), error_message = character(), stringsAsFactors = FALSE)
 }
 
@@ -162,6 +167,8 @@ run_one_power_job <- function(job, B, base_seed, bootstrap_method, hvmf_small_gr
   out <- data.frame(family = family, candidate = as.character(job$candidate), n = as.integer(job$n), beta = as.numeric(job$beta),
                     design_id = as.integer(job$design_id), rep = as.integer(job$rep), method = bootstrap_method,
                     ks_pvalue = NA_real_, cvm_pvalue = NA_real_, ks_reject = NA, cvm_reject = NA,
+                    derivative_method_requested = if (family %in% c("vmf", "hvmf")) "quadrature" else "score_mc",
+                    derivative_method_effective = NA_character_,
                     elapsed_seconds = NA_real_, status = "ok", error_message = NA_character_, stringsAsFactors = FALSE)
   out <- tryCatch({
     set.seed(power_seed(base_seed, out$design_id, out$rep, 0L))
@@ -169,6 +176,8 @@ run_one_power_job <- function(job, B, base_seed, bootstrap_method, hvmf_small_gr
     fit <- run_power_bootstrap(family, x, B = B, seed = power_seed(base_seed, out$design_id, out$rep, 1L), bootstrap_method = bootstrap_method, hvmf_small_grid = hvmf_small_grid)
     out$ks_pvalue <- fit$inference$ks$p_value; out$cvm_pvalue <- fit$inference$cvm$p_value
     out$ks_reject <- fit$inference$ks$reject; out$cvm_reject <- fit$inference$cvm$reject
+    out$derivative_method_effective <- fit$diagnostics$derivative_method_effective %||%
+      fit$diagnostics$derivative_method %||% NA_character_
     out
   }, error = function(error) {
     out$status <- "error"; out$error_message <- conditionMessage(error); out
@@ -223,9 +232,31 @@ run_power_jobs <- function(design, M, B, cores, output_dir, stage, bootstrap_met
   status_path <- file.path(output_dir, "progress_status.txt")
   manifest_path <- file.path(output_dir, "manifest.csv")
   log_path <- file.path(output_dir, "run.log")
+  expected_derivative_method <- ifelse(
+    design$family %in% c("vmf", "hvmf"),
+    "quadrature",
+    "score_mc"
+  )
+  if (file.exists(manifest_path)) {
+    manifest <- utils::read.csv(manifest_path, stringsAsFactors = FALSE)
+    method_matches <- "derivative_method" %in% names(manifest) &&
+      nrow(manifest) == nrow(design) &&
+      all(as.character(manifest$derivative_method) == expected_derivative_method)
+    if (!isTRUE(method_matches)) {
+      stop(
+        paste(
+          "The existing second-scenarios manifest does not explicitly match",
+          "the requested derivative methods. Use a new output directory;",
+          "score-MC and quadrature replications must not be mixed silently."
+        ),
+        call. = FALSE
+      )
+    }
+  }
   if (!file.exists(manifest_path)) {
     manifest <- transform(design, M = as.integer(M), B = as.integer(B), cores = as.integer(cores),
                           stage = stage, bootstrap_method = bootstrap_method, base_seed = as.integer(base_seed),
+                          derivative_method = expected_derivative_method,
                           hvmf_small_grid = isTRUE(hvmf_small_grid))
     utils::write.csv(manifest, manifest_path, row.names = FALSE)
   }

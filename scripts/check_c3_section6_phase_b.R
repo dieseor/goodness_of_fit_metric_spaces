@@ -103,6 +103,8 @@ main <- function() {
     results$bootstrap_method_effective == "fast_multiplier" &
     results$fast_multiplier_backend_requested == "cpp" &
     results$fast_multiplier_backend_effective == "cpp" &
+    results$fast_multiplier_cpp_kernel_requested == "contiguous_double" &
+    results$fast_multiplier_cpp_kernel_effective == "contiguous_double" &
     results$fast_multiplier_fuse_ks_cvm_requested &
     results$fast_multiplier_fuse_ks_cvm_effective &
     results$ks_grid == "sample_unique_distances" &

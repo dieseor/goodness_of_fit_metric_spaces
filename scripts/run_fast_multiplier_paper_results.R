@@ -30,13 +30,21 @@ source(resolve_fast_paper_path("real_data", "comets", "utils_comets_data.R"))
 
 fast_multiplier_common_control <- function(derivative_mc_size = 1000L,
                                            derivative_mc_seed = 20260613L,
-                                           cvm_block_size = 50L) {
-  list(
-    derivative_method = "score_mc",
-    derivative_mc_size = as.integer(derivative_mc_size),
-    derivative_mc_seed = as.integer(derivative_mc_seed),
-    fast_multiplier_cvm_block_size = as.integer(cvm_block_size)
+                                           cvm_block_size = 50L,
+                                           derivative_method = "score_mc") {
+  control <- list(
+    derivative_method = as.character(derivative_method),
+    fast_multiplier_cvm_block_size = as.integer(cvm_block_size),
+    fast_multiplier_backend = "cpp",
+    fast_multiplier_cpp_kernel = "contiguous_double",
+    fast_multiplier_fuse_ks_cvm = TRUE,
+    fast_multiplier_cache_corrections = "auto"
   )
+  if (identical(derivative_method, "score_mc")) {
+    control$derivative_mc_size <- as.integer(derivative_mc_size)
+    control$derivative_mc_seed <- as.integer(derivative_mc_seed)
+  }
+  control
 }
 
 prepare_fast_scenario <- function(scenario,
@@ -44,13 +52,21 @@ prepare_fast_scenario <- function(scenario,
                                   derivative_mc_seed = 20260613L,
                                   cvm_block_size = 50L) {
   if (identical(scenario$null$type, "composite")) {
+    derivative_method <- if (scenario$model %in% c(
+      "normal", "logistic_gaussian", "vmf", "hvmf"
+    )) {
+      "quadrature"
+    } else {
+      "score_mc"
+    }
     scenario$bootstrap_method <- "fast_multiplier"
     scenario$control <- utils::modifyList(
       scenario$control %||% list(),
       fast_multiplier_common_control(
         derivative_mc_size = derivative_mc_size,
         derivative_mc_seed = derivative_mc_seed,
-        cvm_block_size = cvm_block_size
+        cvm_block_size = cvm_block_size,
+        derivative_method = derivative_method
       )
     )
   }
@@ -299,7 +315,10 @@ run_fast_paper_real_data <- function(output_root = "real_data",
     n_cores = as.integer(n_cores),
     bootstrap_method = "fast_multiplier",
     output_dir = canonical_logistic_gaussian_screening_dir("fast", "paper_results"),
-    control = fast_multiplier_common_control(derivative_mc_size, derivative_mc_seed)
+    control = fast_multiplier_common_control(
+      derivative_mc_size, derivative_mc_seed,
+      derivative_method = "quadrature"
+    )
   )
 
   message("[fast paper real_data] Risoe 125m screening")

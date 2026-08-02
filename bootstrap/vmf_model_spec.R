@@ -191,15 +191,143 @@ prepare_vmf_fast_multiplier <- function(data,
   theta_hat <- normalize_vmf_theta(theta_hat, ambient_dim = ncol(x))
   p <- length(theta_hat$xi)
   q <- theta_hat$q
-  derivative_control <- fast_multiplier_parse_derivative_control(control)
+  legacy_mc_control <- !is.null(control$derivative_mc_size) ||
+    !is.null(control$derivative_mc_seed)
+  if (is.null(control$derivative_method) && legacy_mc_control) {
+    warning(
+      paste(
+        "vMF fast multiplier: `derivative_method` was not supplied, but",
+        "legacy `derivative_mc_size`/`derivative_mc_seed` controls were found.",
+        "Selecting `score_mc`; set `derivative_method = 'score_mc'` or",
+        "`derivative_method = 'quadrature'` explicitly."
+      ),
+      call. = FALSE
+    )
+  }
+  derivative_control <- fast_multiplier_parse_derivative_control(
+    control,
+    default_method = if (legacy_mc_control) "score_mc" else "quadrature"
+  )
+  store_paper_quantities <- isTRUE(control$fast_multiplier_store_paper_quantities)
 
   S_obs <- t(vapply(seq_len(nrow(x)), function(i) {
     psi_xi(x[i, ], theta_hat$xi, q)
   }, numeric(p)))
+  # Vhat is the positive information matrix used by the legacy fast engine.
+  # In the paper's notation V is the expected score Jacobian, so that
+  # paper_Vhat = dot_psi_xi = -Vhat.
   Vhat <- -dot_psi_xi(theta_hat$xi, q)
+  paper_Vhat <- if (store_paper_quantities) -Vhat else NULL
+  paper_Vhat_diagnostics <- if (store_paper_quantities) {
+    fast_multiplier_matrix_condition_diagnostics(paper_Vhat)
+  } else {
+    NULL
+  }
 
   if (isTRUE(any(!is.finite(Vhat)))) {
     stop("The vMF fast multiplier preparation produced a non-finite `Vhat`.")
+  }
+
+  if (identical(derivative_control$derivative_method, "quadrature")) {
+    grid_size <- as.integer(
+      control$vmf_derivative_n_u %||% control$vmf_profile_n_u %||% 4097L
+    )
+    evaluate_derivative <- function(omega, thresholds) {
+      vmf_profile_and_derivative_xi(
+        omega = omega,
+        xi = theta_hat$xi,
+        t_values = thresholds,
+        distance_type = distance_type,
+        grid_size = grid_size
+      )$derivative
+    }
+    stack_common_thresholds <- function(centers, thresholds) {
+      centers <- normalize_vmf_data(centers, control)
+      do.call(rbind, lapply(seq_len(nrow(centers)), function(i) {
+        evaluate_derivative(centers[i, ], thresholds)
+      }))
+    }
+
+    D_ks <- if (is.null(ks_prep)) {
+      NULL
+    } else if (identical(
+      ks_prep$ks_grid_mode %||% "fixed",
+      "sample_points_unique_distances"
+    )) {
+      centers <- normalize_vmf_data(ks_prep$omega_grid, control)
+      list(
+        mode = "sample_points_unique_distances",
+        derivative_sorted = profile_derivative_stack_centers(
+          centers = centers,
+          thresholds = ks_prep$sorted_distance_matrix,
+          evaluator = evaluate_derivative
+        )
+      )
+    } else {
+      stack_common_thresholds(ks_prep$omega_grid, ks_prep$t_grid)
+    }
+
+    D_cvm <- if (is.null(cvm_prep)) {
+      NULL
+    } else if (isTRUE(cvm_prep$shared_with_ks) &&
+               is.list(D_ks) &&
+               !is.null(D_ks$derivative_sorted)) {
+      list(
+        mode = "sample_points_unique_distances_sorted_rows",
+        derivative_sorted = D_ks$derivative_sorted,
+        shared_with_ks = TRUE
+      )
+    } else if (isTRUE(cvm_prep$light) &&
+               !is.null(cvm_prep$sorted_distance_matrix)) {
+      list(
+        mode = "sample_points_unique_distances_sorted_rows",
+        derivative_sorted = profile_derivative_stack_centers(
+          centers = x,
+          thresholds = cvm_prep$sorted_distance_matrix,
+          evaluator = evaluate_derivative
+        )
+      )
+    } else {
+      observed_distances <- cvm_prep$distance_matrix
+      if (is.null(observed_distances)) {
+        observed_distances <- spec$distance_matrix(x, x, control)
+      }
+      profile_derivative_stack_centers(
+        centers = x,
+        thresholds = observed_distances,
+        evaluator = evaluate_derivative
+      )
+    }
+    vhat_diagnostics <- fast_multiplier_deterministic_vhat_diagnostics(
+      S_obs = S_obs,
+      Vhat = Vhat,
+      par0 = theta_hat$xi
+    )
+
+    return(list(
+      S_obs = S_obs,
+      Vhat = Vhat,
+      Psi_aux = matrix(numeric(0), nrow = 0L, ncol = p),
+      vhat_method = "analytic_fisher_information",
+      vhat_diagnostics = vhat_diagnostics,
+      correction_representation = "score",
+      paper_score_obs = if (store_paper_quantities) S_obs else NULL,
+      paper_Vhat = paper_Vhat,
+      paper_Vhat_inverse = if (store_paper_quantities) solve(paper_Vhat) else NULL,
+      paper_Vhat_method = "analytic_expected_score_jacobian",
+      paper_Vhat_diagnostics = paper_Vhat_diagnostics,
+      observed_cvm_distance_matrix = if (!is.null(cvm_prep) && !isTRUE(cvm_prep$light)) {
+        cvm_prep$distance_matrix %||% spec$distance_matrix(x, x, control)
+      } else {
+        NULL
+      },
+      derivative_method = "quadrature",
+      derivative_mc_size = NA_integer_,
+      derivative_mc_seed = NA_integer_,
+      derivative_grid_size = grid_size,
+      D_ks = D_ks,
+      D_cvm = D_cvm
+    ))
   }
 
   if (!is.null(derivative_control$derivative_mc_seed)) {
@@ -238,6 +366,12 @@ prepare_vmf_fast_multiplier <- function(data,
     S_obs = S_obs,
     Vhat = Vhat,
     Psi_aux = Psi_aux,
+    correction_representation = "score",
+    paper_score_obs = if (store_paper_quantities) S_obs else NULL,
+    paper_Vhat = paper_Vhat,
+    paper_Vhat_inverse = if (store_paper_quantities) solve(paper_Vhat) else NULL,
+    paper_Vhat_method = "analytic_expected_score_jacobian",
+    paper_Vhat_diagnostics = paper_Vhat_diagnostics,
     derivative_method = derivative_control$derivative_method,
     derivative_mc_size = derivative_control$derivative_mc_size,
     derivative_mc_seed = if (is.null(derivative_control$derivative_mc_seed)) NA_integer_ else derivative_control$derivative_mc_seed,

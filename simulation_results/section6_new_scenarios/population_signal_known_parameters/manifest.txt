@@ -1,0 +1,11 @@
+Known-parameter population signal diagnostic
+S_mean_center = E_{Omega~P0}[sup_t |F1,Omega(t)-F0,Omega(t)|] (Monte Carlo)
+J = E_{Omega~P0,T~F0,Omega}[(F1,Omega(T)-F0,Omega(T))^2] (split-sample Monte Carlo)
+dimensions: 2,5,10
+families: vmf,hvmf,normal,lg
+n_centres: 128
+n_profile per independent split: 8000
+n_eval: 4000
+batches: 4
+seed: 20260728
+No MLE, score derivative, or bootstrap is used.

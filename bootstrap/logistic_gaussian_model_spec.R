@@ -323,44 +323,139 @@ prepare_logistic_gaussian_fast_multiplier <- function(spec,
   )
 
   gaussian_score_matrix_from_ilr <- function(z, theta) {
-    Sigma_inv <- solve(theta$Sigma_ilr)
-    centered <- sweep(z, 2L, theta$mu_ilr, FUN = "-")
-    score_mu <- centered %*% t(Sigma_inv)
-    score_sigma <- t(vapply(seq_len(nrow(z)), function(i) {
-      rr <- centered[i, , drop = FALSE]
-      matrix_score <- 0.5 * (Sigma_inv %*% crossprod(rr) %*% Sigma_inv - Sigma_inv)
-      fast_multiplier_sym_score_to_vech(matrix_score)
-    }, numeric(d * (d + 1L) / 2L)))
-
-    if (identical(unknown_param, "mu")) {
-      return(score_mu)
-    }
-    if (identical(unknown_param, "sigma")) {
-      return(score_sigma)
-    }
-    cbind(score_mu, score_sigma)
+    gaussian_score_matrix_vech(
+      z, theta$mu_ilr, theta$Sigma_ilr, unknown_param = unknown_param
+    )
   }
 
   gaussian_influence_matrix_from_ilr <- function(z, theta) {
-    centered <- sweep(z, 2L, theta$mu_ilr, FUN = "-")
-    if_mu <- centered
-    if_sigma <- t(vapply(seq_len(nrow(z)), function(i) {
-      rr <- centered[i, , drop = FALSE]
-      fast_multiplier_vech(crossprod(rr) - theta$Sigma_ilr)
-    }, numeric(d * (d + 1L) / 2L)))
-
-    if (identical(unknown_param, "mu")) {
-      return(if_mu)
-    }
-    if (identical(unknown_param, "sigma")) {
-      return(if_sigma)
-    }
-    cbind(if_mu, if_sigma)
+    gaussian_mle_influence_matrix_vech(
+      z, theta$mu_ilr, theta$Sigma_ilr, unknown_param = unknown_param
+    )
   }
 
-  derivative_control <- fast_multiplier_parse_derivative_control(control)
+  legacy_mc_control <- !is.null(control$derivative_mc_size) ||
+    !is.null(control$derivative_mc_seed)
+  if (is.null(control$derivative_method) && legacy_mc_control) {
+    warning(
+      paste(
+        "Logistic-Gaussian fast multiplier: `derivative_method` was not",
+        "supplied, but legacy `derivative_mc_size`/`derivative_mc_seed`",
+        "controls were found. Selecting `score_mc`; set",
+        "`derivative_method = 'score_mc'` or 'quadrature' explicitly."
+      ),
+      call. = FALSE
+    )
+  }
+  derivative_control <- fast_multiplier_parse_derivative_control(
+    control,
+    default_method = if (legacy_mc_control) "score_mc" else "quadrature"
+  )
   z_obs <- normalized$ilr
-  S_obs <- gaussian_influence_matrix_from_ilr(z_obs, theta_hat)
+  store_paper_quantities <- isTRUE(control$fast_multiplier_store_paper_quantities)
+  paper_score_obs <- if (store_paper_quantities) {
+    gaussian_score_matrix_from_ilr(z_obs, theta_hat)
+  } else {
+    NULL
+  }
+  paper_Vhat <- if (store_paper_quantities) {
+    fast_multiplier_gaussian_paper_vhat(
+      theta_hat$Sigma_ilr,
+      unknown_param = unknown_param
+    )
+  } else {
+    NULL
+  }
+  paper_Vhat_diagnostics <- if (store_paper_quantities) {
+    fast_multiplier_matrix_condition_diagnostics(paper_Vhat)
+  } else {
+    NULL
+  }
+  paper_influence_obs <- gaussian_influence_matrix_from_ilr(z_obs, theta_hat)
+
+  observed_cvm_distance_matrix <- NULL
+  if (!is.null(cvm_prep) && !isTRUE(cvm_prep$light)) {
+    observed_cvm_distance_matrix <- cvm_prep$distance_matrix
+    if (is.null(observed_cvm_distance_matrix)) {
+      observed_cvm_distance_matrix <- spec$distance_matrix(normalized, normalized, control)
+    }
+    observed_cvm_distance_matrix <- as.matrix(observed_cvm_distance_matrix)
+  }
+
+  if (identical(derivative_control$derivative_method, "quadrature")) {
+    parameter_index <- switch(
+      unknown_param,
+      mu = seq_len(d),
+      sigma = d + seq_len(d * (d + 1L) / 2L),
+      both = seq_len(d + d * (d + 1L) / 2L)
+    )
+    spectral <- list(
+      values = theta_hat$eigenvalues_full,
+      vectors = theta_hat$eigenvectors_full
+    )
+    evaluator <- function(omega_ilr, thresholds) {
+      result <- gaussian_ball_profile_quadrature(
+        omega = omega_ilr,
+        mu = theta_hat$mu_ilr,
+        Sigma = theta_hat$Sigma_ilr,
+        t_values = thresholds,
+        control = control,
+        spectral = spectral
+      )
+      result$derivative <- result$derivative[, parameter_index, drop = FALSE]
+      result
+    }
+    table_result <- gaussian_fast_quadrature_tables(
+      data_centers = z_obs,
+      ks_centers = if (is.null(ks_prep)) NULL else
+        normalize_logistic_gaussian_data(ks_prep$omega_grid, control)$ilr,
+      ks_prep = ks_prep,
+      cvm_prep = cvm_prep,
+      observed_distance_matrix = observed_cvm_distance_matrix,
+      evaluator = evaluator
+    )
+    S_obs <- paper_influence_obs
+    Vhat <- diag(ncol(S_obs))
+    vhat_diagnostics <- fast_multiplier_deterministic_vhat_diagnostics(
+      S_obs = S_obs,
+      Vhat = Vhat,
+      par0 = par0
+    )
+    information <- gaussian_fisher_information_vech(
+      theta_hat$Sigma_ilr, unknown_param
+    )
+    quadrature_settings <- gaussian_quadrature_settings(control)
+    return(list(
+      S_obs = S_obs,
+      Vhat = Vhat,
+      Psi_aux = matrix(numeric(0), nrow = 0L, ncol = ncol(S_obs)),
+      correction_representation = "fitted_mle_influence",
+      paper_score_obs = gaussian_score_matrix_vech(
+        z_obs, theta_hat$mu_ilr, theta_hat$Sigma_ilr, unknown_param
+      ),
+      paper_Vhat = -information,
+      paper_Vhat_inverse = -solve(information),
+      paper_Vhat_method = "analytic_expected_score_jacobian",
+      paper_Vhat_diagnostics = fast_multiplier_matrix_condition_diagnostics(
+        -information
+      ),
+      paper_influence_obs = paper_influence_obs,
+      vhat_method = "fitted_gaussian_influence_reparameterization",
+      vhat_diagnostics = vhat_diagnostics,
+      observed_cvm_distance_matrix = observed_cvm_distance_matrix,
+      derivative_method_requested = derivative_control$derivative_method_requested,
+      derivative_method_effective = "quadrature",
+      derivative_method_selection_source =
+        derivative_control$derivative_method_selection_source,
+      derivative_method = "quadrature",
+      derivative_mc_size = NA_integer_,
+      derivative_mc_seed = NA_integer_,
+      quadrature_settings = quadrature_settings,
+      quadrature_diagnostics = table_result$diagnostics,
+      D_ks = table_result$D_ks,
+      D_cvm = table_result$D_cvm
+    ))
+  }
 
   if (!is.null(derivative_control$derivative_mc_seed)) {
     set.seed(derivative_control$derivative_mc_seed)
@@ -373,6 +468,10 @@ prepare_logistic_gaussian_fast_multiplier <- function(spec,
   )
   z_aux <- logistic_gaussian_ilr_matrix(aux_sample, control)
   Psi_aux <- gaussian_score_matrix_from_ilr(z_aux, theta_hat)
+  # `S_obs` and `Vhat` are legacy names required by the shared fast engine.
+  # They represent the correction in fitted MLE-influence coordinates, rather
+  # than psi_{theta_hat} and Vhat in the paper's notation.
+  S_obs <- paper_influence_obs
   Vhat <- diag(ncol(S_obs))
   vhat_diagnostics <- fast_multiplier_vhat_diagnostics(
     S_obs = S_obs,
@@ -380,15 +479,6 @@ prepare_logistic_gaussian_fast_multiplier <- function(spec,
     Vhat = Vhat,
     par0 = par0
   )
-
-  observed_cvm_distance_matrix <- NULL
-  if (!is.null(cvm_prep) && !isTRUE(cvm_prep$light)) {
-    observed_cvm_distance_matrix <- cvm_prep$distance_matrix
-    if (is.null(observed_cvm_distance_matrix)) {
-      observed_cvm_distance_matrix <- spec$distance_matrix(normalized, normalized, control)
-    }
-    observed_cvm_distance_matrix <- as.matrix(observed_cvm_distance_matrix)
-  }
 
   D_ks <- fast_multiplier_compute_D_ks(
     spec = spec,
@@ -413,9 +503,20 @@ prepare_logistic_gaussian_fast_multiplier <- function(spec,
     S_obs = S_obs,
     Vhat = Vhat,
     Psi_aux = Psi_aux,
-    vhat_method = "gaussian_mle_influence_identity",
+    correction_representation = "fitted_mle_influence",
+    paper_score_obs = paper_score_obs,
+    paper_Vhat = paper_Vhat,
+    paper_Vhat_inverse = if (store_paper_quantities) solve(paper_Vhat) else NULL,
+    paper_Vhat_method = "analytic_expected_score_jacobian",
+    paper_Vhat_diagnostics = paper_Vhat_diagnostics,
+    paper_influence_obs = paper_influence_obs,
+    vhat_method = "fitted_gaussian_influence_reparameterization",
     vhat_diagnostics = vhat_diagnostics,
     observed_cvm_distance_matrix = observed_cvm_distance_matrix,
+    derivative_method_requested = derivative_control$derivative_method_requested,
+    derivative_method_effective = derivative_control$derivative_method_effective,
+    derivative_method_selection_source =
+      derivative_control$derivative_method_selection_source,
     derivative_method = derivative_control$derivative_method,
     derivative_mc_size = derivative_control$derivative_mc_size,
     derivative_mc_seed = if (is.null(derivative_control$derivative_mc_seed)) NA_integer_ else derivative_control$derivative_mc_seed,
@@ -456,6 +557,23 @@ make_logistic_gaussian_spec <- function(unknown_param = "both") {
         ambient_dim = theta$ambient_dim,
         control = control
       )
+      derivative_method <- tolower(as.character(
+        control$derivative_method %||% ""
+      ))
+      if (derivative_method %in% c("quadrature", "auto", "deterministic")) {
+        return(gaussian_ball_profile_quadrature(
+          omega = omega_ilr,
+          mu = theta$mu_ilr,
+          Sigma = theta$Sigma_ilr,
+          t_values = as.numeric(t),
+          control = control,
+          spectral = list(
+            values = theta$eigenvalues_full,
+            vectors = theta$eigenvectors_full
+          ),
+          compute_derivative = FALSE
+        )$F)
+      }
       evaluate_mvnorm_distance_profile(
         shift = theta$mu_ilr - omega_ilr,
         t_values = as.numeric(t),
@@ -490,6 +608,26 @@ make_logistic_gaussian_spec <- function(unknown_param = "both") {
           nrow = nrow(shift_matrix),
           ncol = length(t_grid)
         )
+        derivative_method <- tolower(as.character(
+          control$derivative_method %||% ""
+        ))
+        if (derivative_method %in% c("quadrature", "auto", "deterministic")) {
+          spectral <- list(
+            values = theta$eigenvalues_full,
+            vectors = theta$eigenvectors_full
+          )
+          return(t(vapply(seq_len(nrow(omega_normalized$ilr)), function(i) {
+            gaussian_ball_profile_quadrature(
+              omega = omega_normalized$ilr[i, ],
+              mu = theta$mu_ilr,
+              Sigma = theta$Sigma_ilr,
+              t_values = t_matrix[i, ],
+              control = control,
+              spectral = spectral,
+              compute_derivative = FALSE
+            )$F
+          }, numeric(ncol(t_matrix)))))
+        }
         evaluate_mvnorm_distance_profile_matrix(
           shift_matrix = shift_matrix,
           t_matrix = t_matrix,
@@ -511,6 +649,26 @@ make_logistic_gaussian_spec <- function(unknown_param = "both") {
           nrow = nrow(data_normalized$ilr),
           ncol = length(theta$mu_ilr)
         ) - data_normalized$ilr
+        derivative_method <- tolower(as.character(
+          control$derivative_method %||% ""
+        ))
+        if (derivative_method %in% c("quadrature", "auto", "deterministic")) {
+          spectral <- list(
+            values = theta$eigenvalues_full,
+            vectors = theta$eigenvectors_full
+          )
+          return(t(vapply(seq_len(nrow(data_normalized$ilr)), function(i) {
+            gaussian_ball_profile_quadrature(
+              omega = data_normalized$ilr[i, ],
+              mu = theta$mu_ilr,
+              Sigma = theta$Sigma_ilr,
+              t_values = distance_matrix[i, ],
+              control = control,
+              spectral = spectral,
+              compute_derivative = FALSE
+            )$F
+          }, numeric(ncol(distance_matrix)))))
+        }
         evaluate_mvnorm_distance_profile_matrix(
           shift_matrix = shift_matrix,
           t_matrix = distance_matrix,
@@ -518,6 +676,21 @@ make_logistic_gaussian_spec <- function(unknown_param = "both") {
           eigenvectors_full = theta$eigenvectors_full,
           positive_idx = theta$positive_idx,
           control = mvnormal_quadform_with_label(control, "logistic-Gaussian ilr sample distance-profile grid")
+        )
+      },
+      score_matrix = function(data, theta, control = list()) {
+        theta <- normalize_logistic_gaussian_theta(theta, control = control)
+        gaussian_score_matrix_vech(
+          logistic_gaussian_ilr_matrix(data, control),
+          theta$mu_ilr,
+          theta$Sigma_ilr,
+          unknown_param = unknown_param
+        )
+      },
+      fisher_information = function(theta, control = list()) {
+        theta <- normalize_logistic_gaussian_theta(theta, control = control)
+        gaussian_fisher_information_vech(
+          theta$Sigma_ilr, unknown_param = unknown_param
         )
       },
       unknown_param = unknown_param,

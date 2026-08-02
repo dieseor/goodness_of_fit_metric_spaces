@@ -1,0 +1,96 @@
+ M .gitignore
+ M bootstrap/calibration_study.R
+ M bootstrap/hvmf_model_spec.R
+ M bootstrap/logistic_gaussian_model_spec.R
+ M bootstrap/model_specs.R
+ M bootstrap/multiplier_bootstrap.R
+ M bootstrap/mvnormal_model_spec.R
+ M bootstrap/vmf_model_spec.R
+ M cpp/distance_profile_backend.cpp
+ M distance_profile_backend.R
+ M real_data/comets/cardioid/legacy_materials/Comets/unregalitonavideno/cardioid-source.R
+ M real_data/wind/run_risoe_125m_screening_ks_cvm.R
+ M scripts/check_c3_section6_production.R
+ M scripts/preflight_c3_section6_production.sh
+ M scripts/run_c3_section6_production.sbatch
+ M scripts/run_fast_multiplier_paper_results.R
+ M scripts/run_power_mixtures_paper.R
+ M scripts/run_power_mixtures_pilot.R
+ M scripts/run_second_scenarios_power.R
+ M scripts/run_section6_new_scenarios.R
+ M scripts/run_vmf_null_point_calibration.R
+ M simulation_results/section6_new_scenarios/final_lg_d2_d10_n50_100_200_400_M1000_B5000_auto/progress_status.txt
+ M tests/testthat/test_multiplier_bootstrap.R
+ M tests/testthat/test_mvnormal_bootstrap.R
+ M tests/testthat/test_section6_new_scenarios.R
+ M utils.R
+?? benchmarks/fast_multiplier_cpp_kernel_full_20260801_171845/
+?? bootstrap/deterministic_profile_derivatives.R
+?? bootstrap/profile_lookup_interpolation.R
+?? real_data/comets/cardioid/recheck_C3_B5000_sampleks/slow/
+?? real_data/sunspots/run_sunspots_cycle23_joint_time_space_gof.R
+?? real_data/sunspots/sunspots_cycle23_joint_time_space.R
+?? real_data/sunspots/validate_sunspots_joint_time_space_fast_vs_slow.R
+?? scripts/audit_section6_multiplier_law.R
+?? scripts/audit_section6_paper_quantities.R
+?? scripts/audit_section6_parameter_estimators.R
+?? scripts/audit_section6_profile_derivative_cvm.R
+?? scripts/benchmark_deterministic_profile_derivatives.R
+?? scripts/benchmark_gaussian_quadrature_derivatives.R
+?? scripts/benchmark_profile_lookup_interpolation.R
+?? scripts/benchmark_structured_fast_kernel.R
+?? scripts/benchmark_vmf_hvmf_pairwise_distances.R
+?? scripts/compare_gaussian_quadrature_null_pilot.R
+?? scripts/estimate_section6_population_signal.R
+?? scripts/run_all_tests.R
+?? scripts/run_section6_derivative_mc_sensitivity.R
+?? scripts/run_section6_oracle_components_diagnostic.R
+?? scripts/run_section6_simple_null_diagnostic.R
+?? scripts/run_section6_theta0_hybrid_diagnostic.R
+?? scripts/scan_section6_composite_signal.R
+?? scripts/scan_section6_dimension_scaled_candidates.R
+?? scripts/validate_deterministic_profile_derivatives_end_to_end.R
+?? scripts/validate_fast_multiplier_cpp_kernel.R
+?? scripts/validate_fast_multiplier_cpp_kernel_end_to_end.R
+?? scripts/validate_hvmf_canonical_information.R
+?? scripts/validate_hvmf_general_sampler.R
+?? scripts/validate_profile_lookup_end_to_end.R
+?? scripts/validate_section6_fast_vs_reestimated.R
+?? scripts/validate_section6_hvmf_hq_bootstrap.R
+?? simulation_results/hvmf_general_sampler_validation/
+?? simulation_results/section6_new_scenarios/candidate_composite_signal_scan/
+?? simulation_results/section6_new_scenarios/candidate_composite_signal_scan_dquarter_scale/
+?? simulation_results/section6_new_scenarios/candidate_composite_signal_scan_dthird_scale/
+?? simulation_results/section6_new_scenarios/candidate_composite_signal_scan_expanded/
+?? simulation_results/section6_new_scenarios/candidate_composite_signal_scan_symmetric_sqrt/
+?? simulation_results/section6_new_scenarios/candidate_signal_scan/
+?? simulation_results/section6_new_scenarios/diagnostic_normal_d10_D0only_M250_B299_Nref100k/
+?? simulation_results/section6_new_scenarios/diagnostic_normal_d10_components_M50_B299/
+?? simulation_results/section6_new_scenarios/diagnostic_normal_d10_n100_theta0_hybrid_M100_B299_Nref100k/
+?? simulation_results/section6_new_scenarios/diagnostic_normal_d10_profile0_vs_production_M250_B299/
+?? simulation_results/section6_new_scenarios/diagnostic_normal_simple_d10_n100_M100_B299/
+?? simulation_results/section6_new_scenarios/known_parameter_joint_normal_lg_screen/
+?? simulation_results/section6_new_scenarios/known_parameter_normal_lg_support_screen/
+?? simulation_results/section6_new_scenarios/known_parameter_vmf_screen/
+?? simulation_results/section6_new_scenarios/night_hvmf_d10_n200_beta0_M2000_B5000_quadrature/
+?? simulation_results/section6_new_scenarios/night_hvmf_d10_n200_beta0_M2000_B5000_scoremc/
+?? simulation_results/section6_new_scenarios/night_vmf_d10_n200_beta0_M2000_B5000_quadrature/
+?? simulation_results/section6_new_scenarios/night_vmf_d10_n200_beta0_M2000_B5000_scoremc/
+?? simulation_results/section6_new_scenarios/population_signal_known_parameters/
+?? simulation_results/section6_new_scenarios/sensitivity_normal_d10_beta0_M1000_B5000_Nderiv10000/
+?? simulation_results/section6_new_scenarios/validation_lg_d10_n100_M30_B199_fast_vs_reestimated/
+?? simulation_results/section6_new_scenarios/validation_normal_d10_n100_M30_B199_fast_vs_reestimated/
+?? simulation_results/section6_new_scenarios/validation_vmf_d10_n200_M30_B199_fast_vs_reestimated/
+?? tests/stress_exhaustive_10cores_20260801_181758/
+?? tests/stress_gaussian_c3_20260801_170109/
+?? tests/stress_problem_cases_20260801_171610/
+?? tests/stress_problem_cases_fixed_20260801_173712/
+?? tests/testthat/test_c3_section6_production_workflow.R
+?? tests/testthat/test_deterministic_profile_derivatives.R
+?? tests/testthat/test_fast_multiplier_cpp_kernel.R
+?? tests/testthat/test_gaussian_quadrature_derivatives.R
+?? tests/testthat/test_hvmf_general_sampler.R
+?? tests/testthat/test_hvmf_hq_model_spec.R
+?? tests/testthat/test_profile_lookup_interpolation.R
+?? tests/testthat/test_section6_parameter_estimators.R
+?? tests/testthat/test_sunspots_joint_time_space.R

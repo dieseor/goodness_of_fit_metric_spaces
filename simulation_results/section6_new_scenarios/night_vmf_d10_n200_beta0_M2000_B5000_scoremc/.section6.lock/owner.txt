@@ -1,0 +1,5 @@
+slurm_job_id: unavailable
+hostname: Mac.technicolor.net
+pid: 78950
+acquired_at_utc: 2026-07-31T02:40:07.826239Z
+owner_token: Mac.technicolor.net|78950|2026-07-31T02:40:07.826239Z

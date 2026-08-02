@@ -127,8 +127,8 @@ r_sph_car <- function(n, mu, rho, k, rejection = TRUE, odd_trick = TRUE,
       r <- abs(x)
 
       # Sign-selection probability
-      q  <- drop(sphunif::Gegen_polyn(theta = 0, k = k, p = p)) /
-        drop(sphunif::Gegen_polyn(theta = acos(r), k = k, p = p))
+      q  <- drop(sphunif::Gegen_polyn(theta = acos(r), k = k, p = p)) /
+        drop(sphunif::Gegen_polyn(theta = 0, k = k, p = p))
       p_plus <- (1 + rho * q) / 2
       p_plus <- pmin(pmax(p_plus, 0), 1)
       s <- ifelse(runif(n) <= p_plus, 1, -1)

@@ -30,8 +30,8 @@ capture_profile_outcome <- function(expr) {
   list(value = value, warnings = warnings)
 }
 
-test_that("the default and explicit R backends do not load C++", {
-  expect_false(distance_profile_cpp_is_loaded())
+test_that("the default and explicit R backends do not change C++ loading state", {
+  initially_loaded <- distance_profile_cpp_is_loaded()
   omitted <- theoretical_distance_profile_normal(
     omega = c(-1, 0, 1), mu = 0, sigma = 1, t_values = c(0, 0.5, 2)
   )
@@ -40,7 +40,7 @@ test_that("the default and explicit R backends do not load C++", {
     backend = "r"
   )
   expect_identical(omitted, explicit)
-  expect_false(distance_profile_cpp_is_loaded())
+  expect_identical(distance_profile_cpp_is_loaded(), initially_loaded)
 
   bootstrap_args <- list(
     data = c(-1, -0.2, 0.4, 1.1),
@@ -59,7 +59,7 @@ test_that("the default and explicit R backends do not load C++", {
     strip_backend_timings(omitted_result),
     strip_backend_timings(explicit_result)
   )
-  expect_false(distance_profile_cpp_is_loaded())
+  expect_identical(distance_profile_cpp_is_loaded(), initially_loaded)
 })
 
 test_that("1,000 reproducible normal profile cases are bitwise identical", {

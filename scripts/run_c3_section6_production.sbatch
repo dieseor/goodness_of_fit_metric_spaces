@@ -21,20 +21,36 @@
 
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "Usage: sbatch scripts/run_c3_section6_production.sbatch {normal|lg}" >&2
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "Usage: sbatch scripts/run_c3_section6_production.sbatch {normal|lg} [2,10|5]" >&2
   exit 2
 fi
 
 family="$1"
+dimensions="${2:-2,10}"
+case "$dimensions" in
+  2,10)
+    dimension_tag="d2_d10"
+    allow_new_output="true"
+    ;;
+  5)
+    dimension_tag="d5"
+    allow_new_output="true"
+    ;;
+  *)
+    echo "Unsupported dimensions '$dimensions'; expected '2,10' or '5'." >&2
+    exit 2
+    ;;
+esac
+
 case "$family" in
   normal)
     seed=20260728
-    output_dir="simulation_results/section6_new_scenarios/final_normal_d2_d10_n50_100_200_400_M1000_B5000_auto"
+    output_dir="simulation_results/section6_new_scenarios/final_normal_${dimension_tag}_n50_100_200_400_M1000_B5000_quadrature"
     ;;
   lg)
     seed=20260727
-    output_dir="simulation_results/section6_new_scenarios/final_lg_d2_d10_n50_100_200_400_M1000_B5000_auto"
+    output_dir="simulation_results/section6_new_scenarios/final_lg_${dimension_tag}_n50_100_200_400_M1000_B5000_quadrature"
     ;;
   *)
     echo "Unsupported family '$family'; expected 'normal' or 'lg'." >&2
@@ -73,6 +89,7 @@ export VECLIB_MAXIMUM_THREADS=1
 
 echo "===== C3 Section 6 production environment ====="
 echo "family=${family}"
+echo "dimensions=${dimensions}"
 echo "output_dir=${output_dir}"
 echo "seed=${seed}"
 echo "hostname=$(hostname)"
@@ -104,7 +121,10 @@ Rscript --vanilla scripts/check_c3_section6_production.R \
   --mode=preflight \
   "--family=${family}" \
   "--output_dir=${output_dir}" \
-  "--seed=${seed}"
+  "--seed=${seed}" \
+  "--dimensions=${dimensions}" \
+  --derivative_method=quadrature \
+  "--allow_new=${allow_new_output}"
 
 echo "===== Production runner start ====="
 runner_started_epoch=$(date +%s)
@@ -114,13 +134,14 @@ Rscript --vanilla scripts/run_section6_new_scenarios.R \
   "--output_dir=${output_dir}" \
   --M=1000 \
   --B=5000 \
-  --dimensions=2,10 \
+  "--dimensions=${dimensions}" \
   --n_values=50,100,200,400 \
   --beta_values=0,0.5,1 \
   "--cores=${SLURM_CPUS_PER_TASK}" \
   --checkpoint_results=256 \
   "--seed=${seed}" \
   --derivative_mc_size=1000 \
+  --derivative_method=quadrature \
   --cvm_block_size=50 \
   --show_progress=false
 runner_status=$?
@@ -139,12 +160,16 @@ Rscript --vanilla scripts/check_c3_section6_production.R \
   --mode=final \
   "--family=${family}" \
   "--output_dir=${output_dir}" \
-  "--seed=${seed}"
+  "--seed=${seed}" \
+  "--dimensions=${dimensions}" \
+  --derivative_method=quadrature \
+  "--allow_new=false"
 validation_status=$?
 set -e
 
 echo "===== C3 Section 6 production end ====="
 echo "family=${family}"
+echo "dimensions=${dimensions}"
 echo "date=$(date --iso-8601=seconds)"
 echo "runner_exit_code=${runner_status}"
 echo "validation_exit_code=${validation_status}"

@@ -52,6 +52,31 @@ raw_path <- file.path(output_dir, "raw_results.csv")
 summary_path <- file.path(output_dir, "summary.csv")
 scenario_path <- file.path(output_dir, "scenario.txt")
 
+if (file.exists(raw_path)) {
+  existing_names <- names(utils::read.csv(
+    raw_path,
+    nrows = 1L,
+    stringsAsFactors = FALSE
+  ))
+  required_existing <- c(
+    "derivative_method_effective",
+    "fast_multiplier_backend_effective",
+    "fast_multiplier_cpp_kernel_effective",
+    "fast_multiplier_fuse_ks_cvm_effective"
+  )
+  missing_existing <- setdiff(required_existing, existing_names)
+  if (length(missing_existing)) {
+    stop(
+      paste(
+        "The existing calibration results predate explicit fast-kernel tracking.",
+        "Use a new output directory; bootstrap implementations must not be",
+        "mixed silently."
+      ),
+      call. = FALSE
+    )
+  }
+}
+
 writeLines(c(
   sprintf("null: vMF((%.8f, %.8f, %.8f), kappa = %.8f)", mu[[1L]], mu[[2L]], mu[[3L]], kappa),
   sprintf("n: %d", n),
@@ -61,14 +86,20 @@ writeLines(c(
   sprintf("cores: %d", cores),
   "statistics: KS sample, CvM",
   "bootstrap: fast_multiplier",
-  "derivative_method: score_mc",
-  "derivative_mc_size: 1000",
+  "derivative_method_requested: quadrature",
+  "fast_multiplier_backend_requested: cpp",
+  "fast_multiplier_cpp_kernel_requested: contiguous_double",
+  "fast_multiplier_fuse_ks_cvm_requested: TRUE",
   "fast_multiplier_cvm_block_size: 50"
 ), scenario_path)
 
 empty_results <- data.frame(
   rep = integer(), ks_pvalue = numeric(), cvm_pvalue = numeric(),
   ks_reject = logical(), cvm_reject = logical(), status = character(),
+  derivative_method_requested = character(), derivative_method_effective = character(),
+  fast_multiplier_backend_requested = character(), fast_multiplier_backend_effective = character(),
+  fast_multiplier_cpp_kernel_requested = character(), fast_multiplier_cpp_kernel_effective = character(),
+  fast_multiplier_fuse_ks_cvm_requested = logical(), fast_multiplier_fuse_ks_cvm_effective = logical(),
   error_message = character(), elapsed_seconds = numeric(), stringsAsFactors = FALSE
 )
 results <- if (file.exists(raw_path)) utils::read.csv(raw_path, stringsAsFactors = FALSE) else empty_results
@@ -96,10 +127,12 @@ one_replication <- function(rep_id) {
       bootstrap_method = "fast_multiplier",
       keep = list(observed_process = FALSE, bootstrap_statistics = FALSE, bootstrap_thetas = FALSE),
       control = list(
-        derivative_method = "score_mc",
-        derivative_mc_size = 1000L,
-        derivative_mc_seed = bootstrap_seed + 7L,
+        derivative_method = "quadrature",
         fast_multiplier_cvm_block_size = 50L,
+        fast_multiplier_backend = "cpp",
+        fast_multiplier_cpp_kernel = "contiguous_double",
+        fast_multiplier_fuse_ks_cvm = TRUE,
+        fast_multiplier_cache_corrections = "auto",
         vmf_profile_method = "tabulated",
         vmf_profile_n_u = 4097L
       ),
@@ -112,6 +145,15 @@ one_replication <- function(rep_id) {
       cvm_pvalue = fit$inference$cvm$p_value,
       ks_reject = fit$inference$ks$reject,
       cvm_reject = fit$inference$cvm$reject,
+      derivative_method_requested = "quadrature",
+      derivative_method_effective = fit$diagnostics$derivative_method_effective %||%
+        fit$diagnostics$derivative_method %||% NA_character_,
+      fast_multiplier_backend_requested = "cpp",
+      fast_multiplier_backend_effective = fit$diagnostics$fast_multiplier_backend_effective %||% NA_character_,
+      fast_multiplier_cpp_kernel_requested = "contiguous_double",
+      fast_multiplier_cpp_kernel_effective = fit$diagnostics$fast_multiplier_cpp_kernel_effective %||% NA_character_,
+      fast_multiplier_fuse_ks_cvm_requested = TRUE,
+      fast_multiplier_fuse_ks_cvm_effective = isTRUE(fit$diagnostics$fast_multiplier_fuse_ks_cvm_effective),
       status = "ok",
       error_message = NA_character_,
       elapsed_seconds = proc.time()[["elapsed"]] - started
@@ -120,6 +162,10 @@ one_replication <- function(rep_id) {
     data.frame(
       rep = rep_id,
       ks_pvalue = NA_real_, cvm_pvalue = NA_real_, ks_reject = NA, cvm_reject = NA,
+      derivative_method_requested = "quadrature", derivative_method_effective = NA_character_,
+      fast_multiplier_backend_requested = "cpp", fast_multiplier_backend_effective = NA_character_,
+      fast_multiplier_cpp_kernel_requested = "contiguous_double", fast_multiplier_cpp_kernel_effective = NA_character_,
+      fast_multiplier_fuse_ks_cvm_requested = TRUE, fast_multiplier_fuse_ks_cvm_effective = NA,
       status = "error", error_message = conditionMessage(e),
       elapsed_seconds = proc.time()[["elapsed"]] - started
     )

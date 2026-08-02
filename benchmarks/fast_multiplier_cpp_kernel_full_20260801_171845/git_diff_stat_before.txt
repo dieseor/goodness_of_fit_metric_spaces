@@ -1,0 +1,26 @@
+ .gitignore                                         |   4 +
+ bootstrap/calibration_study.R                      |  26 +-
+ bootstrap/hvmf_model_spec.R                        | 301 +++++++-
+ bootstrap/logistic_gaussian_model_spec.R           | 257 +++++--
+ bootstrap/model_specs.R                            | 210 +++++-
+ bootstrap/multiplier_bootstrap.R                   | 442 +++++++++++-
+ bootstrap/mvnormal_model_spec.R                    | 257 +++++--
+ bootstrap/vmf_model_spec.R                         | 136 +++-
+ cpp/distance_profile_backend.cpp                   | 350 +++++++++
+ .../Comets/unregalitonavideno/cardioid-source.R    |   4 +-
+ real_data/wind/run_risoe_125m_screening_ks_cvm.R   |  11 +-
+ scripts/check_c3_section6_production.R             |  96 ++-
+ scripts/preflight_c3_section6_production.sh        |  30 +-
+ scripts/run_c3_section6_production.sbatch          |  39 +-
+ scripts/run_fast_multiplier_paper_results.R        |  29 +-
+ scripts/run_power_mixtures_paper.R                 |  26 +-
+ scripts/run_power_mixtures_pilot.R                 |  30 +-
+ scripts/run_second_scenarios_power.R               |  37 +-
+ scripts/run_section6_new_scenarios.R               | 268 ++++++-
+ scripts/run_vmf_null_point_calibration.R           |  30 +-
+ .../progress_status.txt                            |  14 +-
+ tests/testthat/test_multiplier_bootstrap.R         |  92 ++-
+ tests/testthat/test_mvnormal_bootstrap.R           |  14 +-
+ tests/testthat/test_section6_new_scenarios.R       |  46 +-
+ utils.R                                            | 793 ++++++++++++++++++---
+ 25 files changed, 3189 insertions(+), 353 deletions(-)
