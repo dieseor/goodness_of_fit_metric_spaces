@@ -1,0 +1,12 @@
+family: hvmf
+M: 10
+B: 149
+total_core_budget: 4
+outer_cores: 1
+bootstrap_cores: 4
+dimensions: 10
+n: 100,200
+beta: 0
+KS: sample_unique_distances
+fast: requested fused C++ multiplier bootstrap
+comparison: paired fast-versus-reestimated on identical simulated samples and multipliers

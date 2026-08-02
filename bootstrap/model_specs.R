@@ -29,6 +29,12 @@ if (!exists("theoretical_distance_profile_normal", mode = "function")) {
   safe_source_text(utils_path_model_specs, envir = environment())
 }
 
+deterministic_derivatives_path <- resolve_bootstrap_path(
+  "bootstrap",
+  "deterministic_profile_derivatives.R"
+)
+safe_source_text(deterministic_derivatives_path, envir = environment())
+
 `%||%` <- function(lhs, rhs) {
   if (is.null(lhs)) {
     rhs
@@ -224,10 +230,32 @@ fast_multiplier_numeric_jacobian <- function(fun,
   jacobian
 }
 
-fast_multiplier_parse_derivative_control <- function(control = list()) {
-  derivative_method <- tolower(as.character(control$derivative_method %||% "score_mc"))
-  if (!identical(derivative_method, "score_mc")) {
-    stop("The fast multiplier bootstrap currently supports only `control$derivative_method = 'score_mc'`.")
+fast_multiplier_parse_derivative_control <- function(control = list(),
+                                                     default_method = "score_mc") {
+  default_method <- tolower(as.character(default_method))
+  if (length(default_method) != 1L ||
+      !default_method %in% c("score_mc", "quadrature")) {
+    stop("`default_method` must be either 'score_mc' or 'quadrature'.")
+  }
+  method_was_supplied <- !is.null(control$derivative_method)
+  derivative_method_requested <- tolower(as.character(
+    control$derivative_method %||% "auto"
+  ))
+  derivative_method <- derivative_method_requested
+  if (identical(derivative_method, "deterministic")) {
+    derivative_method <- "quadrature"
+    derivative_method_requested <- "quadrature"
+  }
+  supported_methods <- c("auto", "score_mc", "quadrature")
+  if (length(derivative_method) != 1L ||
+      !derivative_method %in% supported_methods) {
+    stop(sprintf(
+      "`control$derivative_method` must be one of %s.",
+      paste(sprintf("'%s'", supported_methods), collapse = ", ")
+    ))
+  }
+  if (identical(derivative_method, "auto")) {
+    derivative_method <- default_method
   }
 
   derivative_mc_size <- as.integer(control$derivative_mc_size %||% 1000L)
@@ -238,7 +266,14 @@ fast_multiplier_parse_derivative_control <- function(control = list()) {
   derivative_mc_seed <- control$derivative_mc_seed %||% control$seed %||% NULL
 
   list(
+    derivative_method_requested = derivative_method_requested,
     derivative_method = derivative_method,
+    derivative_method_effective = derivative_method,
+    derivative_method_selection_source = if (method_was_supplied) {
+      if (identical(derivative_method_requested, "auto")) "explicit_auto" else "explicit"
+    } else {
+      "model_default"
+    },
     derivative_mc_size = derivative_mc_size,
     derivative_mc_seed = if (is.null(derivative_mc_seed)) NULL else as.integer(derivative_mc_seed)
   )
@@ -397,6 +432,167 @@ fast_multiplier_sym_score_to_vech <- function(mat) {
     out[[i]] <- factor * mat[row_idx, col_idx]
   }
   out
+}
+
+fast_multiplier_duplication_matrix <- function(dim_size) {
+  dim_size <- as.integer(dim_size)
+  if (length(dim_size) != 1L || !is.finite(dim_size) || dim_size < 1L) {
+    stop("`dim_size` must be a positive integer.")
+  }
+  template <- matrix(0, dim_size, dim_size)
+  index <- which(lower.tri(template, diag = TRUE), arr.ind = TRUE)
+  D <- matrix(0, nrow = dim_size^2, ncol = nrow(index))
+  for (column in seq_len(nrow(index))) {
+    i <- index[column, 1L]
+    j <- index[column, 2L]
+    D[i + (j - 1L) * dim_size, column] <- 1
+    if (i != j) D[j + (i - 1L) * dim_size, column] <- 1
+  }
+  D
+}
+
+gaussian_score_matrix_vech <- function(x,
+                                       mu,
+                                       Sigma,
+                                       unknown_param = "both") {
+  x <- as.matrix(x)
+  mu <- as.numeric(mu)
+  Sigma <- as.matrix(Sigma)
+  q <- length(mu)
+  if (ncol(x) != q || !identical(dim(Sigma), c(q, q)) ||
+      any(!is.finite(c(x, mu, Sigma)))) {
+    stop("Gaussian score inputs have incompatible dimensions or non-finite values.")
+  }
+  unknown_param <- tolower(as.character(unknown_param %||% "both"))
+  if (!unknown_param %in% c("mu", "sigma", "both")) {
+    stop("Unsupported Gaussian unknown-parameter specification.")
+  }
+  Sigma_inv <- solve(0.5 * (Sigma + t(Sigma)))
+  centered <- sweep(x, 2L, mu, FUN = "-")
+  score_mu <- centered %*% Sigma_inv
+  transformed <- score_mu
+  index <- which(lower.tri(Sigma, diag = TRUE), arr.ind = TRUE)
+  score_sigma <- vapply(seq_len(nrow(index)), function(k) {
+    i <- index[k, 1L]
+    j <- index[k, 2L]
+    symmetry_factor <- if (i == j) 1 else 2
+    0.5 * symmetry_factor * (
+      transformed[, i] * transformed[, j] - Sigma_inv[i, j]
+    )
+  }, numeric(nrow(x)))
+  if (is.null(dim(score_sigma))) {
+    score_sigma <- matrix(score_sigma, nrow = nrow(x))
+  }
+  switch(
+    unknown_param,
+    mu = score_mu,
+    sigma = score_sigma,
+    both = cbind(score_mu, score_sigma)
+  )
+}
+
+gaussian_fisher_information_vech <- function(Sigma,
+                                              unknown_param = "both") {
+  Sigma <- as.matrix(Sigma)
+  q <- nrow(Sigma)
+  if (!identical(dim(Sigma), c(q, q)) || any(!is.finite(Sigma))) {
+    stop("`Sigma` must be a finite square matrix.")
+  }
+  unknown_param <- tolower(as.character(unknown_param %||% "both"))
+  if (!unknown_param %in% c("mu", "sigma", "both")) {
+    stop("Unsupported Gaussian unknown-parameter specification.")
+  }
+  Sigma_inv <- solve(0.5 * (Sigma + t(Sigma)))
+  D <- fast_multiplier_duplication_matrix(q)
+  information_sigma <- 0.5 * crossprod(
+    D,
+    kronecker(Sigma_inv, Sigma_inv) %*% D
+  )
+  switch(
+    unknown_param,
+    mu = Sigma_inv,
+    sigma = information_sigma,
+    both = {
+      output <- matrix(0, q + ncol(D), q + ncol(D))
+      output[seq_len(q), seq_len(q)] <- Sigma_inv
+      sigma_index <- q + seq_len(ncol(D))
+      output[sigma_index, sigma_index] <- information_sigma
+      output
+    }
+  )
+}
+
+gaussian_mle_influence_matrix_vech <- function(x,
+                                                mu,
+                                                Sigma,
+                                                unknown_param = "both") {
+  score <- gaussian_score_matrix_vech(x, mu, Sigma, unknown_param)
+  information <- gaussian_fisher_information_vech(Sigma, unknown_param)
+  score %*% solve(information)
+}
+
+# For a Gaussian likelihood parametrised by (mu, vech(Sigma)), this returns
+# the covariance of the MLE influence function for one observation.  Hence
+# the matrix V in the paper's notation is -solve(output), because V is the
+# derivative of theta -> E{psi_theta(X)} and psi is the likelihood score.
+fast_multiplier_gaussian_influence_covariance <- function(Sigma,
+                                                           unknown_param = "both") {
+  Sigma <- as.matrix(Sigma)
+  d <- nrow(Sigma)
+  if (!identical(dim(Sigma), c(d, d)) || any(!is.finite(Sigma))) {
+    stop("`Sigma` must be a finite square matrix.")
+  }
+  unknown_param <- tolower(as.character(unknown_param %||% "both"))
+  if (!unknown_param %in% c("mu", "sigma", "both")) {
+    stop("Unsupported Gaussian unknown-parameter specification.")
+  }
+  idx <- which(lower.tri(Sigma, diag = TRUE), arr.ind = TRUE)
+  p_sigma <- nrow(idx)
+  covariance_sigma <- matrix(0, p_sigma, p_sigma)
+  for (a in seq_len(p_sigma)) {
+    i <- idx[a, 1L]
+    j <- idx[a, 2L]
+    for (b in seq_len(p_sigma)) {
+      k <- idx[b, 1L]
+      ell <- idx[b, 2L]
+      covariance_sigma[a, b] <-
+        Sigma[i, k] * Sigma[j, ell] + Sigma[i, ell] * Sigma[j, k]
+    }
+  }
+  switch(
+    unknown_param,
+    mu = Sigma,
+    sigma = covariance_sigma,
+    both = {
+      out <- matrix(0, d + p_sigma, d + p_sigma)
+      out[seq_len(d), seq_len(d)] <- Sigma
+      out[d + seq_len(p_sigma), d + seq_len(p_sigma)] <- covariance_sigma
+      out
+    }
+  )
+}
+
+fast_multiplier_gaussian_paper_vhat <- function(Sigma,
+                                                 unknown_param = "both") {
+  -solve(fast_multiplier_gaussian_influence_covariance(
+    Sigma = Sigma,
+    unknown_param = unknown_param
+  ))
+}
+
+fast_multiplier_matrix_condition_diagnostics <- function(matrix_value) {
+  matrix_value <- as.matrix(matrix_value)
+  rcond_value <- tryCatch(rcond(matrix_value), error = function(e) NA_real_)
+  list(
+    eigenvalues = as.numeric(eigen((matrix_value + t(matrix_value)) / 2,
+                                   symmetric = TRUE, only.values = TRUE)$values),
+    rcond = as.numeric(rcond_value),
+    condition_number = if (is.finite(rcond_value) && rcond_value > 0) {
+      as.numeric(1 / rcond_value)
+    } else {
+      Inf
+    }
+  )
 }
 
 fast_multiplier_sphere_chart <- function(mu) {
@@ -584,6 +780,12 @@ prepare_fast_multiplier_score_model <- function(spec,
                                                 sample_fn,
                                                 vhat_fn = NULL) {
   derivative_control <- fast_multiplier_parse_derivative_control(control)
+  if (!identical(derivative_control$derivative_method, "score_mc")) {
+    stop(sprintf(
+      "Model '%s' does not implement deterministic profile derivatives.",
+      spec$name
+    ))
+  }
   vhat_control <- fast_multiplier_parse_vhat_control(control)
   allow_invalid_vhat_diagnostics <- isTRUE(control$fast_multiplier_allow_singular_vhat_diagnostics %||% FALSE)
   data_normalized <- spec_normalize_data(spec, data, control)

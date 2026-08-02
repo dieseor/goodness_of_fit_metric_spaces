@@ -132,7 +132,11 @@ test_that("mvnormal fast preparation uses Gaussian MLE influence correction", {
     theta_hat = theta_hat,
     ks_prep = ks_prep,
     cvm_prep = cvm_prep,
-    control = list(derivative_mc_size = 600L, derivative_mc_seed = 1204L)
+    control = list(
+      derivative_mc_size = 600L,
+      derivative_mc_seed = 1204L,
+      fast_multiplier_store_paper_quantities = TRUE
+    )
   )
 
   d <- length(theta_hat$mu)
@@ -146,7 +150,8 @@ test_that("mvnormal fast preparation uses Gaussian MLE influence correction", {
     }, numeric(p_sigma)))
   )
 
-  expect_identical(prep$vhat_method, "gaussian_mle_influence_identity")
+  expect_identical(prep$vhat_method, "fitted_gaussian_influence_reparameterization")
+  expect_identical(prep$paper_Vhat_method, "analytic_expected_score_jacobian")
   expect_equal(dim(prep$S_obs), c(nrow(x), d + p_sigma))
   expect_equal(dim(prep$Psi_aux), c(600, d + p_sigma))
   expect_equal(dim(prep$Vhat), c(d + p_sigma, d + p_sigma))
@@ -154,6 +159,11 @@ test_that("mvnormal fast preparation uses Gaussian MLE influence correction", {
   expect_equal(dim(prep$D_cvm), c(nrow(x) * nrow(x), d + p_sigma))
   expect_equal(prep$S_obs, expected_if, tolerance = 1e-12)
   expect_equal(prep$Vhat, diag(d + p_sigma), tolerance = 1e-12)
+  expect_equal(
+    prep$paper_influence_obs,
+    -prep$paper_score_obs %*% t(solve(prep$paper_Vhat)),
+    tolerance = 1e-10
+  )
   expect_lt(prep$vhat_diagnostics$score_mean_aux_norm, 0.35)
 })
 
@@ -209,7 +219,7 @@ test_that("mvnormal fast multiplier supports the sample-based KS grid", {
   )
 })
 
-test_that("mvnormal fast R and C++ loops are bitwise identical", {
+test_that("mvnormal legacy C++ is bitwise identical to R and contiguous C++ preserves inference", {
   for (d in c(2L, 10L)) {
     set.seed(1300L + d)
     x <- mvtnorm::rmvnorm(
@@ -254,6 +264,19 @@ test_that("mvnormal fast R and C++ loops are bitwise identical", {
         cache_block_corrections = "true"
       ))
     )
+    legacy_common <- common
+    legacy_common$control <- utils::modifyList(
+      common$control,
+      list(fast_multiplier_cpp_kernel = "legacy")
+    )
+    cpp_legacy <- do.call(
+      multiplier_bootstrap_mvnormal,
+      c(legacy_common, list(
+        fast_multiplier_backend = "cpp",
+        fuse_ks_cvm = TRUE,
+        cache_block_corrections = "true"
+      ))
+    )
     cpp_uncached <- do.call(
       multiplier_bootstrap_mvnormal,
       c(common, list(
@@ -272,25 +295,37 @@ test_that("mvnormal fast R and C++ loops are bitwise identical", {
     )
 
     expect_identical(
-      cpp_fused$bootstrap$statistics,
-      r_fused$bootstrap$statistics
-    )
-    expect_identical(
       cpp_uncached$bootstrap$statistics,
-      r_fused$bootstrap$statistics
+      cpp_fused$bootstrap$statistics
     )
     expect_identical(
       r_unfused$bootstrap$statistics,
       r_fused$bootstrap$statistics
     )
+    expect_identical(cpp_legacy$bootstrap$statistics, r_fused$bootstrap$statistics)
+    expect_identical(cpp_legacy$observed, r_fused$observed)
+    expect_identical(cpp_legacy$inference, r_fused$inference)
     expect_identical(cpp_fused$observed, r_fused$observed)
-    expect_identical(cpp_fused$inference, r_fused$inference)
+    expect_equal(
+      cpp_fused$bootstrap$statistics,
+      cpp_legacy$bootstrap$statistics,
+      tolerance = 1e-12
+    )
+    expect_identical(cpp_fused$inference, cpp_legacy$inference)
     expect_identical(
       cpp_fused$diagnostics$fast_multiplier_backend_effective,
       "cpp"
     )
     expect_true(
       cpp_fused$diagnostics$fast_multiplier_fuse_ks_cvm_effective
+    )
+    expect_identical(
+      cpp_fused$diagnostics$fast_multiplier_cpp_kernel_effective,
+      "contiguous_double"
+    )
+    expect_identical(
+      cpp_legacy$diagnostics$fast_multiplier_cpp_kernel_effective,
+      "legacy"
     )
     if (d == 2L) {
       parallel_common <- common

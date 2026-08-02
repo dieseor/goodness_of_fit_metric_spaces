@@ -48,6 +48,26 @@ normalize_fast_multiplier_backend <- function(backend = c("cpp", "r")) {
   backend
 }
 
+# The contiguous-double kernel is the production default.  It implements the
+# same statistic as the legacy C++ kernel, but traverses the bootstrap arrays
+# in their contiguous layout.  `legacy` remains an explicit reproducibility
+# fallback for historical checks.
+normalize_fast_multiplier_cpp_kernel <- function(kernel = c(
+                                                "contiguous_double",
+                                                "legacy")) {
+  kernel <- tolower(as.character(kernel))
+  if (length(kernel) > 1L) {
+    kernel <- kernel[[1L]]
+  }
+  if (length(kernel) != 1L || is.na(kernel) ||
+      !kernel %in% c("legacy", "contiguous_double")) {
+    stop(
+      "`fast_multiplier_cpp_kernel` must be either 'legacy' or 'contiguous_double'."
+    )
+  }
+  kernel
+}
+
 normalize_fast_multiplier_fusion <- function(fuse_ks_cvm = TRUE) {
   if (length(fuse_ks_cvm) != 1L || is.na(fuse_ks_cvm) ||
       !is.logical(fuse_ks_cvm)) {
@@ -452,7 +472,8 @@ prepare_ks_observed_data <- function(data,
                                      theta_hat,
                                      ks_grid,
                                      control = list(),
-                                     light = FALSE) {
+                                     light = FALSE,
+                                     share_cvm_statistic = FALSE) {
   if (!is.list(ks_grid)) {
     stop("KS requires `ks_grid = list(omega_grid = ..., t_grid = ...)`.")
   }
@@ -468,13 +489,26 @@ prepare_ks_observed_data <- function(data,
     n <- nrow(sorted_distance_matrix)
 
     if (isTRUE(light)) {
-      statistic <- compute_sample_ks_observed_stat_light(
-        spec = spec,
-        normalized_data = derived_grid$normalized_data,
-        sorted_distance_matrix = sorted_distance_matrix,
-        theta = theta_hat,
-        control = control
-      )
+      shared_statistics <- if (isTRUE(share_cvm_statistic)) {
+        compute_sample_ks_cvm_observed_stats_light(
+          spec = spec,
+          normalized_data = derived_grid$normalized_data,
+          sorted_distance_matrix = sorted_distance_matrix,
+          theta = theta_hat,
+          control = control
+        )
+      } else {
+        list(
+          ks = compute_sample_ks_observed_stat_light(
+            spec = spec,
+            normalized_data = derived_grid$normalized_data,
+            sorted_distance_matrix = sorted_distance_matrix,
+            theta = theta_hat,
+            control = control
+          ),
+          cvm = NULL
+        )
+      }
 
       return(list(
         ks_grid_mode = ks_grid_mode,
@@ -482,7 +516,8 @@ prepare_ks_observed_data <- function(data,
         t_grid = NULL,
         order_matrix = order_matrix,
         sorted_distance_matrix = sorted_distance_matrix,
-        statistic = statistic,
+        statistic = shared_statistics$ks,
+        shared_cvm_statistic = shared_statistics$cvm,
         light = TRUE
       ))
     }
@@ -650,6 +685,52 @@ compute_sample_ks_observed_stat_light <- function(spec,
   block_max
 }
 
+compute_sample_ks_cvm_observed_stats_light <- function(
+    spec,
+    normalized_data,
+    sorted_distance_matrix,
+    theta,
+    control = list()) {
+  n <- nrow(sorted_distance_matrix)
+  ks_block_size <- normalize_ks_block_size(
+    block_size = control$ks_block_size %||% NULL,
+    n_rows = n
+  )
+  cvm_block_size <- normalize_ks_block_size(
+    block_size = control$cvm_block_size %||% control$ks_block_size %||% NULL,
+    n_rows = n,
+    arg_name = "`control$cvm_block_size`"
+  )
+  block_size <- min(ks_block_size, cvm_block_size)
+  block_max <- 0
+  cvm_sum <- 0
+
+  for (block_start in seq.int(1L, n, by = block_size)) {
+    block_end <- min(block_start + block_size - 1L, n)
+    row_indices <- block_start:block_end
+    empirical_block <- compute_sorted_empirical_profile_block(
+      sorted_distance_matrix = sorted_distance_matrix,
+      row_indices = row_indices
+    )
+    theoretical_block <- compute_theoretical_sample_profile_sorted_block(
+      spec = spec,
+      normalized_data = normalized_data,
+      sorted_distance_matrix = sorted_distance_matrix,
+      theta = theta,
+      row_indices = row_indices,
+      control = control
+    )
+    process_block <- sqrt(n) * (empirical_block - theoretical_block)
+    block_max <- max(block_max, max(abs(process_block)))
+    cvm_sum <- cvm_sum + sum(process_block^2)
+  }
+
+  list(
+    ks = block_max,
+    cvm = cvm_sum / (n * n)
+  )
+}
+
 compute_cvm_observed_stat_light <- function(spec,
                                             normalized_data,
                                             sorted_distance_matrix,
@@ -793,13 +874,17 @@ prepare_cvm_observed_data_from_sample_ks <- function(data,
   list(
     order_matrix = ks_prep$order_matrix,
     sorted_distance_matrix = ks_prep$sorted_distance_matrix,
-    statistic = compute_cvm_observed_stat_light(
-      spec = spec,
-      normalized_data = normalized_data,
-      sorted_distance_matrix = ks_prep$sorted_distance_matrix,
-      theta = theta_hat,
-      control = control
-    ),
+    statistic = if (!is.null(ks_prep$shared_cvm_statistic)) {
+      ks_prep$shared_cvm_statistic
+    } else {
+      compute_cvm_observed_stat_light(
+        spec = spec,
+        normalized_data = normalized_data,
+        sorted_distance_matrix = ks_prep$sorted_distance_matrix,
+        theta = theta_hat,
+        control = control
+      )
+    },
     light = TRUE,
     shared_with_ks = TRUE
   )
@@ -1479,6 +1564,38 @@ prepare_fast_ks_sample_stream_prep <- function(S_obs,
     diag(ncol(Vhat)),
     label = "the fast sample-KS inverse"
   )
+  if (!is.null(D_ks_info$derivative_sorted)) {
+    derivative_sorted <- as.matrix(D_ks_info$derivative_sorted)
+    n_centers <- nrow(ks_prep$sorted_distance_matrix)
+    n_thresholds <- ncol(ks_prep$sorted_distance_matrix)
+    if (!identical(
+      dim(derivative_sorted),
+      c(n_centers * n_thresholds, ncol(S_obs))
+    )) {
+      stop("The deterministic sample-KS derivative table has incompatible dimensions.")
+    }
+    correction_values <- derivative_sorted %*% t(vhat_inverse)
+    return(list(
+      mode = "sample_points_unique_distances_streamed",
+      S_obs = as.matrix(S_obs),
+      Psi_aux_solved = NULL,
+      aux_order_matrix = NULL,
+      aux_sorted_distance_matrix = NULL,
+      obs_order_matrix = ks_prep$order_matrix,
+      obs_sorted_distance_matrix = ks_prep$sorted_distance_matrix,
+      tie_end_matrix = build_sorted_tie_end_matrix(
+        ks_prep$sorted_distance_matrix
+      ),
+      n = nrow(S_obs),
+      n_aux = 0L,
+      correction_cache = list(
+        values = correction_values,
+        bytes = as.double(length(correction_values)) * 8,
+        requested = "deterministic",
+        n_max = n_centers
+      )
+    ))
+  }
   Psi_aux_solved <- as.matrix(Psi_aux) %*% t(vhat_inverse)
   list(
     mode = "sample_points_unique_distances_streamed",
@@ -1606,10 +1723,12 @@ compute_fast_sample_ks_cvm_stats_cpp <- function(
     scale_factor,
     compute_ks = TRUE,
     compute_cvm = TRUE,
-    fuse_ks_cvm = TRUE) {
+    fuse_ks_cvm = TRUE,
+    cpp_kernel = "contiguous_double") {
   if (!isTRUE(compute_ks) && !isTRUE(compute_cvm)) {
     stop("At least one fast statistic must be requested.")
   }
+  cpp_kernel <- normalize_fast_multiplier_cpp_kernel(cpp_kernel)
   ensure_distance_profile_cpp_loaded()
   score_block <- centered_weight_block %*% stream_prep$S_obs
   n_reps <- nrow(centered_weight_block)
@@ -1622,7 +1741,11 @@ compute_fast_sample_ks_cvm_stats_cpp <- function(
                           want_ks,
                           want_cvm) {
     distance_profile_cpp_call(
-      "cpp_fast_sample_ks_cvm_stats",
+      if (identical(cpp_kernel, "contiguous_double")) {
+        "cpp_fast_sample_ks_cvm_stats_contiguous_double"
+      } else {
+        "cpp_fast_sample_ks_cvm_stats"
+      },
       centered_weights = centered_weight_block,
       score_block = score_block,
       obs_order_matrix = obs_order_matrix,
@@ -1851,14 +1974,53 @@ prepare_fast_cvm_stream_prep <- function(S_obs,
 
   if (is.list(D_cvm) &&
       identical(D_cvm$mode %||% "", "sample_points_unique_distances_sorted_rows")) {
-    if (is.null(Psi_aux) || is.null(cvm_prep)) {
-      stop("The streamed fast CvM prep requires both `Psi_aux` and `cvm_prep` in lightweight mode.")
+    if (is.null(cvm_prep)) {
+      stop("The streamed fast CvM prep requires `cvm_prep` in lightweight mode.")
     }
     vhat_inverse <- fast_multiplier_solve_vhat(
       Vhat,
       diag(ncol(Vhat)),
       label = "the fast CvM inverse"
     )
+    if (!is.null(D_cvm$derivative_sorted)) {
+      derivative_sorted <- as.matrix(D_cvm$derivative_sorted)
+      n_centers <- nrow(cvm_prep$sorted_distance_matrix)
+      n_thresholds <- ncol(cvm_prep$sorted_distance_matrix)
+      if (!identical(
+        dim(derivative_sorted),
+        c(n_centers * n_thresholds, ncol(S_obs))
+      )) {
+        stop("The deterministic streamed CvM derivative table has incompatible dimensions.")
+      }
+      if (is.null(correction_cache)) {
+        correction_values <- derivative_sorted %*% t(vhat_inverse)
+        correction_cache <- list(
+          values = correction_values,
+          bytes = as.double(length(correction_values)) * 8,
+          requested = "deterministic",
+          n_max = n_centers
+        )
+      }
+      return(list(
+        mode = "sample_points_unique_distances_sorted_rows",
+        S_obs = as.matrix(S_obs),
+        Psi_aux_solved = NULL,
+        aux_order_matrix = NULL,
+        aux_sorted_distance_matrix = NULL,
+        obs_order_matrix = cvm_prep$order_matrix,
+        obs_sorted_distance_matrix = cvm_prep$sorted_distance_matrix,
+        tie_end_matrix = build_sorted_tie_end_matrix(
+          cvm_prep$sorted_distance_matrix
+        ),
+        n = n,
+        n_aux = 0L,
+        block_size = block_size,
+        correction_cache = correction_cache
+      ))
+    }
+    if (is.null(Psi_aux)) {
+      stop("The Monte Carlo streamed CvM prep requires `Psi_aux`.")
+    }
     Psi_aux_solved <- as.matrix(Psi_aux) %*% t(vhat_inverse)
     if (is.null(correction_cache)) {
       correction_cache <- build_fast_sample_correction_cache(
@@ -2039,7 +2201,10 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
     stop("The fast multiplier branch is only implemented for composite nulls.")
   }
   fast_backend_requested <- normalize_fast_multiplier_backend(
-    control$fast_multiplier_backend %||% "r"
+    control$fast_multiplier_backend %||% "cpp"
+  )
+  cpp_kernel_requested <- normalize_fast_multiplier_cpp_kernel(
+    control$fast_multiplier_cpp_kernel %||% "contiguous_double"
   )
   fusion_requested <- normalize_fast_multiplier_fusion(
     control$fast_multiplier_fuse_ks_cvm %||% TRUE
@@ -2128,6 +2293,8 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
       fast_parameter_summary = NA_real_,
       fast_multiplier_backend_requested = fast_backend_requested,
       fast_multiplier_backend_effective = "r",
+      fast_multiplier_cpp_kernel_requested = cpp_kernel_requested,
+      fast_multiplier_cpp_kernel_effective = "not_used",
       fast_multiplier_fuse_ks_cvm_requested = fusion_requested,
       fast_multiplier_fuse_ks_cvm_effective = FALSE,
       fast_multiplier_cache_corrections_requested = cache_requested,
@@ -2282,7 +2449,8 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
           scale_factor = scale_factor,
           compute_ks = want_ks,
           compute_cvm = want_cvm,
-          fuse_ks_cvm = fusion_effective
+          fuse_ks_cvm = fusion_effective,
+          cpp_kernel = cpp_kernel_requested
         )
       } else {
         compute_fast_sample_ks_cvm_stats_fused_r(
@@ -2375,9 +2543,51 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
     prep_seconds = prep_seconds,
     loop_seconds = loop_seconds,
     derivative_method = fast_prep$derivative_method,
+    derivative_method_requested = fast_prep$derivative_method_requested %||%
+      fast_prep$derivative_method,
+    derivative_method_effective = fast_prep$derivative_method_effective %||%
+      fast_prep$derivative_method,
+    derivative_method_selection_source =
+      fast_prep$derivative_method_selection_source %||% NA_character_,
     derivative_mc_size = fast_prep$derivative_mc_size,
     derivative_mc_seed = fast_prep$derivative_mc_seed,
+    quadrature_algorithm = paste(
+      fast_prep$quadrature_diagnostics$algorithms_effective %||%
+        fast_prep$quadrature_settings$algorithm %||% NA_character_,
+      collapse = "+"
+    ),
+    quadrature_abs_tol = fast_prep$quadrature_settings$abs_tol %||% NA_real_,
+    quadrature_max_terms = fast_prep$quadrature_settings$max_terms %||% NA_integer_,
+    quadrature_initial_upper =
+      fast_prep$quadrature_settings$initial_upper %||% NA_real_,
+    quadrature_max_upper =
+      fast_prep$quadrature_settings$max_upper %||% NA_real_,
+    quadrature_tail_consecutive =
+      fast_prep$quadrature_settings$tail_consecutive %||% NA_integer_,
+    quadrature_eigen_rel_tol =
+      fast_prep$quadrature_settings$eigen_rel_tol %||% NA_real_,
+    quadrature_clip_tol = fast_prep$quadrature_settings$clip_tol %||% NA_real_,
+    quadrature_center_evaluations =
+      fast_prep$quadrature_diagnostics$center_evaluations %||% NA_integer_,
+    quadrature_max_terms_used =
+      fast_prep$quadrature_diagnostics$max_terms_used %||% NA_integer_,
+    quadrature_max_residual_error_estimate =
+      fast_prep$quadrature_diagnostics$max_residual_error_estimate %||% NA_real_,
+    quadrature_max_condition_number =
+      fast_prep$quadrature_diagnostics$max_condition_number %||% NA_real_,
+    quadrature_max_propagated_error_estimate =
+      fast_prep$quadrature_diagnostics$max_propagated_error_estimate %||% NA_real_,
+    quadrature_max_upper_used =
+      fast_prep$quadrature_diagnostics$max_upper_limit %||% NA_real_,
+    quadrature_max_evaluations =
+      fast_prep$quadrature_diagnostics$max_evaluations %||% NA_integer_,
     vhat_method = fast_prep$vhat_method %||% NA_character_,
+    correction_representation = fast_prep$correction_representation %||% "score",
+    paper_Vhat_method = fast_prep$paper_Vhat_method %||% NA_character_,
+    paper_Vhat_eigenvalues = fast_prep$paper_Vhat_diagnostics$eigenvalues %||% NA_real_,
+    paper_Vhat_rcond = fast_prep$paper_Vhat_diagnostics$rcond %||% NA_real_,
+    paper_Vhat_condition_number =
+      fast_prep$paper_Vhat_diagnostics$condition_number %||% NA_real_,
     fast_ks_mode = if (!is.null(ks_sample_stream_prep)) ks_sample_stream_prep$mode else if (!is.null(H_ks)) "dense_matrix" else NA_character_,
     fast_cvm_mode = cvm_stream_prep$mode %||% NA_character_,
     sample_correction_cache_bytes = sum(correction_cache_bytes),
@@ -2395,6 +2605,10 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
     fast_parameter_summary = fast_prep$vhat_diagnostics$par0 %||% NA_real_,
     fast_multiplier_backend_requested = fast_backend_requested,
     fast_multiplier_backend_effective = fast_backend_effective,
+    fast_multiplier_cpp_kernel_requested = cpp_kernel_requested,
+    fast_multiplier_cpp_kernel_effective = if (
+      identical(fast_backend_effective, "cpp")
+    ) cpp_kernel_requested else "not_used",
     fast_multiplier_fuse_ks_cvm_requested = fusion_requested,
     fast_multiplier_fuse_ks_cvm_effective = fusion_effective,
     fast_multiplier_cache_corrections_requested = cache_requested,
@@ -2729,7 +2943,9 @@ multiplier_bootstrap_gof <- function(data,
       theta_hat = theta_hat,
       ks_grid = ks_grid,
       control = control,
-      light = use_lightweight_sample_ks_prep
+      light = use_lightweight_sample_ks_prep,
+      share_cvm_statistic = use_lightweight_sample_ks_prep &&
+        use_lightweight_cvm_prep && want_cvm
     )
   } else {
     NULL
@@ -2881,8 +3097,45 @@ multiplier_bootstrap_gof <- function(data,
       ks_prep_bytes = if (!is.null(ks_prep)) as.numeric(object.size(ks_prep)) else NA_real_,
       cvm_prep_bytes = if (!is.null(cvm_prep)) as.numeric(object.size(cvm_prep)) else NA_real_,
       derivative_method = chunk_results[[1L]]$derivative_method %||% NA_character_,
+      derivative_method_requested =
+        chunk_results[[1L]]$derivative_method_requested %||% NA_character_,
+      derivative_method_effective =
+        chunk_results[[1L]]$derivative_method_effective %||%
+          chunk_results[[1L]]$derivative_method %||% NA_character_,
+      derivative_method_selection_source =
+        chunk_results[[1L]]$derivative_method_selection_source %||% NA_character_,
       derivative_mc_size = chunk_results[[1L]]$derivative_mc_size %||% NA_integer_,
       derivative_mc_seed = chunk_results[[1L]]$derivative_mc_seed %||% NA_integer_,
+      quadrature_algorithm =
+        chunk_results[[1L]]$quadrature_algorithm %||% NA_character_,
+      quadrature_abs_tol =
+        chunk_results[[1L]]$quadrature_abs_tol %||% NA_real_,
+      quadrature_max_terms =
+        chunk_results[[1L]]$quadrature_max_terms %||% NA_integer_,
+      quadrature_initial_upper =
+        chunk_results[[1L]]$quadrature_initial_upper %||% NA_real_,
+      quadrature_max_upper =
+        chunk_results[[1L]]$quadrature_max_upper %||% NA_real_,
+      quadrature_tail_consecutive =
+        chunk_results[[1L]]$quadrature_tail_consecutive %||% NA_integer_,
+      quadrature_eigen_rel_tol =
+        chunk_results[[1L]]$quadrature_eigen_rel_tol %||% NA_real_,
+      quadrature_clip_tol =
+        chunk_results[[1L]]$quadrature_clip_tol %||% NA_real_,
+      quadrature_center_evaluations =
+        chunk_results[[1L]]$quadrature_center_evaluations %||% NA_integer_,
+      quadrature_max_terms_used =
+        chunk_results[[1L]]$quadrature_max_terms_used %||% NA_integer_,
+      quadrature_max_residual_error_estimate =
+        chunk_results[[1L]]$quadrature_max_residual_error_estimate %||% NA_real_,
+      quadrature_max_condition_number =
+        chunk_results[[1L]]$quadrature_max_condition_number %||% NA_real_,
+      quadrature_max_propagated_error_estimate =
+        chunk_results[[1L]]$quadrature_max_propagated_error_estimate %||% NA_real_,
+      quadrature_max_upper_used =
+        chunk_results[[1L]]$quadrature_max_upper_used %||% NA_real_,
+      quadrature_max_evaluations =
+        chunk_results[[1L]]$quadrature_max_evaluations %||% NA_integer_,
       vhat_method = chunk_results[[1L]]$vhat_method %||% NA_character_,
       S_obs_dim = chunk_results[[1L]]$S_obs_dim %||% NA_integer_,
       Psi_aux_dim = chunk_results[[1L]]$Psi_aux_dim %||% NA_integer_,
@@ -2896,6 +3149,10 @@ multiplier_bootstrap_gof <- function(data,
         chunk_results[[1L]]$fast_multiplier_backend_requested %||% NA_character_,
       fast_multiplier_backend_effective =
         chunk_results[[1L]]$fast_multiplier_backend_effective %||% NA_character_,
+      fast_multiplier_cpp_kernel_requested =
+        chunk_results[[1L]]$fast_multiplier_cpp_kernel_requested %||% NA_character_,
+      fast_multiplier_cpp_kernel_effective =
+        chunk_results[[1L]]$fast_multiplier_cpp_kernel_effective %||% NA_character_,
       fast_multiplier_fuse_ks_cvm_requested =
         chunk_results[[1L]]$fast_multiplier_fuse_ks_cvm_requested %||% NA,
       fast_multiplier_fuse_ks_cvm_effective =
@@ -3066,6 +3323,34 @@ multiplier_bootstrap_mvnormal <- function(data,
   control$fast_multiplier_backend <- fast_multiplier_backend
   control$fast_multiplier_fuse_ks_cvm <- fuse_ks_cvm
   control$fast_multiplier_cache_corrections <- cache_block_corrections
+  legacy_mc_control <- is.null(control$derivative_method) &&
+    (!is.null(control$derivative_mc_size) ||
+       !is.null(control$derivative_mc_seed))
+  if (legacy_mc_control) {
+    warning(
+      paste(
+        "Multivariate-normal fast multiplier: legacy derivative MC controls",
+        "were supplied without `derivative_method`. Selecting `score_mc`."
+      ),
+      call. = FALSE
+    )
+  }
+  requested_method <- tolower(as.character(
+    control$derivative_method %||% if (legacy_mc_control) "score_mc" else "auto"
+  ))
+  effective_method <- if (requested_method %in% c("auto", "deterministic")) {
+    "quadrature"
+  } else {
+    requested_method
+  }
+  selection_source <- if (!is.null(control$derivative_method)) {
+    if (identical(requested_method, "auto")) "explicit_auto" else "explicit"
+  } else if (legacy_mc_control) {
+    "legacy_mc_controls"
+  } else {
+    "model_default"
+  }
+  control$derivative_method <- effective_method
   spec <- make_mvnormal_spec(unknown_param = unknown_param)
   result <- multiplier_bootstrap_gof(
     data = data,
@@ -3089,6 +3374,10 @@ multiplier_bootstrap_mvnormal <- function(data,
     fuse_ks_cvm
   result$diagnostics$fast_multiplier_cache_corrections_requested <-
     cache_block_corrections
+  result$diagnostics$derivative_method_requested <- requested_method
+  result$diagnostics$derivative_method_effective <-
+    result$diagnostics$derivative_method %||% NA_character_
+  result$diagnostics$derivative_method_selection_source <- selection_source
   if (!identical(
       result$diagnostics$effective_bootstrap_method,
       "fast_multiplier"
@@ -3118,14 +3407,69 @@ multiplier_bootstrap_vmf <- function(data,
                                      control = list(),
                                      distance_type = c("chordal", "geodesic"),
                                      unknown_param = "xi",
-                                     distance_profile_backend = c("r", "cpp")) {
+                                     distance_profile_backend = c("r", "cpp"),
+                                     fast_multiplier_backend = c("cpp", "r"),
+                                     fast_multiplier_cpp_kernel = c(
+                                       "contiguous_double", "legacy"
+                                     ),
+                                     fuse_ks_cvm = TRUE,
+                                     cache_block_corrections = c(
+                                       "auto", "true", "false"
+                                     )) {
   distance_type <- match.arg(distance_type)
+  fast_multiplier_backend <- normalize_fast_multiplier_backend(
+    if (missing(fast_multiplier_backend)) {
+      control$fast_multiplier_backend %||% "cpp"
+    } else {
+      fast_multiplier_backend
+    }
+  )
+  fast_multiplier_cpp_kernel <- normalize_fast_multiplier_cpp_kernel(
+    if (missing(fast_multiplier_cpp_kernel)) {
+      control$fast_multiplier_cpp_kernel %||% "contiguous_double"
+    } else {
+      fast_multiplier_cpp_kernel
+    }
+  )
+  fuse_ks_cvm <- normalize_fast_multiplier_fusion(
+    if (missing(fuse_ks_cvm)) {
+      control$fast_multiplier_fuse_ks_cvm %||% TRUE
+    } else {
+      fuse_ks_cvm
+    }
+  )
+  cache_block_corrections <- normalize_fast_multiplier_cache(
+    if (missing(cache_block_corrections)) {
+      control$fast_multiplier_cache_corrections %||% "auto"
+    } else {
+      cache_block_corrections
+    }
+  )
+  control$fast_multiplier_backend <- fast_multiplier_backend
+  control$fast_multiplier_cpp_kernel <- fast_multiplier_cpp_kernel
+  control$fast_multiplier_fuse_ks_cvm <- fuse_ks_cvm
+  control$fast_multiplier_cache_corrections <- cache_block_corrections
   spec <- make_vmf_spec(
     distance_type = distance_type,
     unknown_param = unknown_param
   )
 
-  multiplier_bootstrap_gof(
+  legacy_mc_control <- is.null(control$derivative_method) &&
+    (!is.null(control$derivative_mc_size) ||
+       !is.null(control$derivative_mc_seed))
+  requested_method <- control$derivative_method %||% if (legacy_mc_control) {
+    "score_mc"
+  } else {
+    "quadrature"
+  }
+  selection_source <- if (!is.null(control$derivative_method)) {
+    "explicit"
+  } else if (legacy_mc_control) {
+    "legacy_mc_controls"
+  } else {
+    "model_default"
+  }
+  result <- multiplier_bootstrap_gof(
     data = data,
     spec = spec,
     null = null,
@@ -3141,6 +3485,28 @@ multiplier_bootstrap_vmf <- function(data,
     control = control,
     distance_profile_backend = distance_profile_backend
   )
+  result$diagnostics$derivative_method_requested <- requested_method
+  result$diagnostics$derivative_method_selection_source <- selection_source
+  result$diagnostics$derivative_method_effective <-
+    result$diagnostics$derivative_method %||% NA_character_
+  result$diagnostics$fast_multiplier_backend_requested <-
+    fast_multiplier_backend
+  result$diagnostics$fast_multiplier_cpp_kernel_requested <-
+    fast_multiplier_cpp_kernel
+  result$diagnostics$fast_multiplier_fuse_ks_cvm_requested <-
+    fuse_ks_cvm
+  result$diagnostics$fast_multiplier_cache_corrections_requested <-
+    cache_block_corrections
+  if (!identical(
+      result$diagnostics$effective_bootstrap_method,
+      "fast_multiplier"
+  )) {
+    result$diagnostics$fast_multiplier_backend_effective <- "r"
+    result$diagnostics$fast_multiplier_cpp_kernel_effective <- "not_used"
+    result$diagnostics$fast_multiplier_fuse_ks_cvm_effective <- FALSE
+    result$diagnostics$fast_multiplier_cache_corrections_effective <- FALSE
+  }
+  result
 }
 
 multiplier_bootstrap_jp <- function(data,
@@ -3197,10 +3563,65 @@ multiplier_bootstrap_hvmf <- function(data,
                                       ),
                                       control = list(),
                                       unknown_param = "both",
-                                      distance_profile_backend = c("r", "cpp")) {
+                                      distance_profile_backend = c("r", "cpp"),
+                                      fast_multiplier_backend = c("cpp", "r"),
+                                      fast_multiplier_cpp_kernel = c(
+                                        "contiguous_double", "legacy"
+                                      ),
+                                      fuse_ks_cvm = TRUE,
+                                      cache_block_corrections = c(
+                                        "auto", "true", "false"
+                                      )) {
+  fast_multiplier_backend <- normalize_fast_multiplier_backend(
+    if (missing(fast_multiplier_backend)) {
+      control$fast_multiplier_backend %||% "cpp"
+    } else {
+      fast_multiplier_backend
+    }
+  )
+  fast_multiplier_cpp_kernel <- normalize_fast_multiplier_cpp_kernel(
+    if (missing(fast_multiplier_cpp_kernel)) {
+      control$fast_multiplier_cpp_kernel %||% "contiguous_double"
+    } else {
+      fast_multiplier_cpp_kernel
+    }
+  )
+  fuse_ks_cvm <- normalize_fast_multiplier_fusion(
+    if (missing(fuse_ks_cvm)) {
+      control$fast_multiplier_fuse_ks_cvm %||% TRUE
+    } else {
+      fuse_ks_cvm
+    }
+  )
+  cache_block_corrections <- normalize_fast_multiplier_cache(
+    if (missing(cache_block_corrections)) {
+      control$fast_multiplier_cache_corrections %||% "auto"
+    } else {
+      cache_block_corrections
+    }
+  )
+  control$fast_multiplier_backend <- fast_multiplier_backend
+  control$fast_multiplier_cpp_kernel <- fast_multiplier_cpp_kernel
+  control$fast_multiplier_fuse_ks_cvm <- fuse_ks_cvm
+  control$fast_multiplier_cache_corrections <- cache_block_corrections
   spec <- make_hvmf_spec(unknown_param = unknown_param)
 
-  multiplier_bootstrap_gof(
+  legacy_mc_control <- is.null(control$derivative_method) &&
+    (!is.null(control$derivative_mc_size) ||
+       !is.null(control$derivative_mc_seed))
+  requested_method <- control$derivative_method %||% if (legacy_mc_control) {
+    "score_mc"
+  } else {
+    "quadrature"
+  }
+  selection_source <- if (!is.null(control$derivative_method)) {
+    "explicit"
+  } else if (legacy_mc_control) {
+    "legacy_mc_controls"
+  } else {
+    "model_default"
+  }
+  result <- multiplier_bootstrap_gof(
     data = data,
     spec = spec,
     null = null,
@@ -3216,6 +3637,27 @@ multiplier_bootstrap_hvmf <- function(data,
     control = control,
     distance_profile_backend = distance_profile_backend
   )
+  result$diagnostics$fast_multiplier_backend_requested <-
+    fast_multiplier_backend
+  result$diagnostics$fast_multiplier_cpp_kernel_requested <-
+    fast_multiplier_cpp_kernel
+  result$diagnostics$fast_multiplier_fuse_ks_cvm_requested <-
+    fuse_ks_cvm
+  result$diagnostics$fast_multiplier_cache_corrections_requested <-
+    cache_block_corrections
+  result$diagnostics$derivative_method_requested <- requested_method
+  result$diagnostics$derivative_method_selection_source <- selection_source
+  result$diagnostics$derivative_method_effective <-
+    result$diagnostics$derivative_method %||% NA_character_
+  if (!identical(
+      result$diagnostics$effective_bootstrap_method,
+      "fast_multiplier"
+  )) {
+    result$diagnostics$fast_multiplier_backend_effective <- "r"
+    result$diagnostics$fast_multiplier_fuse_ks_cvm_effective <- FALSE
+    result$diagnostics$fast_multiplier_cache_corrections_effective <- FALSE
+  }
+  result
 }
 
 multiplier_bootstrap_logistic_gaussian <- function(data,
@@ -3236,9 +3678,37 @@ multiplier_bootstrap_logistic_gaussian <- function(data,
                                                    control = list(),
                                                    unknown_param = "both",
                                                    distance_profile_backend = c("r", "cpp")) {
+  legacy_mc_control <- is.null(control$derivative_method) &&
+    (!is.null(control$derivative_mc_size) ||
+       !is.null(control$derivative_mc_seed))
+  if (legacy_mc_control) {
+    warning(
+      paste(
+        "Logistic-Gaussian fast multiplier: legacy derivative MC controls",
+        "were supplied without `derivative_method`. Selecting `score_mc`."
+      ),
+      call. = FALSE
+    )
+  }
+  requested_method <- tolower(as.character(
+    control$derivative_method %||% if (legacy_mc_control) "score_mc" else "auto"
+  ))
+  effective_method <- if (requested_method %in% c("auto", "deterministic")) {
+    "quadrature"
+  } else {
+    requested_method
+  }
+  selection_source <- if (!is.null(control$derivative_method)) {
+    if (identical(requested_method, "auto")) "explicit_auto" else "explicit"
+  } else if (legacy_mc_control) {
+    "legacy_mc_controls"
+  } else {
+    "model_default"
+  }
+  control$derivative_method <- effective_method
   spec <- make_logistic_gaussian_spec(unknown_param = unknown_param)
 
-  multiplier_bootstrap_gof(
+  result <- multiplier_bootstrap_gof(
     data = data,
     spec = spec,
     null = null,
@@ -3254,6 +3724,11 @@ multiplier_bootstrap_logistic_gaussian <- function(data,
     control = control,
     distance_profile_backend = distance_profile_backend
   )
+  result$diagnostics$derivative_method_requested <- requested_method
+  result$diagnostics$derivative_method_effective <-
+    result$diagnostics$derivative_method %||% NA_character_
+  result$diagnostics$derivative_method_selection_source <- selection_source
+  result
 }
 
 multiplier_bootstrap_beta_mixture2 <- function(data,

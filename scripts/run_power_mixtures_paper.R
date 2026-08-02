@@ -413,6 +413,19 @@ run_single_paper_job <- function(job_row,
     error_message = NA_character_,
     bootstrap_method_requested = bootstrap_method,
     bootstrap_method_effective = NA_character_,
+    derivative_method_requested = if (scenario_spec$model %in% c("vmf", "hvmf")) {
+      "quadrature"
+    } else {
+      "score_mc"
+    },
+    derivative_method_effective = NA_character_,
+    derivative_method_selection_source = "explicit",
+    fast_multiplier_backend_requested = "cpp",
+    fast_multiplier_backend_effective = NA_character_,
+    fast_multiplier_cpp_kernel_requested = "contiguous_double",
+    fast_multiplier_cpp_kernel_effective = NA_character_,
+    fast_multiplier_fuse_ks_cvm_requested = TRUE,
+    fast_multiplier_fuse_ks_cvm_effective = NA,
     fallback_to_reestimated = NA,
     seed_data = data_seed,
     seed_bootstrap = bootstrap_seed,
@@ -449,10 +462,12 @@ run_single_paper_job <- function(job_row,
             bootstrap_thetas = FALSE
           ),
           control = list(
-            derivative_method = "score_mc",
-            derivative_mc_size = as.integer(derivative_mc_size),
-            derivative_mc_seed = as.integer(derivative_seed),
+            derivative_method = "quadrature",
             fast_multiplier_cvm_block_size = as.integer(fast_multiplier_cvm_block_size),
+            fast_multiplier_backend = "cpp",
+            fast_multiplier_cpp_kernel = "contiguous_double",
+            fast_multiplier_fuse_ks_cvm = TRUE,
+            fast_multiplier_cache_corrections = "auto",
             vmf_profile_method = "tabulated",
             vmf_profile_n_u = 4097L
           ),
@@ -484,10 +499,12 @@ run_single_paper_job <- function(job_row,
             bootstrap_thetas = FALSE
           ),
           control = list(
-            derivative_method = "score_mc",
-            derivative_mc_size = as.integer(derivative_mc_size),
-            derivative_mc_seed = as.integer(derivative_seed),
+            derivative_method = "quadrature",
             fast_multiplier_cvm_block_size = as.integer(fast_multiplier_cvm_block_size),
+            fast_multiplier_backend = "cpp",
+            fast_multiplier_cpp_kernel = "contiguous_double",
+            fast_multiplier_fuse_ks_cvm = TRUE,
+            fast_multiplier_cache_corrections = "auto",
             hvmf_profile_method = "tabulated",
             hvmf_profile_n_y = 4097L
           ),
@@ -519,9 +536,7 @@ run_single_paper_job <- function(job_row,
             bootstrap_thetas = FALSE
           ),
           control = list(
-            derivative_method = "score_mc",
-            derivative_mc_size = as.integer(derivative_mc_size),
-            derivative_mc_seed = as.integer(derivative_seed),
+            derivative_method = "quadrature",
             fast_multiplier_cvm_block_size = as.integer(fast_multiplier_cvm_block_size),
             mvnormal_quadform_method = logistic_gaussian_quadform_method
           ),
@@ -549,6 +564,22 @@ run_single_paper_job <- function(job_row,
   out$ks_pvalue <- as.numeric(result$inference$ks$p_value %||% NA_real_)
   out$cvm_pvalue <- as.numeric(result$inference$cvm$p_value %||% NA_real_)
   out$bootstrap_method_effective <- as.character(result$diagnostics$effective_bootstrap_method %||% NA_character_)
+  out$derivative_method_effective <- as.character(
+    result$diagnostics$derivative_method_effective %||%
+      result$diagnostics$derivative_method %||% NA_character_
+  )
+  out$derivative_method_selection_source <- as.character(
+    result$diagnostics$derivative_method_selection_source %||% "explicit"
+  )
+  out$fast_multiplier_backend_effective <- as.character(
+    result$diagnostics$fast_multiplier_backend_effective %||% NA_character_
+  )
+  out$fast_multiplier_cpp_kernel_effective <- as.character(
+    result$diagnostics$fast_multiplier_cpp_kernel_effective %||% NA_character_
+  )
+  out$fast_multiplier_fuse_ks_cvm_effective <- isTRUE(
+    result$diagnostics$fast_multiplier_fuse_ks_cvm_effective
+  )
   out$fallback_to_reestimated <- isTRUE(result$diagnostics$fallback_to_reestimated)
   out
 }
@@ -1155,7 +1186,10 @@ compile_paper_power_tables <- function(output_dir = default_paper_output_dir("ta
     sprintf("created_at: %s", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z")),
     sprintf("paper_repo_root: %s", paper_repo_root),
     sprintf("calibration_band_lower: %.8f", calibration_band[[1L]]),
-    sprintf("calibration_band_upper: %.8f", calibration_band[[2L]])
+    sprintf("calibration_band_upper: %.8f", calibration_band[[2L]]),
+    "fast_multiplier_backend_requested: cpp",
+    "fast_multiplier_cpp_kernel_requested: contiguous_double",
+    "fast_multiplier_fuse_ks_cvm_requested: TRUE"
   )
 
   for (scenario in table_scenarios) {

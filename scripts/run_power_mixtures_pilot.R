@@ -425,6 +425,15 @@ run_single_power_job <- function(job_row,
     error_message = NA_character_,
     bootstrap_method_requested = bootstrap_method,
     bootstrap_method_effective = NA_character_,
+    derivative_method_requested = if (design_row$scenario %in% c(
+      "vmf_s2_antipodal", "vmf_s2_non_antipodal"
+    )) {
+      "quadrature"
+    } else {
+      "score_mc"
+    },
+    derivative_method_effective = NA_character_,
+    derivative_method_selection_source = "explicit",
     fallback_to_reestimated = NA,
     seed_data = data_seed,
     seed_bootstrap = bootstrap_seed,
@@ -461,9 +470,7 @@ run_single_power_job <- function(job_row,
             bootstrap_thetas = FALSE
           ),
           control = list(
-            derivative_method = "score_mc",
-            derivative_mc_size = as.integer(derivative_mc_size),
-            derivative_mc_seed = as.integer(derivative_seed),
+            derivative_method = "quadrature",
             fast_multiplier_cvm_block_size = as.integer(fast_multiplier_cvm_block_size),
             vmf_profile_method = "tabulated",
             vmf_profile_n_u = 4097L
@@ -496,9 +503,7 @@ run_single_power_job <- function(job_row,
             bootstrap_thetas = FALSE
           ),
           control = list(
-            derivative_method = "score_mc",
-            derivative_mc_size = as.integer(derivative_mc_size),
-            derivative_mc_seed = as.integer(derivative_seed),
+            derivative_method = "quadrature",
             fast_multiplier_cvm_block_size = as.integer(fast_multiplier_cvm_block_size),
             vmf_profile_method = "tabulated",
             vmf_profile_n_u = 4097L
@@ -535,9 +540,7 @@ run_single_power_job <- function(job_row,
             bootstrap_thetas = FALSE
           ),
           control = list(
-            derivative_method = "score_mc",
-            derivative_mc_size = as.integer(derivative_mc_size),
-            derivative_mc_seed = as.integer(derivative_seed),
+            derivative_method = "quadrature",
             fast_multiplier_cvm_block_size = as.integer(fast_multiplier_cvm_block_size),
             mvnormal_quadform_method = logistic_gaussian_quadform_method
           ),
@@ -565,6 +568,13 @@ run_single_power_job <- function(job_row,
   out$ks_pvalue <- as.numeric(result$inference$ks$p_value %||% NA_real_)
   out$cvm_pvalue <- as.numeric(result$inference$cvm$p_value %||% NA_real_)
   out$bootstrap_method_effective <- as.character(result$diagnostics$effective_bootstrap_method %||% NA_character_)
+  out$derivative_method_effective <- as.character(
+    result$diagnostics$derivative_method_effective %||%
+      result$diagnostics$derivative_method %||% NA_character_
+  )
+  out$derivative_method_selection_source <- as.character(
+    result$diagnostics$derivative_method_selection_source %||% "explicit"
+  )
   out$fallback_to_reestimated <- isTRUE(result$diagnostics$fallback_to_reestimated)
   out
 }
@@ -905,6 +915,12 @@ write_metadata_files <- function(output_dir,
     sprintf("n_cores_outer: %d", as.integer(n_cores_outer)),
     sprintf("block: %s", block),
     sprintf("base_seed: %d", as.integer(base_seed)),
+    "vmf_hvmf_derivative_method_requested: quadrature",
+    "fast_multiplier_backend_requested: cpp",
+    "fast_multiplier_cpp_kernel_requested: contiguous_double",
+    "fast_multiplier_fuse_ks_cvm_requested: TRUE",
+    "fast_multiplier_cache_corrections_requested: auto",
+    "other_composite_models_derivative_method_requested: score_mc",
     sprintf("derivative_mc_size: %d", as.integer(derivative_mc_size)),
     sprintf("fast_multiplier_cvm_block_size: %d", as.integer(fast_multiplier_cvm_block_size)),
     sprintf("logistic_gaussian_quadform_method: %s", logistic_gaussian_quadform_method),

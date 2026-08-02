@@ -1,0 +1,10 @@
+family: vmf
+M: 20
+B: 99
+outer_cores: 12
+dimensions: 10
+n: 100
+beta: 0
+KS: sample_unique_distances
+fast: requested fused C++ multiplier bootstrap
+comparison: paired fast-versus-reestimated on identical simulated samples and multipliers

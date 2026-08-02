@@ -1,0 +1,6 @@
+Dimension-scaled Section 6 candidate scan; known-parameter population signal only.
+S is the centre-averaged profile KS discrepancy; J is split-sample unbiased for the CvM integrand.
+dimensions: 2,5,10
+families: normal,vmf
+n_centres: 96; n_profile: 6000; n_eval: 3000; batches: 3
+seed: 20260729

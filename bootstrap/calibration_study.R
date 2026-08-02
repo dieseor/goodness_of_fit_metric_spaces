@@ -1208,7 +1208,8 @@ run_bootstrap_for_scenario <- function(data,
       ),
       distance_type = scenario$distance_type,
       bootstrap_method = bootstrap_method,
-      unknown_param = scenario$unknown_param %||% "xi"
+      unknown_param = scenario$unknown_param %||% "xi",
+      control = scenario$control %||% list()
     ))
   }
 
@@ -1247,7 +1248,8 @@ run_bootstrap_for_scenario <- function(data,
         bootstrap_statistics = TRUE
       ),
       bootstrap_method = bootstrap_method,
-      unknown_param = scenario$unknown_param %||% "both"
+      unknown_param = scenario$unknown_param %||% "both",
+      control = scenario$control %||% list()
     ))
   }
 
@@ -1460,6 +1462,34 @@ calibration_result_rows_from_bootstrap <- function(bootstrap_result,
       unknown_param = scenario$unknown_param %||% NA_character_,
       bootstrap_method = bootstrap_result$diagnostics$bootstrap_method %||% NA_character_,
       effective_bootstrap_method = bootstrap_result$diagnostics$effective_bootstrap_method %||% NA_character_,
+      derivative_method_requested = bootstrap_result$diagnostics$derivative_method_requested %||%
+        scenario$control$derivative_method %||% NA_character_,
+      derivative_method_effective = bootstrap_result$diagnostics$derivative_method_effective %||%
+        bootstrap_result$diagnostics$derivative_method %||% NA_character_,
+      derivative_method_selection_source =
+        bootstrap_result$diagnostics$derivative_method_selection_source %||% NA_character_,
+      quadrature_algorithm =
+        bootstrap_result$diagnostics$quadrature_algorithm %||% NA_character_,
+      quadrature_abs_tol =
+        bootstrap_result$diagnostics$quadrature_abs_tol %||% NA_real_,
+      quadrature_max_terms =
+        bootstrap_result$diagnostics$quadrature_max_terms %||% NA_integer_,
+      quadrature_max_terms_used =
+        bootstrap_result$diagnostics$quadrature_max_terms_used %||% NA_integer_,
+      quadrature_max_residual_error_estimate =
+        bootstrap_result$diagnostics$quadrature_max_residual_error_estimate %||% NA_real_,
+      fast_multiplier_backend_requested =
+        bootstrap_result$diagnostics$fast_multiplier_backend_requested %||% NA_character_,
+      fast_multiplier_backend_effective =
+        bootstrap_result$diagnostics$fast_multiplier_backend_effective %||% NA_character_,
+      fast_multiplier_cpp_kernel_requested =
+        bootstrap_result$diagnostics$fast_multiplier_cpp_kernel_requested %||% NA_character_,
+      fast_multiplier_cpp_kernel_effective =
+        bootstrap_result$diagnostics$fast_multiplier_cpp_kernel_effective %||% NA_character_,
+      fast_multiplier_fuse_ks_cvm_requested =
+        bootstrap_result$diagnostics$fast_multiplier_fuse_ks_cvm_requested %||% NA,
+      fast_multiplier_fuse_ks_cvm_effective =
+        bootstrap_result$diagnostics$fast_multiplier_fuse_ks_cvm_effective %||% NA,
       fallback_reason = bootstrap_result$diagnostics$fallback_reason %||% NA_character_,
       n = n,
       statistic = stat_name,
@@ -2581,9 +2611,7 @@ run_full_logistic_gaussian_composite_calibration_study <- function(output_dir = 
     scenario$control <- utils::modifyList(
       scenario$control %||% list(),
       list(
-        derivative_method = "score_mc",
-        derivative_mc_size = as.integer(derivative_mc_size),
-        derivative_mc_seed = as.integer(derivative_mc_seed),
+        derivative_method = "quadrature",
         fast_multiplier_cvm_block_size = as.integer(fast_multiplier_cvm_block_size)
       )
     )

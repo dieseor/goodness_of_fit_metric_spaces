@@ -497,6 +497,68 @@ test_that("sample-based KS lightweight prep reduces retained memory on a large c
   )
 })
 
+test_that("lightweight sample KS and CvM share one theoretical-profile pass", {
+  set.seed(23115)
+  x <- stats::rnorm(36, mean = 0.3, sd = 1.2)
+  spec <- make_normal_spec(unknown_param = "both")
+  theta_hat <- spec$fit_theta(
+    data = x,
+    weights = NULL,
+    null = list(type = "composite"),
+    control = list()
+  )
+  original_profile_eval <- spec$profile_eval
+  profile_calls <- 0L
+  spec$profile_eval <- function(omega, t, theta, control = list()) {
+    profile_calls <<- profile_calls + 1L
+    original_profile_eval(omega, t, theta, control)
+  }
+  control <- list(ks_block_size = 11L, cvm_block_size = 7L)
+
+  ks_prep <- prepare_ks_observed_data(
+    data = x,
+    spec = spec,
+    theta_hat = theta_hat,
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    control = control,
+    light = TRUE,
+    share_cvm_statistic = TRUE
+  )
+  calls_after_ks <- profile_calls
+  cvm_prep <- prepare_cvm_observed_data_from_sample_ks(
+    data = x,
+    spec = spec,
+    theta_hat = theta_hat,
+    ks_prep = ks_prep,
+    control = control
+  )
+
+  expect_equal(calls_after_ks, length(x))
+  expect_equal(profile_calls, calls_after_ks)
+  expect_equal(
+    ks_prep$statistic,
+    compute_sample_ks_observed_stat_light(
+      spec = spec,
+      normalized_data = spec_normalize_data(spec, x, control),
+      sorted_distance_matrix = ks_prep$sorted_distance_matrix,
+      theta = theta_hat,
+      control = control
+    ),
+    tolerance = 1e-12
+  )
+  expect_equal(
+    cvm_prep$statistic,
+    compute_cvm_observed_stat_light(
+      spec = spec,
+      normalized_data = spec_normalize_data(spec, x, control),
+      sorted_distance_matrix = ks_prep$sorted_distance_matrix,
+      theta = theta_hat,
+      control = control
+    ),
+    tolerance = 1e-12
+  )
+})
+
 test_that("fast sample-based KS streamed prep matches the cache path and reduces retained memory", {
   set.seed(2312)
   x <- mvtnorm::rmvnorm(
@@ -1254,7 +1316,11 @@ test_that("vMF fast multiplier preparation has the expected dimensions and sign 
     theta_hat = theta_hat,
     ks_prep = ks_prep,
     cvm_prep = cvm_prep,
-    control = list(derivative_mc_size = 3000L, derivative_mc_seed = 123L)
+    control = list(
+      derivative_mc_size = 3000L,
+      derivative_mc_seed = 123L,
+      fast_multiplier_store_paper_quantities = TRUE
+    )
   )
 
   expect_equal(dim(prep$S_obs), c(nrow(x), 3))
@@ -1267,6 +1333,14 @@ test_that("vMF fast multiplier preparation has the expected dimensions and sign 
   scalar_coef <- 1 - A_q_kappa^2 - ((q + 1) * A_q_kappa / theta_hat$kappa)
   var_X <- (A_q_kappa / theta_hat$kappa) * diag(q + 1) + scalar_coef * outer(theta_hat$mu, theta_hat$mu)
   expect_equal(prep$Vhat, var_X, tolerance = 1e-8)
+  expect_identical(prep$correction_representation, "score")
+  expect_identical(prep$paper_Vhat_method, "analytic_expected_score_jacobian")
+  expect_equal(prep$paper_Vhat, -prep$Vhat, tolerance = 1e-12)
+  expect_equal(
+    -prep$paper_score_obs %*% t(solve(prep$paper_Vhat)),
+    prep$S_obs %*% solve(prep$Vhat),
+    tolerance = 1e-12
+  )
 
   correction_v <- prep$S_obs %*% solve(prep$Vhat) %*% t(prep$D_ks)
   correction_a <- -prep$S_obs %*% solve(dot_psi_xi(theta_hat$xi, q)) %*% t(prep$D_ks)
@@ -1560,7 +1634,11 @@ test_that("logistic Gaussian fast preparation uses Gaussian MLE influence correc
     theta_hat = theta_hat,
     ks_prep = ks_prep,
     cvm_prep = cvm_prep,
-    control = list(derivative_mc_size = 700L, derivative_mc_seed = 1102L)
+    control = list(
+      derivative_mc_size = 700L,
+      derivative_mc_seed = 1102L,
+      fast_multiplier_store_paper_quantities = TRUE
+    )
   )
 
   d <- length(theta_hat$mu_ilr)
@@ -1574,7 +1652,8 @@ test_that("logistic Gaussian fast preparation uses Gaussian MLE influence correc
     }, numeric(p_sigma)))
   )
 
-  expect_identical(prep$vhat_method, "gaussian_mle_influence_identity")
+  expect_identical(prep$vhat_method, "fitted_gaussian_influence_reparameterization")
+  expect_identical(prep$paper_Vhat_method, "analytic_expected_score_jacobian")
   expect_equal(dim(prep$S_obs), c(nrow(x), d + p_sigma))
   expect_equal(dim(prep$Psi_aux), c(700, d + p_sigma))
   expect_equal(dim(prep$Vhat), c(d + p_sigma, d + p_sigma))
@@ -1582,6 +1661,11 @@ test_that("logistic Gaussian fast preparation uses Gaussian MLE influence correc
   expect_equal(dim(prep$D_cvm), c(nrow(x) * nrow(x), d + p_sigma))
   expect_equal(prep$S_obs, expected_if, tolerance = 1e-12)
   expect_equal(prep$Vhat, diag(d + p_sigma), tolerance = 1e-12)
+  expect_equal(
+    prep$paper_influence_obs,
+    -prep$paper_score_obs %*% t(solve(prep$paper_Vhat)),
+    tolerance = 1e-10
+  )
   expect_lt(prep$vhat_diagnostics$score_mean_aux_norm, 0.35)
 })
 
@@ -1615,7 +1699,7 @@ test_that("logistic Gaussian fast multiplier runs without Monte Carlo Vhat inver
 
   expect_identical(result$diagnostics$bootstrap_method, "fast_multiplier")
   expect_identical(result$diagnostics$effective_bootstrap_method, "fast_multiplier")
-  expect_identical(result$diagnostics$vhat_method, "gaussian_mle_influence_identity")
+  expect_identical(result$diagnostics$vhat_method, "fitted_gaussian_influence_reparameterization")
   expect_true(all(is.finite(result$bootstrap$statistics$ks)))
   expect_true(all(is.finite(result$bootstrap$statistics$cvm)))
 })

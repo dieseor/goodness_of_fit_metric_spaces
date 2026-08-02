@@ -7,14 +7,13 @@ section6_env <- new.env(parent = globalenv())
 sys.source("scripts/run_section6_new_scenarios.R", envir = section6_env)
 
 test_that("Section 6 revised designs have the requested dimensions and beta grid", {
-  for (family in c("normal", "lg", "vmf")) {
+  for (family in c("normal", "lg", "vmf", "hvmf")) {
     design <- section6_env$make_section6_design(family)
     expect_setequal(unique(design$d), c(2L, 10L))
     expect_setequal(unique(design$beta), c(0, 0.5, 1))
-    expect_setequal(unique(design$n), c(50L, 100L, 200L))
+    expect_setequal(unique(design$n), c(50L, 100L, 200L, 400L))
     expect_length(unique(design$scenario), 2L)
   }
-  expect_equal(nrow(section6_env$make_section6_design("hvmf")), 0L)
 })
 
 test_that("Section 6 generators implement the new dimension-indexed scenarios", {
@@ -25,7 +24,8 @@ test_that("Section 6 generators implement the new dimension-indexed scenarios", 
       family = family,
       dimensions = 10L,
       n_values = 25L,
-      beta_values = 0.5
+      beta_values = 0.5,
+      scenarios = scenario
     )
     row <- design[design$scenario == scenario, , drop = FALSE][1L, , drop = FALSE]
     x <- section6_env$generate_section6_sample(row)
@@ -36,9 +36,13 @@ test_that("Section 6 generators implement the new dimension-indexed scenarios", 
       expect_equal(ncol(x), 11L)
       expect_lt(max(abs(rowSums(x) - 1)), 1e-10)
       expect_true(all(x > 0))
-    } else {
+    } else if (identical(family, "vmf")) {
       expect_equal(ncol(x), 11L)
       expect_lt(max(abs(rowSums(x^2) - 1)), 1e-10)
+    } else {
+      expect_equal(ncol(x), 11L)
+      expect_true(all(x[, 1L] > 0))
+      expect_lt(max(abs(-x[, 1L]^2 + rowSums(x[, -1L, drop = FALSE]^2) + 1)), 1e-8)
     }
   }
 
@@ -50,9 +54,39 @@ test_that("Section 6 generators implement the new dimension-indexed scenarios", 
   expect_true(all(eigen(sigma_minus, symmetric = TRUE)$values > 0))
 })
 
+test_that("Section 6 transverse prepilot scenarios are opt-in and preserve their fixed norms", {
+  expect_false(
+    "normal_1_mixture_transverse" %in%
+      section6_env$make_section6_design("normal")$scenario
+  )
+
+  normal_design <- section6_env$make_section6_design(
+    family = "normal", dimensions = c(2L, 10L), n_values = 20L,
+    beta_values = c(0, 0.5, 1),
+    scenarios = c("normal_1_mixture_transverse", "normal_2_t3")
+  )
+  lg_design <- section6_env$make_section6_design(
+    family = "lg", dimensions = 10L, n_values = 20L,
+    beta_values = 0.5, scenarios = "lg_1_mixture_transverse"
+  )
+  expect_setequal(unique(normal_design$scenario), c("normal_1_mixture_transverse", "normal_2_t3"))
+  expect_identical(unique(lg_design$scenario), "lg_1_mixture_transverse")
+
+  for (d in c(2L, 10L)) {
+    direction <- section6_env$section6_transverse_direction(d)
+    sigma_plus <- section6_env$section6_sigma_transverse(d, "plus")
+    sigma_minus <- section6_env$section6_sigma_transverse(d, "minus")
+    expect_equal(sum(direction^2), 1, tolerance = 1e-12)
+    expect_equal(sqrt(sum((sigma_plus - diag(d))^2)), 0.75, tolerance = 1e-12)
+    expect_equal(sqrt(sum((sigma_minus - diag(d))^2)), 0.75, tolerance = 1e-12)
+    expect_true(all(eigen(sigma_plus, symmetric = TRUE)$values > 0))
+    expect_true(all(eigen(sigma_minus, symmetric = TRUE)$values > 0))
+  }
+})
+
 test_that("Section 6 fast bootstrap uses the fused C++ sample kernel", {
   ensure_distance_profile_cpp_loaded()
-  for (family in c("normal", "lg", "vmf")) {
+  for (family in c("normal", "lg", "vmf", "hvmf")) {
     design <- section6_env$make_section6_design(
       family = family,
       dimensions = 10L,
@@ -70,6 +104,10 @@ test_that("Section 6 fast bootstrap uses the fused C++ sample kernel", {
     expect_identical(result$status, "ok")
     expect_identical(result$bootstrap_method_effective, "fast_multiplier")
     expect_identical(result$fast_multiplier_backend_effective, "cpp")
+    expect_identical(
+      result$fast_multiplier_cpp_kernel_effective,
+      "contiguous_double"
+    )
     expect_true(result$fast_multiplier_fuse_ks_cvm_effective)
     expect_identical(result$ks_grid, "sample_unique_distances")
   }
@@ -119,6 +157,7 @@ test_that("Section 6 manifest validation covers every execution setting except c
     cvm_block_size = 26L,
     ks_grid = "different_grid",
     fast_multiplier_backend = "r",
+    fast_multiplier_cpp_kernel = "legacy",
     fused_ks_cvm_kernel = FALSE
   )
   for (field in names(mismatches)) {

@@ -1,0 +1,16 @@
+created_at: 2026-08-01T20:49:48+0200
+purpose: paired paper-null calibration of quadrature versus score_mc
+scenarios: vmf_s2_antipodal,hvmf_h2_case1
+n_values: 50,100,200
+M: 800
+B: 4999
+outer_cores: 10
+base_seed: 20260830
+score_mc_derivative_mc_size: 1000
+checkpoint_every_tasks: 20
+data_law: beta = 0 exactly
+same_mle_within_pair: TRUE
+same_multiplier_matrix_within_pair: TRUE
+quadrature_fast_backend: cpp
+quadrature_fast_kernel: contiguous_double
+profile_lookup_table_used: FALSE

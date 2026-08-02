@@ -2,10 +2,9 @@
 
 # Section 6 power experiments for the revised, dimension-indexed scenarios.
 #
-# This runner deliberately covers Normal, logistic Gaussian, and vMF only.
-# The HvMF scenarios are deferred until the current H^2-only implementation is
-# extended and validated on H^d.  Each Monte Carlo replication requests the
-# sample-point KS statistic and the fast multiplier bootstrap.  The common
+# This runner covers the dimension-indexed Normal, logistic Gaussian, vMF,
+# and HvMF scenarios of Section 6. Each Monte Carlo replication requests the
+# sample-point KS statistic and the fast multiplier bootstrap. The common
 # sample-point KS/CvM bootstrap loop is fused and evaluated by the C++ kernel.
 
 Sys.setenv(RENV_CONFIG_AUTOLOADER_ENABLED = "FALSE")
@@ -60,6 +59,26 @@ section6_sigma <- function(d, sign = c("plus", "minus")) {
   sigma
 }
 
+# Dimension-scaled version of the Normal/LG mixture used only in the
+# Section 6 prepilot.  It keeps the Euclidean norm of the location change
+# equal to 0.5 and the Frobenius norm of each covariance perturbation equal
+# to 0.75, while distributing the covariance change over all transverse
+# directions.
+section6_transverse_direction <- function(d) {
+  if (d < 2L) stop("The transverse Section 6 scenarios require d >= 2.")
+  out <- numeric(d)
+  out[2:d] <- 1 / sqrt(d - 1L)
+  out
+}
+
+section6_sigma_transverse <- function(d, sign = c("plus", "minus")) {
+  sign <- match.arg(sign)
+  shift <- if (identical(sign, "plus")) 0.75 else -0.75
+  diagonal_shift <- numeric(d)
+  diagonal_shift[2:d] <- shift / sqrt(d - 1L)
+  diag(1 + diagonal_shift, d)
+}
+
 r_standardized_multivariate_t <- function(n, d, nu = 3) {
   n <- as.integer(n)
   d <- as.integer(d)
@@ -90,6 +109,13 @@ section6_scenario_catalog <- function() {
       description = "(1-beta) N_d(0,I_d) + beta t_{3,d}^{std}",
       generator = "normal_t3"
     ),
+    normal_1_mixture_transverse = list(
+      family = "normal",
+      alternative = "opposite_location_transverse_scale_mixture",
+      description = "(1-beta/2) N_d(0.5 v_d,Sigma_+) + (beta/2) N_d(-0.5 v_d,Sigma_-); transverse fixed-norm perturbations",
+      generator = "normal_mixture_transverse",
+      experimental = TRUE
+    ),
     lg_1_mixture = list(
       family = "lg",
       alternative = "ilr_opposite_location_correlation_mixture",
@@ -102,6 +128,13 @@ section6_scenario_catalog <- function() {
       description = "inverse-ilr image of (1-beta) N_d(0,I_d) + beta t_{3,d}^{std}",
       generator = "lg_t3"
     ),
+    lg_1_mixture_transverse = list(
+      family = "lg",
+      alternative = "ilr_opposite_location_transverse_scale_mixture",
+      description = "ILR analogue of normal_1_mixture_transverse",
+      generator = "lg_mixture_transverse",
+      experimental = TRUE
+    ),
     vmf_1_antipodal = list(
       family = "vmf",
       alternative = "antipodal_vmf_mixture",
@@ -113,23 +146,47 @@ section6_scenario_catalog <- function() {
       alternative = "projected_normal_mixture",
       description = "(1-beta) vMF(e1,1.5d) + beta Law(Z/||Z||), Z~N(sqrt(d+1)e1,I)",
       generator = "vmf_projected_normal"
+    ),
+    hvmf_1_mixture = list(
+      family = "hvmf",
+      alternative = "halfway_hvmf_location_mixture",
+      description = "(1-beta/2) HvMF((sqrt(2),e1),d) + (beta/2) HvMF((sqrt(2),e2),d)",
+      generator = "hvmf_location_mixture"
+    ),
+    hvmf_2_angular = list(
+      family = "hvmf",
+      alternative = "conditional_angular_hvmf_mixture",
+      description = "(1-beta) HvMF((sqrt(2),e1),1.5d) + beta Q_delta, delta=pi/5",
+      generator = "hvmf_angular_mixture"
     )
   )
 }
 
-section6_family_scenarios <- function(family) {
+section6_family_scenarios <- function(family, include_experimental = FALSE) {
   catalog <- section6_scenario_catalog()
-  names(catalog)[vapply(catalog, function(x) identical(x$family, family), logical(1))]
+  names(catalog)[vapply(catalog, function(x) {
+    identical(x$family, family) && (isTRUE(include_experimental) || !isTRUE(x$experimental))
+  }, logical(1))]
 }
 
 make_section6_design <- function(family,
                                  dimensions = c(2L, 10L),
-                                 n_values = c(50L, 100L, 200L),
-                                 beta_values = c(0, 0.5, 1)) {
+                                 n_values = c(50L, 100L, 200L, 400L),
+                                 beta_values = c(0, 0.5, 1),
+                                 scenarios = NULL) {
   if (!family %in% section6_families) stop("Unknown Section 6 family.")
-  if (identical(family, "hvmf")) return(data.frame())
   catalog <- section6_scenario_catalog()
-  scenario_names <- section6_family_scenarios(family)
+  available <- names(catalog)[vapply(catalog, function(x) identical(x$family, family), logical(1))]
+  scenario_names <- if (is.null(scenarios)) {
+    section6_family_scenarios(family)
+  } else {
+    scenarios <- unique(as.character(scenarios))
+    invalid <- setdiff(scenarios, available)
+    if (length(invalid)) {
+      stop(sprintf("Invalid scenario(s) for family '%s': %s", family, paste(invalid, collapse = ", ")))
+    }
+    scenarios
+  }
   rows <- list()
   index <- 1L
   for (scenario in scenario_names) {
@@ -181,6 +238,18 @@ generate_section6_sample <- function(design_row) {
     return(x)
   }
 
+  if (identical(scenario, "normal_1_mixture_transverse")) {
+    direction <- section6_transverse_direction(d)
+    choose_alt <- stats::runif(n) < beta / 2
+    x <- mvtnorm::rmvnorm(n, mean = 0.5 * direction, sigma = section6_sigma_transverse(d, "plus"))
+    if (any(choose_alt)) {
+      x[choose_alt, ] <- mvtnorm::rmvnorm(
+        sum(choose_alt), mean = -0.5 * direction, sigma = section6_sigma_transverse(d, "minus")
+      )
+    }
+    return(x)
+  }
+
   if (identical(scenario, "lg_1_mixture")) {
     choose_alt <- stats::runif(n) < beta / 2
     z <- mvtnorm::rmvnorm(n, mean = 0.5 * e1, sigma = section6_sigma(d, "plus"))
@@ -196,6 +265,18 @@ generate_section6_sample <- function(design_row) {
     choose_alt <- stats::runif(n) < beta
     z <- matrix(stats::rnorm(n * d), nrow = n, ncol = d)
     if (any(choose_alt)) z[choose_alt, ] <- r_standardized_multivariate_t(sum(choose_alt), d)
+    return(logistic_gaussian_ilr_to_simplex(z, ambient_dim = d + 1L))
+  }
+
+  if (identical(scenario, "lg_1_mixture_transverse")) {
+    direction <- section6_transverse_direction(d)
+    choose_alt <- stats::runif(n) < beta / 2
+    z <- mvtnorm::rmvnorm(n, mean = 0.5 * direction, sigma = section6_sigma_transverse(d, "plus"))
+    if (any(choose_alt)) {
+      z[choose_alt, ] <- mvtnorm::rmvnorm(
+        sum(choose_alt), mean = -0.5 * direction, sigma = section6_sigma_transverse(d, "minus")
+      )
+    }
     return(logistic_gaussian_ilr_to_simplex(z, ambient_dim = d + 1L))
   }
 
@@ -215,28 +296,65 @@ generate_section6_sample <- function(design_row) {
     return(x)
   }
 
+  if (identical(scenario, "hvmf_1_mixture")) {
+    mu0 <- c(sqrt(2), section6_e(d))
+    mu1 <- c(sqrt(2), section6_e(d, index = 2L))
+    choose_alt <- stats::runif(n) < beta / 2
+    x <- rhvmf_polar(n, mu = mu0, kappa = d)
+    if (any(choose_alt)) {
+      x[choose_alt, ] <- rhvmf_polar(sum(choose_alt), mu = mu1, kappa = d)
+    }
+    return(x)
+  }
+
+  if (identical(scenario, "hvmf_2_angular")) {
+    mu0 <- c(sqrt(2), section6_e(d))
+    tangent <- section6_e(d, index = 2L)
+    choose_alt <- stats::runif(n) < beta
+    x <- rhvmf_polar(n, mu = mu0, kappa = 1.5 * d)
+    if (any(choose_alt)) {
+      x[choose_alt, ] <- rhvmf_angular_mixture(
+        sum(choose_alt), mu = mu0, kappa = 1.5 * d,
+        delta = pi / 5, tangent = tangent
+      )
+    }
+    return(x)
+  }
+
   stop(sprintf("Unsupported scenario '%s'.", scenario))
 }
 
-section6_control <- function(derivative_mc_size, derivative_seed, cvm_block_size) {
+section6_control <- function(derivative_mc_size, derivative_seed, cvm_block_size,
+                             derivative_method = "quadrature") {
+  derivative_method <- tolower(as.character(derivative_method))
+  if (length(derivative_method) != 1L ||
+      !derivative_method %in% c("score_mc", "quadrature")) {
+    stop("`derivative_method` must be either 'score_mc' or 'quadrature'.")
+  }
   list(
-    derivative_method = "score_mc",
+    derivative_method = derivative_method,
     derivative_mc_size = as.integer(derivative_mc_size),
     derivative_mc_seed = as.integer(derivative_seed),
     fast_multiplier_cvm_block_size = as.integer(cvm_block_size),
     fast_multiplier_backend = "cpp",
+    fast_multiplier_cpp_kernel = "contiguous_double",
     fast_multiplier_fuse_ks_cvm = TRUE,
     fast_multiplier_cache_corrections = "auto",
     fast_multiplier_stream_chunk_size = 100L,
     vmf_profile_method = "tabulated",
     vmf_profile_n_u = 4097L,
+    hvmf_profile_method = "tabulated",
+    hvmf_profile_n_y = 4097L,
     # EN DUDA (2026-07-26): generic MVN/LG dispatcher control.
     mvnormal_quadform_method = "auto"
   )
 }
 
 run_section6_bootstrap <- function(design_row, x, B, seed, derivative_seed,
-                                   derivative_mc_size, cvm_block_size) {
+                                   derivative_mc_size, cvm_block_size,
+                                   derivative_method = "quadrature",
+                                   bootstrap_method = "fast_multiplier",
+                                   n_cores = 1L) {
   family <- as.character(design_row$family)
   common <- list(
     data = x,
@@ -245,11 +363,14 @@ run_section6_bootstrap <- function(design_row, x, B, seed, derivative_seed,
     ks_grid = make_sample_unique_distance_ks_grid(),
     B = as.integer(B),
     alpha = 0.05,
-    n_cores = 1L,
+    n_cores = as.integer(n_cores),
     seed = as.integer(seed),
-    bootstrap_method = "fast_multiplier",
+    bootstrap_method = bootstrap_method,
     keep = list(observed_process = FALSE, bootstrap_statistics = FALSE, bootstrap_thetas = FALSE),
-    control = section6_control(derivative_mc_size, derivative_seed, cvm_block_size),
+    control = section6_control(
+      derivative_mc_size, derivative_seed, cvm_block_size,
+      derivative_method = derivative_method
+    ),
     distance_profile_backend = "r"
   )
   if (identical(family, "normal")) {
@@ -266,6 +387,12 @@ run_section6_bootstrap <- function(design_row, x, B, seed, derivative_seed,
       unknown_param = "xi", distance_type = "geodesic"
     ))))
   }
+  if (identical(family, "hvmf")) {
+    return(do.call(multiplier_bootstrap_hvmf, c(common, list(
+      unknown_param = "both", fast_multiplier_backend = "cpp", fuse_ks_cvm = TRUE,
+      cache_block_corrections = "auto"
+    ))))
+  }
   stop(sprintf("Unsupported family '%s'.", family))
 }
 
@@ -275,14 +402,21 @@ empty_section6_results <- function() {
     design_id = integer(), rep = integer(), status = character(), error_message = character(),
     ks_pvalue = numeric(), cvm_pvalue = numeric(), ks_reject = logical(), cvm_reject = logical(),
     bootstrap_method_requested = character(), bootstrap_method_effective = character(), fallback_to_reestimated = logical(),
+    derivative_method_requested = character(), derivative_method_effective = character(),
+    derivative_method_selection_source = character(),
+    quadrature_algorithm = character(), quadrature_abs_tol = numeric(),
+    quadrature_max_terms = integer(), quadrature_max_terms_used = integer(),
+    quadrature_max_residual_error_estimate = numeric(),
     ks_grid = character(), fast_multiplier_backend_requested = character(), fast_multiplier_backend_effective = character(),
+    fast_multiplier_cpp_kernel_requested = character(), fast_multiplier_cpp_kernel_effective = character(),
     fast_multiplier_fuse_ks_cvm_requested = logical(), fast_multiplier_fuse_ks_cvm_effective = logical(),
     seed_data = integer(), seed_bootstrap = integer(), seed_derivative = integer(), elapsed_seconds = numeric(),
     stringsAsFactors = FALSE
   )
 }
 
-run_section6_job <- function(job, B, base_seed, derivative_mc_size, cvm_block_size) {
+run_section6_job <- function(job, B, base_seed, derivative_mc_size, cvm_block_size,
+                             derivative_method = "quadrature") {
   started <- proc.time()[["elapsed"]]
   data_seed <- section6_seed(base_seed, job$design_id, job$rep, 0L)
   bootstrap_seed <- section6_seed(base_seed, job$design_id, job$rep, 1L)
@@ -293,7 +427,13 @@ run_section6_job <- function(job, B, base_seed, derivative_mc_size, cvm_block_si
     rep = as.integer(job$rep), status = "ok", error_message = NA_character_,
     ks_pvalue = NA_real_, cvm_pvalue = NA_real_, ks_reject = NA, cvm_reject = NA,
     bootstrap_method_requested = "fast_multiplier", bootstrap_method_effective = NA_character_, fallback_to_reestimated = NA,
+    derivative_method_requested = derivative_method, derivative_method_effective = NA_character_,
+    derivative_method_selection_source = "explicit",
+    quadrature_algorithm = NA_character_, quadrature_abs_tol = NA_real_,
+    quadrature_max_terms = NA_integer_, quadrature_max_terms_used = NA_integer_,
+    quadrature_max_residual_error_estimate = NA_real_,
     ks_grid = "sample_unique_distances", fast_multiplier_backend_requested = "cpp", fast_multiplier_backend_effective = NA_character_,
+    fast_multiplier_cpp_kernel_requested = "contiguous_double", fast_multiplier_cpp_kernel_effective = NA_character_,
     fast_multiplier_fuse_ks_cvm_requested = TRUE, fast_multiplier_fuse_ks_cvm_effective = NA,
     seed_data = data_seed, seed_bootstrap = bootstrap_seed, seed_derivative = derivative_seed,
     elapsed_seconds = NA_real_, stringsAsFactors = FALSE
@@ -301,21 +441,44 @@ run_section6_job <- function(job, B, base_seed, derivative_mc_size, cvm_block_si
   out <- tryCatch({
     set.seed(data_seed)
     x <- generate_section6_sample(job)
-    fit <- run_section6_bootstrap(job, x, B, bootstrap_seed, derivative_seed, derivative_mc_size, cvm_block_size)
+    fit <- run_section6_bootstrap(
+      job, x, B, bootstrap_seed, derivative_seed, derivative_mc_size,
+      cvm_block_size, derivative_method = derivative_method
+    )
     diagnostics <- fit$diagnostics
     out$ks_pvalue <- fit$inference$ks$p_value
     out$cvm_pvalue <- fit$inference$cvm$p_value
     out$ks_reject <- fit$inference$ks$reject
     out$cvm_reject <- fit$inference$cvm$reject
     out$bootstrap_method_effective <- diagnostics$effective_bootstrap_method %||% NA_character_
+    out$derivative_method_effective <- diagnostics$derivative_method_effective %||%
+      diagnostics$derivative_method %||% NA_character_
+    out$derivative_method_selection_source <-
+      diagnostics$derivative_method_selection_source %||% NA_character_
+    out$quadrature_algorithm <- diagnostics$quadrature_algorithm %||% NA_character_
+    out$quadrature_abs_tol <- diagnostics$quadrature_abs_tol %||% NA_real_
+    out$quadrature_max_terms <- diagnostics$quadrature_max_terms %||% NA_integer_
+    out$quadrature_max_terms_used <-
+      diagnostics$quadrature_max_terms_used %||% NA_integer_
+    out$quadrature_max_residual_error_estimate <-
+      diagnostics$quadrature_max_residual_error_estimate %||% NA_real_
     out$fallback_to_reestimated <- isTRUE(diagnostics$fallback_to_reestimated)
     out$fast_multiplier_backend_effective <- diagnostics$fast_multiplier_backend_effective %||% NA_character_
+    out$fast_multiplier_cpp_kernel_effective <-
+      diagnostics$fast_multiplier_cpp_kernel_effective %||% NA_character_
     out$fast_multiplier_fuse_ks_cvm_effective <- isTRUE(diagnostics$fast_multiplier_fuse_ks_cvm_effective)
     if (!identical(out$bootstrap_method_effective, "fast_multiplier") ||
         !identical(out$fast_multiplier_backend_effective, "cpp") ||
-        !isTRUE(out$fast_multiplier_fuse_ks_cvm_effective)) {
+        !identical(out$fast_multiplier_cpp_kernel_effective, "contiguous_double") ||
+        !isTRUE(out$fast_multiplier_fuse_ks_cvm_effective) ||
+        !identical(out$derivative_method_effective, derivative_method)) {
       out$status <- "nonconforming"
-      out$error_message <- "Requested fast, fused C++ KS/CvM bootstrap was not effective."
+      out$error_message <- paste(
+        "Requested fast, fused C++ KS/CvM bootstrap or derivative method was not effective.",
+        sprintf("requested_derivative_method=%s", derivative_method),
+        sprintf("effective_derivative_method=%s", out$derivative_method_effective),
+        sprintf("effective_cpp_kernel=%s", out$fast_multiplier_cpp_kernel_effective)
+      )
     }
     out
   }, error = function(e) {
@@ -424,13 +587,14 @@ section6_design_key <- function(x, include_rep = FALSE) {
 section6_validate_manifest_design <- function(manifest_path, design, M, B,
                                               base_seed,
                                               derivative_mc_size,
-                                              cvm_block_size) {
+                                              cvm_block_size,
+                                              derivative_method = "quadrature") {
   if (!file.exists(manifest_path)) return(invisible(TRUE))
   manifest <- utils::read.csv(manifest_path, stringsAsFactors = FALSE)
   required <- c(
     "scenario", "d", "n", "beta", "M", "B", "base_seed",
     "derivative_mc_size", "cvm_block_size", "ks_grid",
-    "fast_multiplier_backend", "fused_ks_cvm_kernel"
+    "fast_multiplier_backend", "fast_multiplier_cpp_kernel", "fused_ks_cvm_kernel"
   )
   if (!all(required %in% names(manifest))) {
     stop("Existing Section 6 manifest is incomplete; use a new output directory.")
@@ -444,12 +608,24 @@ section6_validate_manifest_design <- function(manifest_path, design, M, B,
     derivative_mc_size = all(
       as.integer(manifest$derivative_mc_size) == as.integer(derivative_mc_size)
     ),
+    derivative_method = all(
+      as.character(
+        if ("derivative_method" %in% names(manifest)) {
+          manifest$derivative_method
+        } else {
+          rep.int("score_mc", nrow(manifest))
+        }
+      ) == as.character(derivative_method)
+    ),
     cvm_block_size = all(
       as.integer(manifest$cvm_block_size) == as.integer(cvm_block_size)
     ),
     ks_grid = all(as.character(manifest$ks_grid) == "sample_unique_distances"),
     fast_multiplier_backend = all(
       as.character(manifest$fast_multiplier_backend) == "cpp"
+    ),
+    fast_multiplier_cpp_kernel = all(
+      as.character(manifest$fast_multiplier_cpp_kernel) == "contiguous_double"
     ),
     fused_ks_cvm_kernel = all(as.logical(manifest$fused_ks_cvm_kernel))
   )
@@ -468,13 +644,17 @@ section6_validate_manifest_design <- function(manifest_path, design, M, B,
 }
 
 section6_make_manifest <- function(design, M, B, cores, base_seed,
-                                   derivative_mc_size, cvm_block_size) {
+                                   derivative_mc_size, cvm_block_size,
+                                   derivative_method = "quadrature") {
   transform(design,
     M = as.integer(M), B = as.integer(B), cores = as.integer(cores),
     base_seed = as.integer(base_seed), derivative_mc_size = as.integer(derivative_mc_size),
     cvm_block_size = as.integer(cvm_block_size),
+    derivative_method = as.character(derivative_method),
     ks_grid = "sample_unique_distances", bootstrap_method = "fast_multiplier",
-    fast_multiplier_backend = "cpp", fused_ks_cvm_kernel = TRUE
+    fast_multiplier_backend = "cpp",
+    fast_multiplier_cpp_kernel = "contiguous_double",
+    fused_ks_cvm_kernel = TRUE
   )
 }
 
@@ -485,12 +665,13 @@ section6_make_manifest <- function(design, M, B, cores, base_seed,
 recover_section6_results <- function(source_dir, target_dir, family,
                                      M = 1000L, B = 5000L,
                                      dimensions = c(2L, 10L),
-                                     n_values = c(50L, 100L, 200L),
+                                     n_values = c(50L, 100L, 200L, 400L),
                                      beta_values = c(0, 0.5, 1),
                                      cores = 8L,
                                      base_seed = 20260727L,
                                      derivative_mc_size = 1000L,
-                                     cvm_block_size = 50L) {
+                                     cvm_block_size = 50L,
+                                     derivative_method = "quadrature") {
   source_path <- file.path(source_dir, "raw_results.csv")
   target_result_path <- file.path(target_dir, "raw_results.csv")
   target_manifest_path <- file.path(target_dir, "manifest.csv")
@@ -520,6 +701,7 @@ recover_section6_results <- function(source_dir, target_dir, family,
   }
   conforming <- recovered$bootstrap_method_effective == "fast_multiplier" &
     recovered$fast_multiplier_backend_effective == "cpp" &
+    recovered$fast_multiplier_cpp_kernel_effective == "contiguous_double" &
     recovered$fast_multiplier_fuse_ks_cvm_effective &
     recovered$ks_grid == "sample_unique_distances" &
     !recovered$fallback_to_reestimated
@@ -531,7 +713,8 @@ recover_section6_results <- function(source_dir, target_dir, family,
   }
 
   section6_write_atomic_csv(section6_make_manifest(
-    design, M, B, cores, base_seed, derivative_mc_size, cvm_block_size
+    design, M, B, cores, base_seed, derivative_mc_size, cvm_block_size,
+    derivative_method = derivative_method
   ), target_manifest_path)
   section6_write_atomic_csv(recovered, target_result_path)
   section6_write_atomic_csv(summarize_section6_results(recovered), file.path(target_dir, "summary.csv"))
@@ -605,6 +788,7 @@ section6_progress <- function(completed, total, started, results, cores, width =
 # opening a local server socket.
 section6_run_dynamic_queue <- function(pending, B, base_seed,
                                        derivative_mc_size, cvm_block_size,
+                                       derivative_method,
                                        cores, checkpoint_results,
                                        on_checkpoint, on_progress) {
   if (nrow(pending) == 0L) return(invisible(NULL))
@@ -621,7 +805,7 @@ section6_run_dynamic_queue <- function(pending, B, base_seed,
   submit <- function(index) {
     process <- parallel::mcparallel(
       run_section6_job(pending[index, , drop = FALSE], B, base_seed,
-                       derivative_mc_size, cvm_block_size),
+                       derivative_mc_size, cvm_block_size, derivative_method),
       mc.set.seed = FALSE, silent = TRUE
     )
     active[[as.character(process$pid)]] <<- process
@@ -660,30 +844,36 @@ run_section6_family <- function(family,
                                 M = 1000L,
                                 B = 5000L,
                                 dimensions = c(2L, 10L),
-                                n_values = c(50L, 100L, 200L),
+                                n_values = c(50L, 100L, 200L, 400L),
                                 beta_values = c(0, 0.5, 1),
                                 cores = 8L,
                                 base_seed = 20260727L,
                                 derivative_mc_size = 1000L,
                                 cvm_block_size = 50L,
+                                derivative_method = "quadrature",
                                 checkpoint_results = 64L,
-                                show_progress = TRUE) {
+                                show_progress = TRUE,
+                                scenarios = NULL) {
   family <- tolower(family)
   if (!family %in% section6_families) stop("`family` must be one of vmf, hvmf, normal, or lg.")
-  if (identical(family, "hvmf")) {
-    message("HvMF is intentionally deferred: the current model specification is H^2-only. No jobs were launched.")
-    return(invisible(NULL))
-  }
   cores <- as.integer(cores)
   if (!is.finite(cores) || cores < 1L) stop("`cores` must be a positive integer.")
   if (.Platform$OS.type != "unix" && cores > 1L) stop("This runner requires a Unix platform for outer parallelism.")
+  derivative_method <- tolower(as.character(derivative_method))
+  if (identical(derivative_method, "auto")) {
+    derivative_method <- "quadrature"
+  }
+  if (length(derivative_method) != 1L ||
+      !derivative_method %in% c("score_mc", "quadrature")) {
+    stop("`derivative_method` must be either 'score_mc' or 'quadrature'.")
+  }
   checkpoint_results <- as.integer(checkpoint_results)
   if (!is.finite(checkpoint_results) || checkpoint_results < 1L) {
     stop("`checkpoint_results` must be a positive integer.")
   }
   ensure_distance_profile_cpp_loaded()
 
-  design <- make_section6_design(family, dimensions, n_values, beta_values)
+  design <- make_section6_design(family, dimensions, n_values, beta_values, scenarios = scenarios)
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   output_lock <- section6_acquire_output_lock(output_dir)
   on.exit(section6_release_output_lock(output_lock), add = TRUE)
@@ -696,14 +886,27 @@ run_section6_family <- function(family,
     manifest_path, design, M = M, B = B,
     base_seed = base_seed,
     derivative_mc_size = derivative_mc_size,
-    cvm_block_size = cvm_block_size
+    cvm_block_size = cvm_block_size,
+    derivative_method = derivative_method
   )
   if (!file.exists(manifest_path)) {
     section6_write_atomic_csv(section6_make_manifest(
-      design, M, B, cores, base_seed, derivative_mc_size, cvm_block_size
+      design, M, B, cores, base_seed, derivative_mc_size, cvm_block_size,
+      derivative_method = derivative_method
     ), manifest_path)
   }
-  existing <- if (file.exists(result_path)) utils::read.csv(result_path, stringsAsFactors = FALSE) else empty_section6_results()
+  existing <- if (file.exists(result_path)) {
+    prior <- utils::read.csv(result_path, stringsAsFactors = FALSE)
+    if (!"derivative_method_requested" %in% names(prior)) {
+      prior$derivative_method_requested <- derivative_method
+    }
+    if (!"derivative_method_effective" %in% names(prior)) {
+      prior$derivative_method_effective <- derivative_method
+    }
+    prior
+  } else {
+    empty_section6_results()
+  }
   jobs <- merge(design, data.frame(rep = seq_len(as.integer(M))), by = NULL)
   key <- function(x) paste(x$design_id, x$rep, sep = "|")
   done <- if (nrow(existing)) {
@@ -714,7 +917,7 @@ run_section6_family <- function(family,
   pending <- jobs[!section6_design_key(jobs, include_rep = TRUE) %in% done, , drop = FALSE]
   started <- Sys.time()
   completed <- nrow(jobs) - nrow(pending)
-  cat(sprintf("%s family=%s M=%d B=%d cores=%d pending=%d\n", format(started, tz = "Europe/Madrid"), family, M, B, cores, nrow(pending)), file = log_path, append = TRUE)
+  cat(sprintf("%s family=%s M=%d B=%d cores=%d derivative_method=%s pending=%d\n", format(started, tz = "Europe/Madrid"), family, M, B, cores, derivative_method, nrow(pending)), file = log_path, append = TRUE)
   section6_write_status(status_path, family, nrow(jobs), completed, existing, started, cores)
   if (isTRUE(show_progress)) section6_progress(completed, nrow(jobs), started, existing, cores)
   if (nrow(pending) == 0L) return(invisible(list(results = existing, summary = summarize_section6_results(existing))))
@@ -722,6 +925,7 @@ run_section6_family <- function(family,
   section6_run_dynamic_queue(
     pending = pending, B = B, base_seed = base_seed,
     derivative_mc_size = derivative_mc_size, cvm_block_size = cvm_block_size,
+    derivative_method = derivative_method,
     cores = cores, checkpoint_results = checkpoint_results,
     on_checkpoint = function(rows, finished) {
     existing <<- rbind(existing, rows)
@@ -756,12 +960,14 @@ if (sys.nframe() == 0L) {
     M = M,
     B = B,
     dimensions = parse_section6_csv(args$dimensions, c(2L, 10L), "integer"),
-    n_values = parse_section6_csv(args$n_values, c(50L, 100L, 200L), "integer"),
+    n_values = parse_section6_csv(args$n_values, c(50L, 100L, 200L, 400L), "integer"),
     beta_values = parse_section6_csv(args$beta_values, c(0, 0.5, 1), "numeric"),
     cores = as.integer(args$cores %||% 8L),
     base_seed = as.integer(args$seed %||% 20260727L),
     derivative_mc_size = as.integer(args$derivative_mc_size %||% 1000L),
-    cvm_block_size = as.integer(args$cvm_block_size %||% 50L)
+    cvm_block_size = as.integer(args$cvm_block_size %||% 50L),
+    derivative_method = tolower(as.character(args$derivative_method %||% "quadrature")),
+    scenarios = if (is.null(args$scenarios)) NULL else parse_section6_csv(args$scenarios, NULL, "character")
   )
   if (!is.null(args$recover_from)) {
     recovery_common <- common

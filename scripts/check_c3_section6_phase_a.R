@@ -87,6 +87,7 @@ if (!setequal(result_keys, expected_keys)) {
 conforming <- results$status == "ok" &
   results$bootstrap_method_effective == "fast_multiplier" &
   results$fast_multiplier_backend_effective == "cpp" &
+  results$fast_multiplier_cpp_kernel_effective == "contiguous_double" &
   results$fast_multiplier_fuse_ks_cvm_effective &
   results$ks_grid == "sample_unique_distances" &
   !results$fallback_to_reestimated

@@ -1,0 +1,8 @@
+Composite Section 6 population-drift diagnostic.
+Centres and CvM thresholds are sampled from the beta=1 alternative.
+The comparator is the MLE/KL pseudo-true fitted null.
+S is centre-averaged profile KS discrepancy; J is split-sample for the CvM integrand.
+dimensions: 2,5,10
+n_centres: 96; n_profile: 6000; n_eval: 3000; batches: 3
+pseudo_fit_size for the angular HvMF approximation: 100000
+seed: 20260732
