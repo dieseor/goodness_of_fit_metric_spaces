@@ -169,15 +169,8 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
     eta_hat = eta_hat, theta_hat = theta_hat
   )
 
-  center_indices <- sunspots_joint_select_centers(nrow(data$x), n_sample_centers, center_seed)
-  observed_start <- proc.time()[["elapsed"]]
-  observed <- sunspots_joint_prepare_centers(
-    data = data, fit = fit, center_indices = center_indices,
-    time_quad_n = as.integer(time_quad_n), l_max = profile_l_max,
-    spatial_quad_n = spatial_quad_n, center_block_size = center_block_size,
-    distance_profile_backend = effective_backend
-  )
-  observed_profile_seconds <- proc.time()[["elapsed"]] - observed_start
+  center_indices <- seq_len(nrow(data$x))
+  observed_profile_seconds <- NA_real_
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   diagnostics <- plot_sunspots_cycle23_joint_time_space_diagnostics(data, fit, output_dir)
   retained$temporal_fitted_density <- sunspots_joint_time_density(data$s, eta_hat, control)
@@ -281,6 +274,7 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
   bootstrap_statistics <- generic_result$bootstrap$statistics
   bootstrap_seconds <- proc.time()[["elapsed"]] - bootstrap_start
   fast_preparation_seconds <- as.numeric(generic_result$diagnostics$fast_prep_seconds %||% NA_real_)
+  observed_profile_seconds <- as.numeric(generic_result$diagnostics$common_observed_seconds %||% NA_real_)
   numerical_diagnostics <- data.frame(
     n = nrow(data$x),
     n_sample_centers = length(center_indices),
@@ -324,7 +318,10 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
     row.names = FALSE
   )
   total_seconds <- proc.time()[["elapsed"]] - total_start
-  observed_statistics <- c(ks = observed$ks_statistic, cvm = observed$cvm_statistic)[statistics]
+  observed_statistics <- c(
+    ks = as.numeric(generic_result$observed$ks$statistic %||% NA_real_),
+    cvm = as.numeric(generic_result$observed$cvm$statistic %||% NA_real_)
+  )[statistics]
   timing <- list(
     temporal_mle_seconds = temporal_mle_seconds, spatial_mle_seconds = spatial_mle_seconds,
     observed_profile_seconds = observed_profile_seconds, fast_preparation_seconds = fast_preparation_seconds,
