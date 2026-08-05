@@ -956,7 +956,8 @@ model_spec_adapter_files <- c(
   "small_circle_model_spec.R",
   "watson_model_spec.R",
   "small_circle_symmetric_mixture2_model_spec.R",
-  "small_circle_weighted_mixture2_model_spec.R"
+  "small_circle_weighted_mixture2_model_spec.R",
+  "sunspots_joint_time_space_model_spec.R"
 )
 
 for (adapter_file in model_spec_adapter_files) {
