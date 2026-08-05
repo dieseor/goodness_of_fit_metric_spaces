@@ -117,14 +117,14 @@ prepare_sunspots_cycle23_joint_time_space_data <- function(
 prepare_sunspots_joint_time_data <- prepare_sunspots_cycle23_joint_time_space_data
 
 sunspots_joint_time_control <- function(control = list()) {
-  shape_lower <- as.numeric(control$time_beta_shape_lower %||% (1 + 1e-6))
+  shape_lower <- as.numeric(control$time_beta_shape_lower %||% (1e-6))
   shape_upper <- as.numeric(control$time_beta_shape_upper %||% 1e3)
   weight_eps <- as.numeric(control$time_beta_weight_eps %||% 0.01)
-  if (!is.finite(shape_lower) || shape_lower <= 1 || !is.finite(shape_upper) || shape_upper <= shape_lower) {
-    stop("Time-beta shape bounds must satisfy 1 < lower < upper.")
-  }
-  if (!is.finite(weight_eps) || weight_eps <= 0 || weight_eps >= 0.5) {
-    stop("`time_beta_weight_eps` must lie in (0, 0.5).")
+  if (!is.finite(shape_lower) ||
+    shape_lower <= 0 ||
+    !is.finite(shape_upper) ||
+    shape_upper <= shape_lower) {
+  stop("Time-beta shape bounds must satisfy 0 < lower < upper.")
   }
   list(shape_lower = shape_lower, shape_upper = shape_upper, weight_eps = weight_eps)
 }

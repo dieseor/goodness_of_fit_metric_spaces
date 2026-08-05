@@ -170,7 +170,11 @@ distance_profile_cpp_supports_spec <- function(spec_name) {
   length(spec_name) == 1L && !is.na(spec_name) && (
     identical(spec_name, "normal") ||
       grepl("^small_circle_weighted_mixture2_(chordal|geodesic)$", spec_name) ||
-      grepl("^sunspots_joint_time_space_(asymmetric|shared)$", spec_name)
+      grepl("^sunspots_joint_time_space_(asymmetric|shared)$", spec_name) ||
+      grepl(
+        "^sunspots_joint_time_space_(beta|uniform_beta)_(asymmetric|shared)$",
+        spec_name
+      )
   )
 }
 
