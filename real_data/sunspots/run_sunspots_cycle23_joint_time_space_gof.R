@@ -132,8 +132,8 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
   spatial_quad_n <- as.integer(control$profile_quad_n %||% 400L)
   center_block_size <- as.integer(control$center_block_size %||% 8L)
   distance_profile_backend <- sunspots_joint_normalize_backend(
-    control$distance_profile_backend %||% "auto"
-  )
+  control$distance_profile_backend %||% "r"
+)
   effective_backend <- sunspots_joint_effective_backend(distance_profile_backend)
   settings <- list(
     hemisphere_regression = hemisphere_regression, B = B, n_cores = n_cores,
@@ -251,7 +251,7 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
     observed_theta_hat = fit,
     bootstrap_method = "fast_multiplier",
     keep = list(
-      observed_process = TRUE,
+      observed_process = FALSE,
       bootstrap_statistics = TRUE,
       bootstrap_thetas = FALSE
     ),

@@ -114,18 +114,32 @@ fit_sunspots_joint_spec_theta <- function(data,
 
 sunspots_joint_spec_distance_matrix <- function(data, omega, control = list()) {
   require_sunspots_joint_spec_dependencies()
+
   left <- normalize_sunspots_joint_spec_data(data, control)
   right <- normalize_sunspots_joint_spec_data(omega, control)
 
-  out <- matrix(0, nrow = nrow(left$x), ncol = nrow(right$x))
-  for (j in seq_len(nrow(right$x))) {
-    out[, j] <- sunspots_joint_distance(
-      x = left$x,
-      s = left$s,
-      omega = right$x[j, , drop = TRUE],
-      center_s = right$s[j]
-    )
+  block_size <- as.integer(control$center_block_size %||% 8L)
+  if (length(block_size) != 1L || !is.finite(block_size) || block_size <= 0L) {
+    stop("`control$center_block_size` must be a strictly positive integer.")
   }
+
+  n_left <- nrow(left$x)
+  n_right <- nrow(right$x)
+  out <- matrix(0, nrow = n_left, ncol = n_right)
+
+  for (block_start in seq.int(1L, n_right, by = block_size)) {
+    block_end <- min(block_start + block_size - 1L, n_right)
+    idx <- block_start:block_end
+
+    dot_products <- left$x %*% t(right$x[idx, , drop = FALSE])
+    dot_products <- pmin(pmax(dot_products, -1), 1)
+
+    spatial <- acos(dot_products) / pi
+    temporal <- abs(outer(left$s, right$s[idx], FUN = "-"))
+
+    out[, idx] <- 0.5 * (spatial + temporal)
+  }
+
   out
 }
 
