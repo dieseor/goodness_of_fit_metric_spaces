@@ -639,16 +639,125 @@ compute_theoretical_sample_profile_sorted_block <- function(spec,
                                                             sorted_distance_matrix,
                                                             theta,
                                                             row_indices,
+                                                            prepared = NULL,
                                                             control = list()) {
-  output <- matrix(0, nrow = length(row_indices), ncol = ncol(sorted_distance_matrix))
+  fast_output <- spec_sample_profile_sorted_block_eval(
+    spec = spec,
+    data = normalized_data,
+    sorted_distance_matrix = sorted_distance_matrix,
+    theta = theta,
+    row_indices = row_indices,
+    prepared = prepared,
+    control = control
+  )
+  if (!is.null(fast_output)) {
+    return(ensure_profile_matrix(
+      fast_output,
+      n_rows = length(row_indices),
+      n_cols = ncol(sorted_distance_matrix)
+    ))
+  }
+
+  output <- matrix(
+    0,
+    nrow = length(row_indices),
+    ncol = ncol(sorted_distance_matrix)
+  )
 
   for (k in seq_along(row_indices)) {
     i <- row_indices[[k]]
-    omega_i <- spec_observation_at_normalized(spec, normalized_data, i, control)
-    output[k, ] <- as.numeric(spec$profile_eval(omega_i, sorted_distance_matrix[i, ], theta, control))
+    omega_i <- spec_observation_at_normalized(
+      spec,
+      normalized_data,
+      i,
+      control
+    )
+    output[k, ] <- as.numeric(
+      spec$profile_eval(
+        omega_i,
+        sorted_distance_matrix[i, ],
+        theta,
+        control
+      )
+    )
   }
 
   output
+}
+
+normalize_observed_profile_n_cores <- function(n_cores = 1L,
+                                               n_blocks = 1L) {
+  n_cores <- as.integer(n_cores)
+  n_blocks <- as.integer(n_blocks)
+
+  if (length(n_cores) != 1L ||
+      !is.finite(n_cores) ||
+      n_cores < 1L) {
+    stop(
+      "`control$observed_profile_n_cores` must be a positive integer."
+    )
+  }
+  if (length(n_blocks) != 1L ||
+      !is.finite(n_blocks) ||
+      n_blocks < 1L) {
+    stop("`n_blocks` must be a positive integer.")
+  }
+
+  min(n_cores, n_blocks)
+}
+
+make_observed_profile_row_blocks <- function(n_rows, block_size) {
+  starts <- seq.int(1L, n_rows, by = block_size)
+  lapply(starts, function(block_start) {
+    block_end <- min(block_start + block_size - 1L, n_rows)
+    block_start:block_end
+  })
+}
+
+map_observed_profile_blocks <- function(row_blocks,
+                                        worker,
+                                        n_cores = 1L) {
+  if (!is.list(row_blocks) || length(row_blocks) == 0L) {
+    stop("`row_blocks` must be a non-empty list.")
+  }
+  if (!is.function(worker)) {
+    stop("`worker` must be a function.")
+  }
+
+  n_cores <- normalize_observed_profile_n_cores(
+    n_cores = n_cores,
+    n_blocks = length(row_blocks)
+  )
+
+  results <- if (.Platform$OS.type == "unix" && n_cores > 1L) {
+    parallel::mclapply(
+      row_blocks,
+      worker,
+      mc.cores = n_cores,
+      mc.preschedule = TRUE,
+      mc.set.seed = FALSE
+    )
+  } else {
+    lapply(row_blocks, worker)
+  }
+
+  failed <- vapply(
+    results,
+    inherits,
+    logical(1L),
+    what = "try-error"
+  )
+  if (any(failed)) {
+    stop(
+      sprintf(
+        "Observed-profile worker failed: %s",
+        as.character(results[[which(failed)[[1L]]]])
+      ),
+      call. = FALSE
+    )
+  }
+
+  results
 }
 
 compute_sample_ks_observed_stat_light <- function(spec,
@@ -661,30 +770,39 @@ compute_sample_ks_observed_stat_light <- function(spec,
     block_size = control$ks_block_size %||% NULL,
     n_rows = n
   )
-  block_max <- 0
+  prepared <- spec_sample_profile_sorted_prepare(
+    spec = spec,
+    data = normalized_data,
+    sorted_distance_matrix = sorted_distance_matrix,
+    theta = theta,
+    control = control
+  )
+  row_blocks <- make_observed_profile_row_blocks(n, block_size)
 
-  for (block_start in seq.int(1L, n, by = block_size)) {
-    block_end <- min(block_start + block_size - 1L, n)
-    row_indices <- block_start:block_end
-    empirical_block <- compute_sorted_empirical_profile_block(
-      sorted_distance_matrix = sorted_distance_matrix,
-      row_indices = row_indices
-    )
-    theoretical_block <- compute_theoretical_sample_profile_sorted_block(
-      spec = spec,
-      normalized_data = normalized_data,
-      sorted_distance_matrix = sorted_distance_matrix,
-      theta = theta,
-      row_indices = row_indices,
-      control = control
-    )
-    process_block <- sqrt(n) * (empirical_block - theoretical_block)
-    block_max <- max(block_max, max(abs(process_block)))
-  }
+  block_results <- map_observed_profile_blocks(
+    row_blocks = row_blocks,
+    n_cores = control$observed_profile_n_cores %||% 1L,
+    worker = function(row_indices) {
+      empirical_block <- compute_sorted_empirical_profile_block(
+        sorted_distance_matrix = sorted_distance_matrix,
+        row_indices = row_indices
+      )
+      theoretical_block <- compute_theoretical_sample_profile_sorted_block(
+        spec = spec,
+        normalized_data = normalized_data,
+        sorted_distance_matrix = sorted_distance_matrix,
+        theta = theta,
+        row_indices = row_indices,
+        prepared = prepared,
+        control = control
+      )
+      process_block <- sqrt(n) * (empirical_block - theoretical_block)
+      max(abs(process_block))
+    }
+  )
 
-  block_max
+  max(unlist(block_results, use.names = FALSE))
 }
-
 compute_sample_ks_cvm_observed_stats_light <- function(
     spec,
     normalized_data,
@@ -702,35 +820,46 @@ compute_sample_ks_cvm_observed_stats_light <- function(
     arg_name = "`control$cvm_block_size`"
   )
   block_size <- min(ks_block_size, cvm_block_size)
-  block_max <- 0
-  cvm_sum <- 0
+  prepared <- spec_sample_profile_sorted_prepare(
+    spec = spec,
+    data = normalized_data,
+    sorted_distance_matrix = sorted_distance_matrix,
+    theta = theta,
+    control = control
+  )
+  row_blocks <- make_observed_profile_row_blocks(n, block_size)
 
-  for (block_start in seq.int(1L, n, by = block_size)) {
-    block_end <- min(block_start + block_size - 1L, n)
-    row_indices <- block_start:block_end
-    empirical_block <- compute_sorted_empirical_profile_block(
-      sorted_distance_matrix = sorted_distance_matrix,
-      row_indices = row_indices
-    )
-    theoretical_block <- compute_theoretical_sample_profile_sorted_block(
-      spec = spec,
-      normalized_data = normalized_data,
-      sorted_distance_matrix = sorted_distance_matrix,
-      theta = theta,
-      row_indices = row_indices,
-      control = control
-    )
-    process_block <- sqrt(n) * (empirical_block - theoretical_block)
-    block_max <- max(block_max, max(abs(process_block)))
-    cvm_sum <- cvm_sum + sum(process_block^2)
-  }
+  block_results <- map_observed_profile_blocks(
+    row_blocks = row_blocks,
+    n_cores = control$observed_profile_n_cores %||% 1L,
+    worker = function(row_indices) {
+      empirical_block <- compute_sorted_empirical_profile_block(
+        sorted_distance_matrix = sorted_distance_matrix,
+        row_indices = row_indices
+      )
+      theoretical_block <- compute_theoretical_sample_profile_sorted_block(
+        spec = spec,
+        normalized_data = normalized_data,
+        sorted_distance_matrix = sorted_distance_matrix,
+        theta = theta,
+        row_indices = row_indices,
+        prepared = prepared,
+        control = control
+      )
+      process_block <- sqrt(n) * (empirical_block - theoretical_block)
+      list(
+        ks = max(abs(process_block)),
+        cvm_sum = sum(process_block^2)
+      )
+    }
+  )
 
   list(
-    ks = block_max,
-    cvm = cvm_sum / (n * n)
+    ks = max(vapply(block_results, `[[`, numeric(1L), "ks")),
+    cvm = sum(vapply(block_results, `[[`, numeric(1L), "cvm_sum")) /
+      (n * n)
   )
 }
-
 compute_cvm_observed_stat_light <- function(spec,
                                             normalized_data,
                                             sorted_distance_matrix,
@@ -742,30 +871,39 @@ compute_cvm_observed_stat_light <- function(spec,
     n_rows = n,
     arg_name = "`control$cvm_block_size`"
   )
-  cvm_sum <- 0
+  prepared <- spec_sample_profile_sorted_prepare(
+    spec = spec,
+    data = normalized_data,
+    sorted_distance_matrix = sorted_distance_matrix,
+    theta = theta,
+    control = control
+  )
+  row_blocks <- make_observed_profile_row_blocks(n, block_size)
 
-  for (block_start in seq.int(1L, n, by = block_size)) {
-    block_end <- min(block_start + block_size - 1L, n)
-    row_indices <- block_start:block_end
-    empirical_block <- compute_sorted_empirical_profile_block(
-      sorted_distance_matrix = sorted_distance_matrix,
-      row_indices = row_indices
-    )
-    theoretical_block <- compute_theoretical_sample_profile_sorted_block(
-      spec = spec,
-      normalized_data = normalized_data,
-      sorted_distance_matrix = sorted_distance_matrix,
-      theta = theta,
-      row_indices = row_indices,
-      control = control
-    )
-    process_block <- sqrt(n) * (empirical_block - theoretical_block)
-    cvm_sum <- cvm_sum + sum(process_block^2)
-  }
+  block_results <- map_observed_profile_blocks(
+    row_blocks = row_blocks,
+    n_cores = control$observed_profile_n_cores %||% 1L,
+    worker = function(row_indices) {
+      empirical_block <- compute_sorted_empirical_profile_block(
+        sorted_distance_matrix = sorted_distance_matrix,
+        row_indices = row_indices
+      )
+      theoretical_block <- compute_theoretical_sample_profile_sorted_block(
+        spec = spec,
+        normalized_data = normalized_data,
+        sorted_distance_matrix = sorted_distance_matrix,
+        theta = theta,
+        row_indices = row_indices,
+        prepared = prepared,
+        control = control
+      )
+      process_block <- sqrt(n) * (empirical_block - theoretical_block)
+      sum(process_block^2)
+    }
+  )
 
-  cvm_sum / (n * n)
+  sum(unlist(block_results, use.names = FALSE)) / (n * n)
 }
-
 prepare_cvm_observed_data <- function(data,
                                       spec,
                                       theta_hat,

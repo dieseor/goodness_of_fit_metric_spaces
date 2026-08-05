@@ -166,6 +166,45 @@ spec_sample_profile_matrix_eval <- function(spec,
   spec$sample_profile_matrix_eval(data, distance_matrix, theta, control)
 }
 
+
+spec_sample_profile_sorted_prepare <- function(spec,
+                                               data,
+                                               sorted_distance_matrix,
+                                               theta,
+                                               control = list()) {
+  if (!is.function(spec$sample_profile_sorted_prepare)) {
+    return(NULL)
+  }
+
+  spec$sample_profile_sorted_prepare(
+    data = data,
+    sorted_distance_matrix = sorted_distance_matrix,
+    theta = theta,
+    control = control
+  )
+}
+
+spec_sample_profile_sorted_block_eval <- function(spec,
+                                                  data,
+                                                  sorted_distance_matrix,
+                                                  theta,
+                                                  row_indices,
+                                                  prepared = NULL,
+                                                  control = list()) {
+  if (!is.function(spec$sample_profile_sorted_block_eval)) {
+    return(NULL)
+  }
+
+  spec$sample_profile_sorted_block_eval(
+    data = data,
+    sorted_distance_matrix = sorted_distance_matrix,
+    theta = theta,
+    row_indices = row_indices,
+    prepared = prepared,
+    control = control
+  )
+}
+
 spec_cvm_prepare <- function(spec,
                              data,
                              theta_hat,
