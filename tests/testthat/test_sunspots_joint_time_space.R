@@ -93,6 +93,40 @@ test_that("two-beta time law is normalized, canonically ordered, and has analyti
   expect_gte(fit$n_successful_starts, 1L)
 })
 
+test_that("temporal beta-mixture selection minimizes the finite objective and warns if selected fit failed", {
+  fits <- list(
+    list(value = 1, convergence = 1L, par = rep(0, 5L), message = "iteration limit"),
+    list(value = 2, convergence = 0L, par = rep(0, 5L), message = "converged")
+  )
+  expect_warning(
+    selected <- sunspots_joint_time_select_fit(fits),
+    "convergence != 0"
+  )
+  expect_identical(selected$fit$convergence, 1L)
+  expect_identical(selected$n_converged_fits, 1L)
+  expect_false(selected$selected_converged)
+})
+
+test_that("temporal information criteria and boundary diagnostics use the fixed five parameters", {
+  criteria <- sunspots_joint_time_information_criteria(loglik = -12.5, n = 100L)
+  expect_equal(criteria$aic, 35)
+  expect_equal(criteria$bic, 5 * log(100) + 25)
+
+  bounds <- sunspots_joint_time_control()
+  eta <- sunspots_joint_time_canonicalize_eta(list(
+    weight1 = 0.5,
+    alpha1 = 3,
+    beta1 = 4,
+    alpha2 = 7,
+    beta2 = bounds$shape_lower
+  ))
+  diagnostics <- sunspots_joint_time_parameter_boundaries(eta)
+  beta2 <- diagnostics[diagnostics$parameter == "beta2", , drop = FALSE]
+  expect_true(beta2$near_lower_bound)
+  expect_equal(beta2$distance_to_lower, 0, tolerance = 1e-14)
+  expect_true(sunspots_joint_time_boundary_flags(eta)$shape_lower)
+})
+
 test_that("the product metric and joint profile have the required endpoint and reduction properties", {
   omega <- c(0.3, -0.4, sqrt(0.75))
   expect_equal(sunspots_joint_distance(rbind(omega, omega), c(0.4, 0.4), omega, 0.4), c(0, 0), tolerance = 1e-14)

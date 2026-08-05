@@ -425,7 +425,11 @@ test_that("fast sample-based KS blocked evaluation matches the reference path", 
     theta_hat = theta_hat,
     ks_prep = ks_prep,
     cvm_prep = NULL,
-    control = list(derivative_mc_size = 1200L, derivative_mc_seed = 2202L)
+    control = list(
+      derivative_method = "score_mc",
+      derivative_mc_size = 1200L,
+      derivative_mc_seed = 2202L
+    )
   )
 
   cache <- prepare_fast_ks_sample_cache(
@@ -659,7 +663,11 @@ test_that("fast CvM streamed evaluation matches the precomputed-block reference"
     theta_hat = theta_hat,
     ks_prep = ks_prep,
     cvm_prep = cvm_prep,
-    control = list(derivative_mc_size = 1200L, derivative_mc_seed = 2252L)
+    control = list(
+      derivative_method = "score_mc",
+      derivative_mc_size = 1200L,
+      derivative_mc_seed = 2252L
+    )
   )
 
   H_blocks <- prepare_fast_cvm_H_blocks(
@@ -1361,7 +1369,11 @@ test_that("vMF score-MC derivative sign agrees with a finite-difference sanity c
     theta_hat = theta_hat,
     ks_prep = ks_prep,
     cvm_prep = NULL,
-    control = list(derivative_mc_size = 30000L, derivative_mc_seed = 456L)
+    control = list(
+      derivative_method = "score_mc",
+      derivative_mc_size = 30000L,
+      derivative_mc_seed = 456L
+    )
   )
 
   eps <- 1e-4
@@ -1397,7 +1409,7 @@ test_that("additional supported models run through the fast multiplier branch", 
     seed = 10,
     n_cores = 1,
     bootstrap_method = "fast_multiplier",
-    control = list(derivative_mc_size = 600L, derivative_mc_seed = 11L)
+    control = list(derivative_method = "quadrature")
   )
   expect_identical(result_hvmf$diagnostics$effective_bootstrap_method, "fast_multiplier")
   expect_true(all(is.finite(result_hvmf$bootstrap$statistics$ks)))

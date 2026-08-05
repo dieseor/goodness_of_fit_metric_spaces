@@ -105,12 +105,16 @@ prepare_sunspots_cycle23_joint_time_space_data <- function(
   }
 
   retained$dequantization_jitter_day <- jitter
+  retained$dequantization_jitter_centered_day <- jitter - 0.5
   retained$dequantized_timestamp <- as.POSIXct(dequantized_seconds, origin = "1970-01-01", tz = "UTC")
   retained$s <- s
   retained$start_date <- start_date
   retained$end_date_exclusive <- end_date
   retained
 }
+
+# Short alias for temporal-only diagnostics; both names use the same loader.
+prepare_sunspots_joint_time_data <- prepare_sunspots_cycle23_joint_time_space_data
 
 sunspots_joint_time_control <- function(control = list()) {
   shape_lower <- as.numeric(control$time_beta_shape_lower %||% (1 + 1e-6))
@@ -247,13 +251,84 @@ sunspots_joint_time_start_etas <- function(s, control = list()) {
   candidates
 }
 
-sunspots_joint_time_boundary_flags <- function(eta, control = list(), tol = 1e-5) {
+sunspots_joint_time_parameter_boundaries <- function(eta, control = list(), tol = 1e-5) {
   eta <- sunspots_joint_time_canonicalize_eta(eta, control)
   bounds <- sunspots_joint_time_control(control)
+  tol <- as.numeric(tol)
+  if (length(tol) != 1L || !is.finite(tol) || tol < 0) {
+    stop("`tol` must be one nonnegative finite value.")
+  }
+  parameter <- c("weight1", "alpha1", "beta1", "alpha2", "beta2")
+  value <- unlist(eta[parameter], use.names = FALSE)
+  lower <- c(bounds$weight_eps, rep(bounds$shape_lower, 4L))
+  upper <- c(1 - bounds$weight_eps, rep(bounds$shape_upper, 4L))
+  distance_lower <- value - lower
+  distance_upper <- upper - value
+  data.frame(
+    parameter = parameter,
+    value = value,
+    lower_bound = lower,
+    upper_bound = upper,
+    distance_to_lower = distance_lower,
+    distance_to_upper = distance_upper,
+    near_lower_bound = distance_lower <= tol,
+    near_upper_bound = distance_upper <= tol,
+    near_any_bound = distance_lower <= tol | distance_upper <= tol,
+    stringsAsFactors = FALSE
+  )
+}
+
+sunspots_joint_time_boundary_flags <- function(eta, control = list(), tol = 1e-5) {
+  diagnostics <- sunspots_joint_time_parameter_boundaries(eta, control, tol = tol)
   list(
-    weight = eta$weight1 <= bounds$weight_eps + tol || eta$weight1 >= 1 - bounds$weight_eps - tol,
-    shape_lower = any(c(eta$alpha1, eta$beta1, eta$alpha2, eta$beta2) <= bounds$shape_lower + tol),
-    shape_upper = any(c(eta$alpha1, eta$beta1, eta$alpha2, eta$beta2) >= bounds$shape_upper - tol)
+    weight = diagnostics$near_any_bound[diagnostics$parameter == "weight1"],
+    shape_lower = any(diagnostics$near_lower_bound[diagnostics$parameter != "weight1"]),
+    shape_upper = any(diagnostics$near_upper_bound[diagnostics$parameter != "weight1"])
+  )
+}
+
+sunspots_joint_time_information_criteria <- function(loglik, n, n_parameters = 5L) {
+  loglik <- as.numeric(loglik)
+  n <- as.integer(n)
+  n_parameters <- as.integer(n_parameters)
+  if (length(loglik) != 1L || !is.finite(loglik) ||
+      length(n) != 1L || !is.finite(n) || n < 1L ||
+      length(n_parameters) != 1L || !is.finite(n_parameters) || n_parameters < 1L) {
+    stop("`loglik`, `n`, and `n_parameters` must be finite scalar values with positive integer counts.")
+  }
+  list(
+    aic = 2 * n_parameters - 2 * loglik,
+    bic = n_parameters * log(n) - 2 * loglik
+  )
+}
+
+sunspots_joint_time_select_fit <- function(fits) {
+  fits <- Filter(function(fit) {
+    !inherits(fit, "try-error") &&
+      is.list(fit) &&
+      length(fit$value) == 1L &&
+      is.finite(fit$value)
+  }, fits)
+  if (length(fits) == 0L) stop("All temporal beta-mixture optimizations failed.")
+
+  is_converged <- function(fit) {
+    convergence <- as.integer(fit$convergence %||% NA_integer_)
+    length(convergence) == 1L && !is.na(convergence) && convergence == 0L
+  }
+  converged <- Filter(is_converged, fits)
+  best <- fits[[which.min(vapply(fits, `[[`, numeric(1L), "value"))]]
+  selected_converged <- is_converged(best)
+  if (!selected_converged) {
+    warning(
+      "The selected temporal beta-mixture optimization has convergence != 0; inspect the optimizer result.",
+      call. = FALSE
+    )
+  }
+  list(
+    fit = best,
+    n_finite_fits = length(fits),
+    n_converged_fits = length(converged),
+    selected_converged = selected_converged
   )
 }
 
@@ -294,11 +369,11 @@ fit_sunspots_joint_time_beta_mixture2 <- function(s, control = list()) {
       ), silent = TRUE)
     })
   }), recursive = FALSE)
-  fits <- Filter(function(fit) !inherits(fit, "try-error") && is.finite(fit$value), fits)
-  if (length(fits) == 0L) stop("All temporal beta-mixture optimizations failed.")
-  best <- fits[[which.min(vapply(fits, `[[`, numeric(1L), "value"))]]
+  selection <- sunspots_joint_time_select_fit(fits)
+  best <- selection$fit
   eta_hat <- sunspots_joint_time_unpack_eta(best$par, control)
   boundary <- sunspots_joint_time_boundary_flags(eta_hat, control)
+  boundary_diagnostics <- sunspots_joint_time_parameter_boundaries(eta_hat, control)
   if (any(unlist(boundary, use.names = FALSE))) {
     warning(
       "The temporal beta-mixture MLE reached an admissible boundary; inspect the fit before using regular asymptotics.",
@@ -309,8 +384,11 @@ fit_sunspots_joint_time_beta_mixture2 <- function(s, control = list()) {
     loglik = -best$value,
     opt = best,
     n_starts = length(starts),
-    n_successful_starts = length(fits),
-    boundary_flags = boundary
+    n_successful_starts = selection$n_finite_fits,
+    n_converged_starts = selection$n_converged_fits,
+    selected_converged = selection$selected_converged,
+    boundary_flags = boundary,
+    boundary_diagnostics = boundary_diagnostics
   ))
 }
 
@@ -469,12 +547,17 @@ sunspots_joint_profile_block <- function(radii, rho, center_s, time_nodes,
 sunspots_joint_select_centers <- function(n, n_sample_centers = 100L, seed = 20260711L) {
   n <- as.integer(n)
   if (!is.finite(n) || n <= 0L) stop("`n` must be a positive integer.")
+  # TODO: all centers retain O(n^2) distance/profile/correction state; keep this
+  # option for small validation jobs until a streaming implementation is added.
   if (is.infinite(n_sample_centers) || n_sample_centers >= n) return(seq_len(n))
-  n_sample_centers <- as.integer(n_sample_centers)
-  if (!is.finite(n_sample_centers) || n_sample_centers <= 0L) {
-    stop("`n_sample_centers` must be a positive integer or Inf.")
-  }
-  sunspots_joint_with_seed(seed, sort(sample.int(n, size = n_sample_centers, replace = FALSE)))
+  sunspots_joint_with_seed(
+    seed,
+    sunspots_time_gof_select_centers(
+      n,
+      n_sample_centers = n_sample_centers,
+      seed = seed
+    )
+  )
 }
 
 sunspots_joint_prepare_centers <- function(data, fit, center_indices,
@@ -626,6 +709,7 @@ sunspots_joint_prepare_fast_corrections <- function(data, fit, centers,
   auxiliary_scores_solved <- score_auxiliary %*% t(fast_multiplier_solve_vhat(
     vhat, diag(ncol(vhat)), label = "the joint sunspots score correction"
   ))
+  correction_rows <- vector("list", length(centers))
   for (i in seq_along(centers)) {
     distances <- sunspots_joint_distance(auxiliary$x, auxiliary$s, centers[[i]]$omega, centers[[i]]$s)
     order_index <- order(distances)
@@ -634,10 +718,28 @@ sunspots_joint_prepare_fast_corrections <- function(data, fit, centers,
     score_basis <- rbind(rep(0, ncol(cumulative_scores)), cumulative_scores)
     selected_counts <- findInterval(centers[[i]]$sorted_distances, distances[order_index])
     centers[[i]]$correction <- score_basis[selected_counts + 1L, , drop = FALSE]
+    correction_rows[[i]] <- data.frame(
+      center_rank = i,
+      center_index = centers[[i]]$center_index,
+      correction_all_finite = all(is.finite(centers[[i]]$correction)),
+      correction_max_abs = suppressWarnings(max(abs(centers[[i]]$correction))),
+      stringsAsFactors = FALSE
+    )
   }
+  correction_diagnostics <- do.call(rbind, correction_rows)
+  positive_eigen <- diagnostics$Vhat_eigenvalues[is.finite(diagnostics$Vhat_eigenvalues) & diagnostics$Vhat_eigenvalues > 0]
+  min_positive_eigen <- if (length(positive_eigen) > 0L) min(positive_eigen) else NA_real_
+  max_positive_eigen <- if (length(positive_eigen) > 0L) max(positive_eigen) else NA_real_
   list(
     centers = centers, score_observed = score_observed, vhat = vhat,
-    diagnostics = diagnostics, derivative_mc_size = nrow(auxiliary$x)
+    diagnostics = diagnostics, derivative_mc_size = nrow(auxiliary$x),
+    inversion_method = "solve",
+    regularization_added = 0,
+    correction_diagnostics = correction_diagnostics,
+    correction_all_finite = all(correction_diagnostics$correction_all_finite),
+    correction_any_nonfinite = any(!correction_diagnostics$correction_all_finite),
+    Vhat_min_positive_eigenvalue = min_positive_eigen,
+    Vhat_max_positive_eigenvalue = max_positive_eigen
   )
 }
 

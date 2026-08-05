@@ -1694,6 +1694,22 @@ classify_logistic_gaussian_screening <- function(result) {
   p_min <- min(result$inference$ks$p_value, result$inference$cvm$p_value)
   problem_reasons <- screening_problem_reasons(data_prep, fit, ilr_dim = ncol(fit$Z))
 
+  if (length(problem_reasons) > 0L) {
+    return(list(
+      diagnosis = "problematic",
+      use_in_paper = "no",
+      why = paste(problem_reasons, collapse = "; ")
+    ))
+  }
+
+  if (!isTRUE(diagnostics$computed %||% TRUE)) {
+    return(list(
+      diagnosis = "not_assessed",
+      use_in_paper = NA_character_,
+      why = "Auxiliary screening diagnostics were disabled; only the KS/CvM bootstrap inference was computed."
+    ))
+  }
+
   mardia_p_min <- min(
     diagnostics$mardia$skewness_p_value,
     diagnostics$mardia$kurtosis_p_value,
@@ -1706,14 +1722,6 @@ classify_logistic_gaussian_screening <- function(result) {
 
   diagnostics_reasonable <- isTRUE(mardia_p_min > 0.01) &&
     (is.na(shapiro_p_min) || shapiro_p_min > 0.01)
-
-  if (length(problem_reasons) > 0L) {
-    return(list(
-      diagnosis = "problematic",
-      use_in_paper = "no",
-      why = paste(problem_reasons, collapse = "; ")
-    ))
-  }
 
   if (p_min <= 0.01) {
     return(list(
@@ -1740,6 +1748,43 @@ classify_logistic_gaussian_screening <- function(result) {
     use_in_paper = "no",
     why = "Evidence is mixed: the GOF p-values and/or ilr diagnostics are not fully convincing."
   )
+}
+
+strip_auxiliary_screening_artifacts <- function(result) {
+  result$grid <- utils::modifyList(
+    result$grid %||% list(),
+    list(
+      center_indices = integer(0),
+      omega = NULL,
+      t_grid = numeric(0),
+      omega_grid_construction = "not_computed",
+      omega_grid_lattice_level = NA_integer_,
+      omega_grid_size = NA_integer_,
+      omega_grid_boundary_epsilon = NA_real_,
+      t_grid_construction = "not_computed",
+      t_grid_t_max = NA_real_,
+      t_grid_tail_prob = NA_real_
+    )
+  )
+  result$theoretical_profile_info <- list(
+    method = "not_computed",
+    note = "The auxiliary theoretical profile was not evaluated.",
+    theoretical_profile = NULL
+  )
+  result$observed <- list(
+    empirical_profile = NULL,
+    theoretical_profile = NULL,
+    process_matrix = NULL,
+    grid_ks = NA_real_,
+    grid_cvm = NA_real_
+  )
+  result$diagnostics <- list(
+    computed = FALSE,
+    note = "Auxiliary screening profile and normality diagnostics were not computed."
+  )
+  result$settings$compute_auxiliary_diagnostics <- FALSE
+  result$classification <- classify_logistic_gaussian_screening(result)
+  result
 }
 
 compute_seed_sensitivity_summary <- function(reference_result,
@@ -1865,6 +1910,12 @@ run_logistic_gaussian_screening <- function(dataset_name,
                                             ridge = 1e-8,
                                             n_cores = 1L,
                                             bootstrap_method = "reestimated",
+                                            bootstrap_keep = list(
+                                              observed_process = TRUE,
+                                              bootstrap_statistics = TRUE,
+                                              bootstrap_thetas = FALSE
+                                            ),
+                                            compute_auxiliary_diagnostics = TRUE,
                                             control = list(),
                                             omega_grid_type = c("sample_points", "fixed_simplex_lattice"),
                                             t_grid_type = c("sample_distances", "fixed_fitted_scale", "sample_quantiles"),
@@ -1879,6 +1930,9 @@ run_logistic_gaussian_screening <- function(dataset_name,
   omega_grid_type <- match.arg(omega_grid_type)
   t_grid_type <- match.arg(t_grid_type)
   control <- normalize_logistic_gaussian_screening_control(control)
+  if (!isTRUE(compute_auxiliary_diagnostics) && identical(bootstrap_mode, "plugin_simple_null")) {
+    stop("`plugin_simple_null` requires the auxiliary screening profile; use a composite bootstrap when it is disabled.")
+  }
   started_at <- Sys.time()
   dataset_started_proc <- proc.time()[["elapsed"]]
 
@@ -1938,86 +1992,99 @@ run_logistic_gaussian_screening <- function(dataset_name,
     ridge = ridge
   )
 
-  centers <- if (identical(omega_grid_type, "fixed_simplex_lattice")) {
-    build_fixed_simplex_omega_grid(
-      ambient_dim = data_prep$D,
-      max_centers = max_centers,
-      boundary_epsilon = boundary_epsilon
-    )
-  } else {
-    sample_centers <- choose_screening_centers(
-      x_closed = data_prep$X_closed,
-      max_centers = max_centers,
-      seed = seed
-    )
-    c(
-      sample_centers,
-      list(
-        lattice_level = NA_integer_,
-        n_centers = nrow(sample_centers$omega),
-        construction = "sample_points"
+  centers <- NULL
+  t_grid_info <- list(
+    construction = "not_computed",
+    t_max = NA_real_,
+    tail_prob = NA_real_
+  )
+  t_grid <- numeric(0)
+  theoretical_profile <- NULL
+  empirical_profile <- NULL
+  observed_stats_grid <- list(process_matrix = NULL, ks = NA_real_, cvm = NA_real_)
+
+  if (isTRUE(compute_auxiliary_diagnostics)) {
+    centers <- if (identical(omega_grid_type, "fixed_simplex_lattice")) {
+      build_fixed_simplex_omega_grid(
+        ambient_dim = data_prep$D,
+        max_centers = max_centers,
+        boundary_epsilon = boundary_epsilon
       )
-    )
-  }
+    } else {
+      sample_centers <- choose_screening_centers(
+        x_closed = data_prep$X_closed,
+        max_centers = max_centers,
+        seed = seed
+      )
+      c(
+        sample_centers,
+        list(
+          lattice_level = NA_integer_,
+          n_centers = nrow(sample_centers$omega),
+          construction = "sample_points"
+        )
+      )
+    }
 
-  z_centers <- ilr_transform_closed(centers$omega, V = fit$ilr_basis)
-  distance_observed <- distance_matrix_from_ilr(fit$Z, z_centers)
+    z_centers <- ilr_transform_closed(centers$omega, V = fit$ilr_basis)
+    distance_observed <- distance_matrix_from_ilr(fit$Z, z_centers)
 
-  t_grid_info <- if (identical(t_grid_type, "fixed_fitted_scale")) {
-    build_fixed_t_grid_logistic_gaussian(
-      fit = fit,
-      omega_grid = centers$omega,
-      n_t = n_t,
-      tail_prob = t_grid_tail_prob
-    )
-  } else if (identical(t_grid_type, "sample_distances")) {
-    list(
-      t_grid = sort(unique(as.numeric(distance_observed))),
-      t_max = NA_real_,
-      tail_prob = NA_real_,
-      construction = "sample_distances"
-    )
-  } else {
-    list(
-      t_grid = choose_screening_t_grid(
-        distance_observed = distance_observed,
-        distance_null = NULL,
+    t_grid_info <- if (identical(t_grid_type, "fixed_fitted_scale")) {
+      build_fixed_t_grid_logistic_gaussian(
+        fit = fit,
+        omega_grid = centers$omega,
         n_t = n_t,
-        probs = probs_t
-      ),
-      t_max = NA_real_,
-      tail_prob = NA_real_,
-      construction = "sample_quantiles"
-    )
-  }
-  t_grid <- t_grid_info$t_grid
+        tail_prob = t_grid_tail_prob
+      )
+    } else if (identical(t_grid_type, "sample_distances")) {
+      list(
+        t_grid = sort(unique(as.numeric(distance_observed))),
+        t_max = NA_real_,
+        tail_prob = NA_real_,
+        construction = "sample_distances"
+      )
+    } else {
+      list(
+        t_grid = choose_screening_t_grid(
+          distance_observed = distance_observed,
+          distance_null = NULL,
+          n_t = n_t,
+          probs = probs_t
+        ),
+        t_max = NA_real_,
+        tail_prob = NA_real_,
+        construction = "sample_quantiles"
+      )
+    }
+    t_grid <- t_grid_info$t_grid
 
-  theoretical_profile <- if (identical(bootstrap_mode, "plugin_simple_null")) {
-    x_null_mc <- simulate_fitted_logistic_gaussian(
-      n = null_mc_size,
-      fit = fit,
-      seed = as.integer(seed) + 500000L
+    theoretical_profile <- if (identical(bootstrap_mode, "plugin_simple_null")) {
+      x_null_mc <- simulate_fitted_logistic_gaussian(
+        n = null_mc_size,
+        fit = fit,
+        seed = as.integer(seed) + 500000L
+      )
+      estimate_theoretical_profile_from_null_sample(
+        omega_grid = centers$omega,
+        t_grid = t_grid,
+        x_null_sample = x_null_mc,
+        fit = fit
+      )
+    } else {
+      evaluate_fitted_logistic_gaussian_profile(
+        omega_grid = centers$omega,
+        t_grid = t_grid,
+        fit = fit,
+        control = control
+      )
+    }
+    empirical_profile <- compute_profile_matrix_from_distances(distance_observed, t_grid)
+    observed_stats_grid <- compute_screening_statistics_from_profiles(
+      empirical_profile = empirical_profile,
+      theoretical_profile = theoretical_profile,
+      n_obs = data_prep$n
     )
-    estimate_theoretical_profile_from_null_sample(
-      omega_grid = centers$omega,
-      t_grid = t_grid,
-      x_null_sample = x_null_mc,
-      fit = fit
-    )
-  } else {
-    evaluate_fitted_logistic_gaussian_profile(
-    omega_grid = centers$omega,
-    t_grid = t_grid,
-    fit = fit,
-    control = control
-  )
   }
-  empirical_profile <- compute_profile_matrix_from_distances(distance_observed, t_grid)
-  observed_stats_grid <- compute_screening_statistics_from_profiles(
-    empirical_profile = empirical_profile,
-    theoretical_profile = theoretical_profile,
-    n_obs = data_prep$n
-  )
 
   if (identical(bootstrap_mode, "plugin_simple_null")) {
     bootstrap_result <- plugin_parametric_bootstrap_logistic_gaussian_screening(
@@ -2054,6 +2121,7 @@ run_logistic_gaussian_screening <- function(dataset_name,
       n_cores = n_cores,
       seed = seed,
       bootstrap_method = bootstrap_method,
+      keep = bootstrap_keep,
       control = control,
       unknown_param = "both"
     )
@@ -2075,10 +2143,18 @@ run_logistic_gaussian_screening <- function(dataset_name,
     )
   )
 
-  diagnostics <- list(
-    mardia = mardia_multivariate_normality(fit$Z),
-    shapiro_p_values = compute_marginal_shapiro_pvalues(fit$Z)
-  )
+  diagnostics <- if (isTRUE(compute_auxiliary_diagnostics)) {
+    list(
+      computed = TRUE,
+      mardia = mardia_multivariate_normality(fit$Z),
+      shapiro_p_values = compute_marginal_shapiro_pvalues(fit$Z)
+    )
+  } else {
+    list(
+      computed = FALSE,
+      note = "Auxiliary screening profile and normality diagnostics were not computed."
+    )
+  }
 
   result <- list(
     dataset_name = dataset_name,
@@ -2087,24 +2163,26 @@ run_logistic_gaussian_screening <- function(dataset_name,
     data_prep = data_prep,
     fit = fit,
     grid = list(
-      center_indices = centers$center_indices %||% NA_integer_,
-      omega = centers$omega,
+      center_indices = if (isTRUE(compute_auxiliary_diagnostics)) centers$center_indices %||% NA_integer_ else integer(0),
+      omega = if (isTRUE(compute_auxiliary_diagnostics)) centers$omega else NULL,
       t_grid = t_grid,
       probs_t = probs_t %||% seq(0.01, 0.99, length.out = n_t),
       max_centers = max_centers,
       omega_grid_type = omega_grid_type,
-      omega_grid_construction = centers$construction %||% omega_grid_type,
-      omega_grid_lattice_level = centers$lattice_level %||% NA_integer_,
-      omega_grid_size = centers$n_centers %||% nrow(centers$omega),
-      omega_grid_boundary_epsilon = centers$boundary_epsilon %||% NA_real_,
+      omega_grid_construction = if (isTRUE(compute_auxiliary_diagnostics)) centers$construction %||% omega_grid_type else "not_computed",
+      omega_grid_lattice_level = if (isTRUE(compute_auxiliary_diagnostics)) centers$lattice_level %||% NA_integer_ else NA_integer_,
+      omega_grid_size = if (isTRUE(compute_auxiliary_diagnostics)) centers$n_centers %||% nrow(centers$omega) else NA_integer_,
+      omega_grid_boundary_epsilon = if (isTRUE(compute_auxiliary_diagnostics)) centers$boundary_epsilon %||% NA_real_ else NA_real_,
       t_grid_type = t_grid_type,
       t_grid_construction = t_grid_info$construction %||% t_grid_type,
       t_grid_t_max = t_grid_info$t_max %||% NA_real_,
       t_grid_tail_prob = t_grid_info$tail_prob %||% NA_real_
     ),
     theoretical_profile_info = list(
-      method = if (identical(bootstrap_mode, "plugin_simple_null")) "monte_carlo_from_fitted_null" else "global_logistic_gaussian_model_spec",
-      note = if (identical(bootstrap_mode, "plugin_simple_null")) {
+      method = if (!isTRUE(compute_auxiliary_diagnostics)) "not_computed" else if (identical(bootstrap_mode, "plugin_simple_null")) "monte_carlo_from_fitted_null" else "global_logistic_gaussian_model_spec",
+      note = if (!isTRUE(compute_auxiliary_diagnostics)) {
+        "The auxiliary theoretical profile was not evaluated."
+      } else if (identical(bootstrap_mode, "plugin_simple_null")) {
         "Theoretical distance profiles are approximated by a large Monte Carlo sample from the fitted logistic Gaussian null with parameters treated as fixed."
       } else {
         "Theoretical distance profiles are evaluated by make_logistic_gaussian_spec()$profile_matrix_eval, the same model-spec path used by the calibration code."
@@ -2140,6 +2218,8 @@ run_logistic_gaussian_screening <- function(dataset_name,
       alpha = alpha,
       ridge = ridge,
       bootstrap_mode = bootstrap_mode,
+      bootstrap_keep = bootstrap_keep,
+      compute_auxiliary_diagnostics = isTRUE(compute_auxiliary_diagnostics),
       n_cores = n_cores,
       omega_grid_type = omega_grid_type,
       t_grid_type = t_grid_type,
@@ -2170,6 +2250,8 @@ run_logistic_gaussian_screening <- function(dataset_name,
       alpha = alpha,
       ridge = ridge,
       n_cores = n_cores,
+      bootstrap_keep = bootstrap_keep,
+      compute_auxiliary_diagnostics = compute_auxiliary_diagnostics,
       control = control,
       make_plots = FALSE,
       save_outputs = FALSE,
@@ -2221,13 +2303,16 @@ screening_dataset_metadata <- function(dataset_name) {
 
 make_logistic_gaussian_screening_summary_row <- function(result) {
   fit <- result$fit
-  mardia <- result$diagnostics$mardia
+  mardia <- result$diagnostics$mardia %||% list(
+    skewness_p_value = NA_real_,
+    kurtosis_p_value = NA_real_
+  )
   metadata <- screening_dataset_metadata(result$dataset_name)
   selected_parts <- metadata$selected_parts
   if (!nzchar(selected_parts)) {
     selected_parts <- paste(result$data_prep$component_names %||% character(0), collapse = ",")
   }
-  shapiro_min_pvalue <- suppressWarnings(min(result$diagnostics$shapiro_p_values, na.rm = TRUE))
+  shapiro_min_pvalue <- suppressWarnings(min(result$diagnostics$shapiro_p_values %||% NA_real_, na.rm = TRUE))
   if (!is.finite(shapiro_min_pvalue)) {
     shapiro_min_pvalue <- NA_real_
   }

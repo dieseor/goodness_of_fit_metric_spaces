@@ -552,12 +552,12 @@ test_that("fast multiplier keeps score_mc and supports quadrature end to end", {
         derivative_mc_seed = 733L
       ))
     )),
-    "legacy.*Selecting `score_mc`"
+    "legacy.*selecting `quadrature`"
   )
-  expect_identical(legacy$diagnostics$derivative_method_effective, "score_mc")
+  expect_identical(legacy$diagnostics$derivative_method_effective, "quadrature")
   expect_identical(
     legacy$diagnostics$derivative_method_selection_source,
-    "legacy_mc_controls"
+    "model_default_legacy_mc_controls_ignored"
   )
   expect_identical(
     deterministic$diagnostics$fast_ks_mode,
@@ -619,12 +619,12 @@ test_that("fast multiplier keeps score_mc and supports quadrature end to end", {
         derivative_mc_seed = 736L
       )
     ),
-    "legacy.*Selecting `score_mc`"
+    "legacy.*selecting `quadrature`"
   )
-  expect_identical(h_legacy$diagnostics$derivative_method_effective, "score_mc")
+  expect_identical(h_legacy$diagnostics$derivative_method_effective, "quadrature")
   expect_identical(
     h_legacy$diagnostics$derivative_method_selection_source,
-    "legacy_mc_controls"
+    "model_default_legacy_mc_controls_ignored"
   )
   expect_identical(
     h_result$diagnostics$fast_cvm_mode,

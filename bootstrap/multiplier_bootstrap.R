@@ -3457,15 +3457,11 @@ multiplier_bootstrap_vmf <- function(data,
   legacy_mc_control <- is.null(control$derivative_method) &&
     (!is.null(control$derivative_mc_size) ||
        !is.null(control$derivative_mc_seed))
-  requested_method <- control$derivative_method %||% if (legacy_mc_control) {
-    "score_mc"
-  } else {
-    "quadrature"
-  }
+  requested_method <- control$derivative_method %||% "quadrature"
   selection_source <- if (!is.null(control$derivative_method)) {
     "explicit"
   } else if (legacy_mc_control) {
-    "legacy_mc_controls"
+    "model_default_legacy_mc_controls_ignored"
   } else {
     "model_default"
   }
@@ -3609,15 +3605,11 @@ multiplier_bootstrap_hvmf <- function(data,
   legacy_mc_control <- is.null(control$derivative_method) &&
     (!is.null(control$derivative_mc_size) ||
        !is.null(control$derivative_mc_seed))
-  requested_method <- control$derivative_method %||% if (legacy_mc_control) {
-    "score_mc"
-  } else {
-    "quadrature"
-  }
+  requested_method <- control$derivative_method %||% "quadrature"
   selection_source <- if (!is.null(control$derivative_method)) {
     "explicit"
   } else if (legacy_mc_control) {
-    "legacy_mc_controls"
+    "model_default_legacy_mc_controls_ignored"
   } else {
     "model_default"
   }

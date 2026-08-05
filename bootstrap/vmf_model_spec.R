@@ -198,15 +198,15 @@ prepare_vmf_fast_multiplier <- function(data,
       paste(
         "vMF fast multiplier: `derivative_method` was not supplied, but",
         "legacy `derivative_mc_size`/`derivative_mc_seed` controls were found.",
-        "Selecting `score_mc`; set `derivative_method = 'score_mc'` or",
-        "`derivative_method = 'quadrature'` explicitly."
+        "They no longer change the default: selecting `quadrature`.",
+        "Set `derivative_method = 'score_mc'` explicitly to use Monte Carlo."
       ),
       call. = FALSE
     )
   }
   derivative_control <- fast_multiplier_parse_derivative_control(
     control,
-    default_method = if (legacy_mc_control) "score_mc" else "quadrature"
+    default_method = "quadrature"
   )
   store_paper_quantities <- isTRUE(control$fast_multiplier_store_paper_quantities)
 
