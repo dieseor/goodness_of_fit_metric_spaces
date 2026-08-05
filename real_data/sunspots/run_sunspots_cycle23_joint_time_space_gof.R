@@ -46,7 +46,9 @@ sunspots_joint_summary_row <- function(statistic_name, bootstrap_values,
     profile_scope = "joint_time_space_product_law",
     product_metric = "0.5 * (geodesic/pi + absolute_time_difference)",
     n = nrow(data$x), n_sample_centers = length(center_indices), B = settings$B,
-    derivative_mc_size = fast_prep$derivative_mc_size, n_cores = settings$n_cores,
+    derivative_mc_size = fast_prep$derivative_mc_size,
+    n_cores = settings$n_cores,
+    observed_profile_n_cores = settings$observed_profile_n_cores,
     start_date = settings$start_date, end_date_exclusive = settings$end_date,
     center_seed = settings$center_seed,
     dequantization_seed = settings$dequantization_seed,
@@ -104,6 +106,7 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
     hemisphere_regression = "asymmetric",
     B = 1000L,
     n_cores = 12L,
+    observed_profile_n_cores = n_cores,
     center_seed = 20260711L,
     dequantization_seed = 20260712L,
     derivative_mc_seed = 20260713L,
@@ -118,8 +121,12 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
   hemisphere_regression <- sunspots_time_varying_normalize_hemisphere_regression(hemisphere_regression)
   B <- as.integer(B)
   n_cores <- as.integer(n_cores)
+  observed_profile_n_cores <- as.integer(observed_profile_n_cores)
   if (!is.finite(B) || B < 1L) stop("`B` must be a positive integer.")
   if (!is.finite(n_cores) || n_cores < 1L) stop("`n_cores` must be a positive integer.")
+  if (!is.finite(observed_profile_n_cores) || observed_profile_n_cores < 1L) {
+    stop("`observed_profile_n_cores` must be a positive integer.")
+  }
   if (!is.finite(derivative_mc_size) || derivative_mc_size < 10L) {
     stop("`derivative_mc_size` must be an integer of at least 10.")
   }
@@ -132,11 +139,14 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
   spatial_quad_n <- as.integer(control$profile_quad_n %||% 400L)
   center_block_size <- as.integer(control$center_block_size %||% 8L)
   distance_profile_backend <- sunspots_joint_normalize_backend(
-  control$distance_profile_backend %||% "r"
-)
+    control$distance_profile_backend %||% "cpp"
+  )
   effective_backend <- sunspots_joint_effective_backend(distance_profile_backend)
   settings <- list(
-    hemisphere_regression = hemisphere_regression, B = B, n_cores = n_cores,
+    hemisphere_regression = hemisphere_regression,
+    B = B,
+    n_cores = n_cores,
+    observed_profile_n_cores = observed_profile_n_cores,
     start_date = start_date, end_date = end_date,
     center_seed = as.integer(center_seed),
     dequantization_seed = as.integer(dequantization_seed),
@@ -226,6 +236,7 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
     fast_multiplier_vhat_rcond_tol = as.numeric(control$fast_multiplier_vhat_rcond_tol %||% 1e-12),
     distance_profile_backend = effective_backend,
     center_block_size = center_block_size,
+    observed_profile_n_cores = observed_profile_n_cores,
     time_quad_n = as.integer(time_quad_n),
     profile_l_max = profile_l_max,
     profile_quad_n = spatial_quad_n,
@@ -278,6 +289,7 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
   numerical_diagnostics <- data.frame(
     n = nrow(data$x),
     n_sample_centers = length(center_indices),
+    observed_profile_n_cores = observed_profile_n_cores,
     derivative_mc_size = generic_result$diagnostics$derivative_mc_size,
     Vhat_rcond = generic_result$diagnostics$Vhat_rcond,
     Vhat_condition_number = generic_result$diagnostics$Vhat_condition_number,
@@ -367,7 +379,7 @@ parse_sunspots_joint_time_space_args <- function(args = commandArgs(trailingOnly
   if (length(args) == 0L) return(list())
   out <- list()
   integer_keys <- c(
-    "B", "n_cores", "center_seed", "dequantization_seed", "derivative_mc_seed", "bootstrap_seed", "derivative_mc_size",
+    "B", "n_cores", "observed_profile_n_cores", "center_seed", "dequantization_seed", "derivative_mc_seed", "bootstrap_seed", "derivative_mc_size",
     "bootstrap_block_size", "time_quad_n"
   )
   character_keys <- c(
@@ -377,7 +389,7 @@ parse_sunspots_joint_time_space_args <- function(args = commandArgs(trailingOnly
     if (arg %in% c("--help", "-h")) {
       cat(paste0(
         "Options: --statistics=ks,cvm --hemisphere_regression=asymmetric|shared ",
-        "--B=INTEGER --n_cores=INTEGER --n_sample_centers=INTEGER|all ",
+        "--B=INTEGER --n_cores=INTEGER --observed_profile_n_cores=INTEGER --n_sample_centers=INTEGER|all ",
         "--derivative_mc_size=INTEGER --bootstrap_block_size=INTEGER --time_quad_n=INTEGER ",
         "--center_seed=INTEGER --dequantization_seed=INTEGER --derivative_mc_seed=INTEGER --bootstrap_seed=INTEGER ",
         "--start_date=YYYY-MM-DD ",

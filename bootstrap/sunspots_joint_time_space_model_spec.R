@@ -186,16 +186,70 @@ sunspots_joint_spec_sample_profile_matrix_eval <- function(data,
                                                            distance_matrix,
                                                            theta,
                                                            control = list()) {
-  require_sunspots_joint_spec_dependencies()
-  normalized <- normalize_sunspots_joint_spec_data(data, control)
-  fit <- theta
-  if (!is.list(fit) || is.null(fit$eta_hat) || is.null(fit$theta_hat)) {
-    stop("`theta` must be the fitted joint object containing `eta_hat` and `theta_hat`.")
+  prepared <- sunspots_joint_spec_sample_profile_sorted_prepare(
+    data = data,
+    sorted_distance_matrix = distance_matrix,
+    theta = theta,
+    control = control
+  )
+
+  block_size <- as.integer(control$center_block_size %||% 8L)
+  if (length(block_size) != 1L ||
+      !is.finite(block_size) ||
+      block_size <= 0L) {
+    stop(
+      "`control$center_block_size` must be a strictly positive integer."
+    )
   }
 
-  distance_matrix <- as.matrix(distance_matrix)
-  if (!identical(dim(distance_matrix), c(nrow(normalized$x), nrow(normalized$x)))) {
-    stop("`distance_matrix` has incompatible dimensions for sample-profile evaluation.")
+  n <- prepared$n
+  out <- matrix(0, nrow = n, ncol = n)
+
+  for (block_start in seq.int(1L, n, by = block_size)) {
+    block_end <- min(block_start + block_size - 1L, n)
+    row_indices <- block_start:block_end
+    out[row_indices, ] <- sunspots_joint_profile_block(
+      radii = distance_matrix[row_indices, , drop = FALSE],
+      rho = prepared$rho[row_indices],
+      center_s = prepared$center_s[row_indices],
+      time_nodes = prepared$time_nodes,
+      time_weights = prepared$time_weights,
+      coefficients = prepared$coefficients,
+      backend = prepared$backend
+    )
+  }
+
+  out
+}
+sunspots_joint_spec_sample_profile_sorted_prepare <- function(
+    data,
+    sorted_distance_matrix,
+    theta,
+    control = list()) {
+  require_sunspots_joint_spec_dependencies()
+
+  normalized <- normalize_sunspots_joint_spec_data(data, control)
+  fit <- theta
+  if (!is.list(fit) ||
+      is.null(fit$eta_hat) ||
+      is.null(fit$theta_hat)) {
+    stop(
+      paste(
+        "`theta` must be the fitted joint object containing",
+        "`eta_hat` and `theta_hat`."
+      )
+    )
+  }
+
+  sorted_distance_matrix <- as.matrix(sorted_distance_matrix)
+  n <- nrow(normalized$x)
+  if (!identical(dim(sorted_distance_matrix), c(n, n))) {
+    stop(
+      paste(
+        "`sorted_distance_matrix` has incompatible dimensions",
+        "for sample-profile evaluation."
+      )
+    )
   }
 
   quadrature <- sunspots_joint_time_quadrature(
@@ -210,30 +264,80 @@ sunspots_joint_spec_sample_profile_matrix_eval <- function(data,
     quad_n = as.integer(control$profile_quad_n %||% 400L)
   )
 
-  block_size <- as.integer(control$center_block_size %||% 8L)
-  if (!is.finite(block_size) || block_size <= 0L) {
-    stop("`control$center_block_size` must be a strictly positive integer.")
+  backend <- sunspots_joint_effective_backend(
+    control$distance_profile_backend %||% "r"
+  )
+  if (identical(backend, "cpp")) {
+    ensure_distance_profile_cpp_loaded()
   }
 
-  n <- nrow(normalized$x)
-  out <- matrix(0, nrow = n, ncol = n)
-  for (block_start in seq.int(1L, n, by = block_size)) {
-    block_end <- min(block_start + block_size - 1L, n)
-    idx <- block_start:block_end
-    out[idx, ] <- sunspots_joint_profile_block(
-      radii = distance_matrix[idx, , drop = FALSE],
-      rho = normalized$x[idx, 3L],
-      center_s = normalized$s[idx],
-      time_nodes = quadrature$nodes,
-      time_weights = quadrature$weights,
-      coefficients = coefficients,
-      backend = control$distance_profile_backend %||% "auto"
+  list(
+    n = n,
+    rho = as.numeric(normalized$x[, 3L]),
+    center_s = as.numeric(normalized$s),
+    time_nodes = quadrature$nodes,
+    time_weights = quadrature$weights,
+    coefficients = coefficients,
+    backend = backend
+  )
+}
+sunspots_joint_spec_sample_profile_sorted_block_eval <- function(
+    data,
+    sorted_distance_matrix,
+    theta,
+    row_indices,
+    prepared = NULL,
+    control = list()) {
+  require_sunspots_joint_spec_dependencies()
+
+  sorted_distance_matrix <- as.matrix(sorted_distance_matrix)
+  n <- nrow(sorted_distance_matrix)
+  if (ncol(sorted_distance_matrix) != n) {
+    stop("`sorted_distance_matrix` must be square.")
+  }
+
+  row_indices <- as.integer(row_indices)
+  if (length(row_indices) == 0L ||
+      any(!is.finite(row_indices)) ||
+      any(row_indices < 1L) ||
+      any(row_indices > n)) {
+    stop(
+      "`row_indices` must contain valid row indices of the sample matrix."
     )
   }
 
-  out
-}
+  if (is.null(prepared)) {
+    prepared <- sunspots_joint_spec_sample_profile_sorted_prepare(
+      data = data,
+      sorted_distance_matrix = sorted_distance_matrix,
+      theta = theta,
+      control = control
+    )
+  }
 
+  if (!is.list(prepared) ||
+      !identical(as.integer(prepared$n), as.integer(n)) ||
+      length(prepared$rho) != n ||
+      length(prepared$center_s) != n) {
+    stop("The prepared sample-profile context is incompatible.")
+  }
+
+  values <- sunspots_joint_profile_block_sorted(
+    radii = sorted_distance_matrix[row_indices, , drop = FALSE],
+    rho = prepared$rho[row_indices],
+    center_s = prepared$center_s[row_indices],
+    time_nodes = prepared$time_nodes,
+    time_weights = prepared$time_weights,
+    coefficients = prepared$coefficients,
+    backend = prepared$backend
+  )
+
+  matrix(
+    as.numeric(values),
+    nrow = length(row_indices),
+    ncol = n
+  )
+}
 prepare_sunspots_joint_fast_multiplier <- function(spec,
                                                    data,
                                                    theta_hat,
@@ -336,6 +440,41 @@ make_sunspots_joint_time_space_spec <- function(
           control = control
         )
       },
+      sample_profile_sorted_prepare = function(
+          data,
+          sorted_distance_matrix,
+          theta,
+          control = list()) {
+        control <- utils::modifyList(control, list(
+          hemisphere_regression = hemisphere_regression
+        ))
+        sunspots_joint_spec_sample_profile_sorted_prepare(
+          data = data,
+          sorted_distance_matrix = sorted_distance_matrix,
+          theta = theta,
+          control = control
+        )
+      },
+      sample_profile_sorted_block_eval = function(
+          data,
+          sorted_distance_matrix,
+          theta,
+          row_indices,
+          prepared = NULL,
+          control = list()) {
+        control <- utils::modifyList(control, list(
+          hemisphere_regression = hemisphere_regression
+        ))
+        sunspots_joint_spec_sample_profile_sorted_block_eval(
+          data = data,
+          sorted_distance_matrix = sorted_distance_matrix,
+          theta = theta,
+          row_indices = row_indices,
+          prepared = prepared,
+          control = control
+        )
+      },
+
       fast_multiplier_prepare = function(data,
                                          theta_hat,
                                          ks_prep = NULL,

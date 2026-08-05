@@ -544,6 +544,41 @@ sunspots_joint_profile_block <- function(radii, rho, center_s, time_nodes,
   ))
 }
 
+
+sunspots_joint_profile_block_sorted <- function(
+    radii,
+    rho,
+    center_s,
+    time_nodes,
+    time_weights,
+    coefficients,
+    backend = "auto") {
+  backend <- sunspots_joint_effective_backend(backend)
+  if (identical(backend, "r")) {
+    return(sunspots_joint_profile_block_r(
+      radii,
+      rho,
+      center_s,
+      time_nodes,
+      time_weights,
+      coefficients
+    ))
+  }
+
+  with_distance_profile_backend(
+    "cpp",
+    distance_profile_cpp_call(
+      "cpp_sunspots_joint_profile_block_sorted",
+      as.matrix(radii),
+      as.numeric(rho),
+      as.numeric(center_s),
+      as.numeric(time_nodes),
+      as.numeric(time_weights),
+      as.matrix(coefficients)
+    )
+  )
+}
+
 sunspots_joint_select_centers <- function(n, n_sample_centers = 100L, seed = 20260711L) {
   n <- as.integer(n)
   if (!is.finite(n) || n <= 0L) stop("`n` must be a positive integer.")

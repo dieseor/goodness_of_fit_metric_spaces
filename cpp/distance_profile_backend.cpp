@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
+#include <limits>
 
 // [[Rcpp::plugins(cpp17)]]
 
@@ -767,5 +768,206 @@ Rcpp::NumericMatrix cpp_sunspots_joint_profile_block(
       out(row, col) = clip_probability(out(row, col));
     }
   }
+  return out;
+}
+
+// Exact cache-friendly variant for row-wise sorted radii.  For a temporal
+// node with delta = |center_s - time_node|, the spherical contribution is
+// identically zero for radius <= delta / 2 and identically one for
+// radius >= (1 + delta) / 2.  Binary searches isolate the only interval
+// requiring the Legendre recurrence.
+// [[Rcpp::export]]
+Rcpp::NumericMatrix cpp_sunspots_joint_profile_block_sorted(
+    Rcpp::NumericMatrix radii,
+    Rcpp::NumericVector rho,
+    Rcpp::NumericVector center_s,
+    Rcpp::NumericVector time_nodes,
+    Rcpp::NumericVector time_weights,
+    Rcpp::NumericMatrix coefficients) {
+  const int n_rows = radii.nrow();
+  const int n_cols = radii.ncol();
+  const int n_time = time_nodes.size();
+  const int n_coefficients = coefficients.ncol();
+  const int l_max = n_coefficients - 1;
+  const double pi = 3.141592653589793238462643383279502884;
+
+  if (rho.size() != n_rows || center_s.size() != n_rows) {
+    Rcpp::stop("`rho` and `center_s` must have length nrow(`radii`).");
+  }
+  if (time_weights.size() != n_time || coefficients.nrow() != n_time) {
+    Rcpp::stop(
+      "Time nodes, time weights, and coefficients have incompatible dimensions."
+    );
+  }
+  if (n_coefficients < 1) {
+    Rcpp::stop("`coefficients` must have at least one column.");
+  }
+
+  const std::size_t matrix_size =
+    static_cast<std::size_t>(n_rows) * static_cast<std::size_t>(n_cols);
+  std::vector<double> radii_row_major(matrix_size);
+  std::vector<double> output_row_major(matrix_size, 0.0);
+  std::vector<double> suffix_events(
+    static_cast<std::size_t>(n_rows) *
+      static_cast<std::size_t>(n_cols + 1),
+    0.0
+  );
+
+  for (int row = 0; row < n_rows; ++row) {
+    double previous = -std::numeric_limits<double>::infinity();
+    for (int col = 0; col < n_cols; ++col) {
+      const double value = radii(row, col);
+      if (!R_FINITE(value)) {
+        Rcpp::stop("`radii` must be finite.");
+      }
+      if (col > 0 && value < previous) {
+        Rcpp::stop(
+          "Every row of `radii` must be sorted in nondecreasing order."
+        );
+      }
+      radii_row_major[
+        static_cast<std::size_t>(row) * n_cols + col
+      ] = value;
+      previous = value;
+    }
+  }
+
+  std::vector<double> rho_clipped(static_cast<std::size_t>(n_rows));
+  std::vector<double> rho_legendre(
+    static_cast<std::size_t>(n_rows) *
+      static_cast<std::size_t>(l_max + 1),
+    0.0
+  );
+  for (int row = 0; row < n_rows; ++row) {
+    if (!R_FINITE(center_s[row]) || !R_FINITE(rho[row])) {
+      Rcpp::stop("`rho` and `center_s` must be finite.");
+    }
+    rho_clipped[static_cast<std::size_t>(row)] = clip_unit(rho[row]);
+    double* row_legendre =
+      rho_legendre.data() +
+      static_cast<std::size_t>(row) * (l_max + 1);
+    row_legendre[0] = 1.0;
+    if (l_max >= 1) {
+      row_legendre[1] = rho_clipped[static_cast<std::size_t>(row)];
+    }
+    for (int ell = 1; ell < l_max; ++ell) {
+      const double factor_one = static_cast<double>(2 * ell + 1);
+      const double factor_two = static_cast<double>(ell);
+      const double denominator = static_cast<double>(ell + 1);
+      row_legendre[ell + 1] =
+        (factor_one * rho_clipped[static_cast<std::size_t>(row)] *
+           row_legendre[ell] -
+         factor_two * row_legendre[ell - 1]) /
+        denominator;
+    }
+  }
+
+  std::vector<double> coefficient_rho(
+    static_cast<std::size_t>(l_max + 1),
+    0.0
+  );
+
+  for (int node = 0; node < n_time; ++node) {
+    if (!R_FINITE(time_nodes[node]) || !R_FINITE(time_weights[node])) {
+      Rcpp::stop("Time nodes and weights must be finite.");
+    }
+    const double quadrature_weight = time_weights[node];
+    if (quadrature_weight == 0.0) {
+      continue;
+    }
+
+    for (int row = 0; row < n_rows; ++row) {
+      const double delta = std::abs(center_s[row] - time_nodes[node]);
+      const double zero_threshold = delta / 2.0;
+      const double one_threshold = (1.0 + delta) / 2.0;
+      const double* row_radii =
+        radii_row_major.data() +
+        static_cast<std::size_t>(row) * n_cols;
+
+      const int active_begin = static_cast<int>(
+        std::upper_bound(
+          row_radii,
+          row_radii + n_cols,
+          zero_threshold
+        ) - row_radii
+      );
+      const int active_end = static_cast<int>(
+        std::lower_bound(
+          row_radii,
+          row_radii + n_cols,
+          one_threshold
+        ) - row_radii
+      );
+
+      suffix_events[
+        static_cast<std::size_t>(row) * (n_cols + 1) +
+        active_end
+      ] += quadrature_weight;
+
+      if (active_begin >= active_end) {
+        continue;
+      }
+
+      const double* row_legendre =
+        rho_legendre.data() +
+        static_cast<std::size_t>(row) * (l_max + 1);
+      for (int ell = 1; ell <= l_max; ++ell) {
+        coefficient_rho[static_cast<std::size_t>(ell)] =
+          coefficients(node, ell) * row_legendre[ell];
+      }
+
+      for (int col = active_begin; col < active_end; ++col) {
+        const double radius = row_radii[col];
+        const double spherical_fraction =
+          2.0 * radius - delta;
+        const double x = std::cos(pi * spherical_fraction);
+        double cdf = (x + 1.0) / 2.0;
+
+        if (l_max >= 1) {
+          double p_x_previous = 1.0;
+          double p_x_current = x;
+          for (int ell = 1; ell <= l_max; ++ell) {
+            const double factor_one =
+              static_cast<double>(2 * ell + 1);
+            const double factor_two =
+              static_cast<double>(ell);
+            const double denominator =
+              static_cast<double>(ell + 1);
+            const double p_x_next =
+              (factor_one * x * p_x_current -
+               factor_two * p_x_previous) /
+              denominator;
+            cdf +=
+              coefficient_rho[static_cast<std::size_t>(ell)] *
+              (p_x_next - p_x_previous) /
+              (2.0 * factor_one);
+            p_x_previous = p_x_current;
+            p_x_current = p_x_next;
+          }
+        }
+
+        output_row_major[
+          static_cast<std::size_t>(row) * n_cols + col
+        ] += quadrature_weight *
+          (1.0 - clip_probability(cdf));
+      }
+    }
+  }
+
+  Rcpp::NumericMatrix out(n_rows, n_cols);
+  for (int row = 0; row < n_rows; ++row) {
+    double suffix_weight = 0.0;
+    for (int col = 0; col < n_cols; ++col) {
+      suffix_weight += suffix_events[
+        static_cast<std::size_t>(row) * (n_cols + 1) + col
+      ];
+      out(row, col) = clip_probability(
+        output_row_major[
+          static_cast<std::size_t>(row) * n_cols + col
+        ] + suffix_weight
+      );
+    }
+  }
+
   return out;
 }
