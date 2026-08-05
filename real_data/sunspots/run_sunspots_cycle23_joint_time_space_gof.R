@@ -17,11 +17,7 @@ sunspots_joint_module_path <- resolve_sunspots_joint_runner_path(
 source(sunspots_joint_module_path)
 
 sunspots_joint_parse_statistics <- function(statistics) {
-  statistics <- unique(tolower(as.character(statistics)))
-  if (length(statistics) == 0L || any(!statistics %in% c("ks", "cvm"))) {
-    stop("`statistics` must contain one or both of 'ks' and 'cvm'.")
-  }
-  statistics
+  normalize_requested_statistics(statistics)
 }
 
 sunspots_joint_summary_row <- function(statistic_name, bootstrap_values,
@@ -44,7 +40,10 @@ sunspots_joint_summary_row <- function(statistic_name, bootstrap_values,
     n = nrow(data$x), n_sample_centers = length(center_indices), B = settings$B,
     derivative_mc_size = fast_prep$derivative_mc_size, n_cores = settings$n_cores,
     start_date = settings$start_date, end_date_exclusive = settings$end_date,
+    center_seed = settings$center_seed,
     dequantization_seed = settings$dequantization_seed,
+    derivative_mc_seed = settings$derivative_mc_seed,
+    bootstrap_seed = settings$bootstrap_seed,
     time_quad_n_per_component = settings$time_quad_n,
     profile_l_max = settings$profile_l_max,
     spatial_quad_n = settings$spatial_quad_n,
@@ -72,6 +71,12 @@ sunspots_joint_summary_row <- function(statistic_name, bootstrap_values,
     temporal_boundary_shape_lower = eta$boundary_flags$shape_lower,
     temporal_boundary_shape_upper = eta$boundary_flags$shape_upper,
     vhat_rcond = fast_prep$diagnostics$Vhat_rcond,
+    vhat_condition_number = fast_prep$diagnostics$Vhat_condition_number %||% NA_real_,
+    vhat_min_positive_eigenvalue = fast_prep$Vhat_min_positive_eigenvalue %||% NA_real_,
+    vhat_max_positive_eigenvalue = fast_prep$Vhat_max_positive_eigenvalue %||% NA_real_,
+    vhat_inversion_method = fast_prep$inversion_method %||% "",
+    vhat_regularization_added = fast_prep$regularization_added %||% NA_real_,
+    correction_all_finite = fast_prep$correction_all_finite %||% NA,
     temporal_mle_seconds = timing$temporal_mle_seconds,
     spatial_mle_seconds = timing$spatial_mle_seconds,
     observed_profile_seconds = timing$observed_profile_seconds,
@@ -91,8 +96,10 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
     hemisphere_regression = "asymmetric",
     B = 1000L,
     n_cores = 12L,
-    seed = 20260711L,
+    center_seed = 20260711L,
     dequantization_seed = 20260712L,
+    derivative_mc_seed = 20260713L,
+    bootstrap_seed = 20260714L,
     n_sample_centers = 100L,
     derivative_mc_size = 5000L,
     bootstrap_block_size = 25L,
@@ -122,7 +129,11 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
   effective_backend <- sunspots_joint_effective_backend(distance_profile_backend)
   settings <- list(
     hemisphere_regression = hemisphere_regression, B = B, n_cores = n_cores,
-    start_date = start_date, end_date = end_date, dequantization_seed = as.integer(dequantization_seed),
+    start_date = start_date, end_date = end_date,
+    center_seed = as.integer(center_seed),
+    dequantization_seed = as.integer(dequantization_seed),
+    derivative_mc_seed = as.integer(derivative_mc_seed),
+    bootstrap_seed = as.integer(bootstrap_seed),
     time_quad_n = as.integer(time_quad_n), profile_l_max = profile_l_max,
     spatial_quad_n = spatial_quad_n, distance_profile_backend = effective_backend,
     allow_boundary_fast = allow_boundary_fast
@@ -150,7 +161,7 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
     eta_hat = eta_hat, theta_hat = theta_hat
   )
 
-  center_indices <- sunspots_joint_select_centers(nrow(data$x), n_sample_centers, seed)
+  center_indices <- sunspots_joint_select_centers(nrow(data$x), n_sample_centers, center_seed)
   observed_start <- proc.time()[["elapsed"]]
   observed <- sunspots_joint_prepare_centers(
     data = data, fit = fit, center_indices = center_indices,
@@ -180,6 +191,11 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
     temporal_boundary_shape_upper = eta_hat$boundary_flags$shape_upper,
     stringsAsFactors = FALSE
   ), file.path(output_dir, "cycle23_joint_time_space_mle.csv"), row.names = FALSE)
+  utils::write.csv(
+    eta_hat$boundary_diagnostics,
+    file.path(output_dir, "cycle23_joint_time_space_temporal_boundary_diagnostics.csv"),
+    row.names = FALSE
+  )
   utils::write.csv(data.frame(
     center_rank = seq_along(center_indices), center_index = center_indices,
     recorded_timestamp = retained$recorded_timestamp[center_indices],
@@ -191,14 +207,42 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
   fast_prep_start <- proc.time()[["elapsed"]]
   fast_prep <- sunspots_joint_prepare_fast_corrections(
     data = data, fit = fit, centers = observed$centers,
-    derivative_mc_size = as.integer(derivative_mc_size), seed = as.integer(seed) + 1L,
+    derivative_mc_size = as.integer(derivative_mc_size), seed = as.integer(derivative_mc_seed),
     control = control
   )
   fast_preparation_seconds <- proc.time()[["elapsed"]] - fast_prep_start
+  numerical_diagnostics <- data.frame(
+    n = nrow(data$x),
+    n_sample_centers = length(center_indices),
+    derivative_mc_size = fast_prep$derivative_mc_size,
+    Vhat_rcond = fast_prep$diagnostics$Vhat_rcond,
+    Vhat_condition_number = fast_prep$diagnostics$Vhat_condition_number,
+    Vhat_min_positive_eigenvalue = fast_prep$Vhat_min_positive_eigenvalue,
+    Vhat_max_positive_eigenvalue = fast_prep$Vhat_max_positive_eigenvalue,
+    vhat_inversion_method = fast_prep$inversion_method,
+    vhat_regularization_added = fast_prep$regularization_added,
+    correction_all_finite = fast_prep$correction_all_finite,
+    correction_any_nonfinite = fast_prep$correction_any_nonfinite,
+    correction_nonfinite_centers = sum(!fast_prep$correction_diagnostics$correction_all_finite),
+    temporal_near_any_bound = any(eta_hat$boundary_diagnostics$near_any_bound),
+    temporal_min_distance_to_lower_bound = min(eta_hat$boundary_diagnostics$distance_to_lower),
+    temporal_min_distance_to_upper_bound = min(eta_hat$boundary_diagnostics$distance_to_upper),
+    stringsAsFactors = FALSE
+  )
+  utils::write.csv(
+    numerical_diagnostics,
+    file.path(output_dir, "cycle23_joint_time_space_numerical_diagnostics.csv"),
+    row.names = FALSE
+  )
+  utils::write.csv(
+    fast_prep$correction_diagnostics,
+    file.path(output_dir, "cycle23_joint_time_space_center_correction_diagnostics.csv"),
+    row.names = FALSE
+  )
   bootstrap_start <- proc.time()[["elapsed"]]
   bootstrap_statistics <- sunspots_time_gof_fast_statistics(
     score_observed = fast_prep$score_observed, centers = fast_prep$centers,
-    statistics = statistics, B = B, seed = as.integer(seed) + 2L,
+    statistics = statistics, B = B, seed = as.integer(bootstrap_seed),
     n_cores = n_cores, bootstrap_block_size = as.integer(bootstrap_block_size)
   )
   bootstrap_seconds <- proc.time()[["elapsed"]] - bootstrap_start
@@ -236,7 +280,7 @@ parse_sunspots_joint_time_space_args <- function(args = commandArgs(trailingOnly
   if (length(args) == 0L) return(list())
   out <- list()
   integer_keys <- c(
-    "B", "n_cores", "seed", "dequantization_seed", "derivative_mc_size",
+    "B", "n_cores", "center_seed", "dequantization_seed", "derivative_mc_seed", "bootstrap_seed", "derivative_mc_size",
     "bootstrap_block_size", "time_quad_n"
   )
   character_keys <- c(
@@ -248,7 +292,8 @@ parse_sunspots_joint_time_space_args <- function(args = commandArgs(trailingOnly
         "Options: --statistics=ks,cvm --hemisphere_regression=asymmetric|shared ",
         "--B=INTEGER --n_cores=INTEGER --n_sample_centers=INTEGER|all ",
         "--derivative_mc_size=INTEGER --bootstrap_block_size=INTEGER --time_quad_n=INTEGER ",
-        "--seed=INTEGER --dequantization_seed=INTEGER --start_date=YYYY-MM-DD ",
+        "--center_seed=INTEGER --dequantization_seed=INTEGER --derivative_mc_seed=INTEGER --bootstrap_seed=INTEGER ",
+        "--start_date=YYYY-MM-DD ",
         "--end_date=YYYY-MM-DD --output_dir=PATH ",
         "--allow_boundary_fast=true|false (exploratory only)\\n"
       ))

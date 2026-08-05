@@ -406,7 +406,8 @@ run_aos_vmf_hvmf_integral_precision_pilot <- function(
     base_seed = 20260801L,
     cvm_block_size = 50L,
     max_wall_minutes = 230L,
-    checkpoint_tasks = 10L) {
+    checkpoint_tasks = 10L,
+    mc_all_designs = FALSE) {
   integer_values <- as.integer(c(main_M, refine_M, ultra_M, mc_M, kernel_M, B, cores,
                                  base_seed, cvm_block_size, max_wall_minutes, checkpoint_tasks))
   if (any(!is.finite(integer_values)) || any(integer_values[1:5] < 0L) ||
@@ -456,7 +457,10 @@ run_aos_vmf_hvmf_integral_precision_pilot <- function(
     make_panel("main", main_M, rep(TRUE, nrow(design))),
     make_panel("refine", refine_M, design$d == 10L),
     make_panel("ultra", ultra_M, design$d == 10L & design$n == 200L),
-    make_panel("mc", mc_M, design$d == 10L & design$n == 200L),
+    make_panel(
+      "mc", mc_M,
+      if (isTRUE(mc_all_designs)) rep(TRUE, nrow(design)) else design$d == 10L & design$n == 200L
+    ),
     make_panel("kernel", kernel_M, design$d == 10L & design$n == 200L)
   )
   tasks <- do.call(rbind, panels)
@@ -483,12 +487,13 @@ run_aos_vmf_hvmf_integral_precision_pilot <- function(
     sprintf("B: %d", B), sprintf("cores: %d", cores), sprintf("base_seed: %d", base_seed),
     sprintf("main_M: %d", main_M), sprintf("refine_M: %d", refine_M),
     sprintf("ultra_M: %d", ultra_M), sprintf("mc_M: %d", mc_M), sprintf("kernel_M: %d", kernel_M),
+    sprintf("mc_all_designs: %s", isTRUE(mc_all_designs)),
     sprintf("max_wall_minutes: %d", max_wall_minutes),
     sprintf("git_head: %s", tryCatch(system2("git", c("rev-parse", "HEAD"), stdout = TRUE), error = function(e) "unavailable"))
   )
   if (file.exists(manifest_path)) {
     existing_manifest <- readLines(manifest_path, warn = FALSE)
-    compare_prefixes <- c("aos_table_design:", "B:", "base_seed:", "main_M:", "refine_M:", "ultra_M:", "mc_M:", "kernel_M:")
+    compare_prefixes <- c("aos_table_design:", "B:", "base_seed:", "main_M:", "refine_M:", "ultra_M:", "mc_M:", "kernel_M:", "mc_all_designs:")
     for (prefix in compare_prefixes) {
       old <- existing_manifest[startsWith(existing_manifest, prefix)]
       new <- manifest[startsWith(manifest, prefix)]
@@ -666,6 +671,7 @@ if (sys.nframe() == 0L) {
     base_seed = pilot_integer("seed", "20260801", 1L),
     cvm_block_size = pilot_integer("cvm-block-size", "50", 1L),
     max_wall_minutes = pilot_integer("max-wall-minutes", "230", 0L),
-    checkpoint_tasks = pilot_integer("checkpoint-tasks", "10", 1L)
+    checkpoint_tasks = pilot_integer("checkpoint-tasks", "10", 1L),
+    mc_all_designs = pilot_logical("mc-all-designs", FALSE)
   )
 }

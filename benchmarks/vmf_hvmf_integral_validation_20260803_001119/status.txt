@@ -1,0 +1,9 @@
+status: running
+started_at: 2026-08-03T00:11:19+02:00
+git_head: 1463bd4518a3895f68fedcbac1626514e9e9e2e7
+cores: 15
+production_results_modified: FALSE
+tex_modified: FALSE
+score_mc_modified: FALSE
+status: failed_or_nonconforming_results
+finished_at: 2026-08-03T00:27:08+02:00

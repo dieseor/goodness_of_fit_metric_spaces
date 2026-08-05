@@ -1,0 +1,8 @@
+Known-parameter population signal for proposed restricted Normal/LG and current vMF 3.1.
+Normal/LG P0: N_d(theta0,Sigma0), theta0=0.5e1, a_d=2d/(d+1), b_d=d/(d+1).
+Normal/LG P1: 0.5 N_d(theta0,Sigma0) + 0.5 N_d(-theta0,Sigma0).
+vMF P0: vMF(e1,kappa=d); P1: 0.5 vMF(e1,d) + 0.5 vMF(-e1,d).
+J is split-sample Monte Carlo for E[(F1,Omega(T)-F0,Omega(T))^2].
+No MLE, score derivative, Vhat, or bootstrap is used.
+dimensions: 2,5
+n_centres=128; n_profile=8000; n_eval=4000; batches=4; seed=20260826
