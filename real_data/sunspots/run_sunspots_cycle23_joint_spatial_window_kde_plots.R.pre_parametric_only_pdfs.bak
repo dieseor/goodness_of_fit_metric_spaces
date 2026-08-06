@@ -819,68 +819,6 @@ sunspots_joint_draw_contour_labels(
   invisible(NULL)
 }
 
-
-sunspots_joint_draw_parametric_sphere_panel <- function(
-    lon_seq,
-    lat_seq,
-    parametric_density,
-    parametric_thresholds,
-    x_window,
-    hdr_levels,
-    back_alpha = 0.18,
-    view_theta = 35,
-    view_phi = 18,
-    hdr_colors = c("#1f78b4", "#e31a1c", "#1B5E20")) {
-  camera <- sunspots_joint_sphere_camera(view_theta, view_phi)
-
-  graphics::plot.new()
-  graphics::plot.window(
-    xlim = c(-1.08, 1.08),
-    ylim = c(-1.08, 1.08),
-    asp = 1,
-    xaxs = "i",
-    yaxs = "i"
-  )
-  sunspots_joint_draw_sphere_outline(camera, back_alpha = back_alpha)
-
-  parametric_curves <- sunspots_joint_contour_curves_xyz(
-    lon_seq,
-    lat_seq,
-    parametric_density,
-    parametric_thresholds
-  )
-
-  for (front in c(FALSE, TRUE)) {
-    sunspots_joint_draw_density_contours(
-      curves = parametric_curves,
-      thresholds = parametric_thresholds,
-      camera = camera,
-      colors = hdr_colors,
-      lty = 1,
-      lwd = 0.75,
-      front = front,
-      back_alpha = back_alpha
-    )
-    sunspots_joint_draw_window_scatter(
-      x_window = x_window,
-      camera = camera,
-      front = front,
-      back_alpha = back_alpha
-    )
-  }
-
-  sunspots_joint_draw_contour_labels(
-    curves = parametric_curves,
-    thresholds = parametric_thresholds,
-    hdr_levels = hdr_levels,
-    camera = camera,
-    colors = hdr_colors,
-    cex = 0.54
-  )
-
-  invisible(NULL)
-}
-
 sunspots_joint_draw_contour_legend <- function(
     hdr_levels,
     hdr_colors,
@@ -1043,6 +981,7 @@ sunspots_joint_render_individual_contour_sphere_pdfs <- function(
     view_theta = 35,
     view_phi = 18,
     hdr_colors = c("#1f78b4", "#e31a1c", "#1B5E20"),
+    legend_window = 1L,
     pdf_width = 3.2,
     pdf_height = 3.2) {
   if (length(per_window) < 1L) {
@@ -1050,6 +989,14 @@ sunspots_joint_render_individual_contour_sphere_pdfs <- function(
   }
   if (length(hdr_colors) != length(hdr_levels)) {
     stop("`hdr_colors` and `hdr_levels` must have the same length.")
+  }
+
+  legend_window <- as.integer(legend_window)
+  if (length(legend_window) != 1L ||
+      !is.finite(legend_window) ||
+      legend_window < 1L ||
+      legend_window > length(per_window)) {
+    stop("`legend_window` must index one of the available windows.")
   }
 
   pdf_width <- as.numeric(pdf_width)
@@ -1092,18 +1039,25 @@ sunspots_joint_render_individual_contour_sphere_pdfs <- function(
           xpd = NA
         )
 
-        sunspots_joint_draw_parametric_sphere_panel(
+        sunspots_joint_draw_contour_sphere_panel(
           lon_seq = lon_seq,
           lat_seq = lat_seq,
           parametric_density = per_window[[i]]$parametric,
+          kde_density = per_window[[i]]$kde,
           parametric_thresholds = per_window[[i]]$hdr_parametric$threshold,
+          kde_thresholds = per_window[[i]]$hdr_kde$threshold,
           x_window = per_window[[i]]$x_window,
+          main = "",
           hdr_levels = hdr_levels,
           back_alpha = back_alpha,
           view_theta = view_theta,
           view_phi = view_phi,
           hdr_colors = hdr_colors
         )
+
+        if (i == legend_window) {
+          sunspots_joint_draw_inline_method_legend()
+        }
       },
       finally = {
         graphics::par(old_par)
@@ -1294,7 +1248,8 @@ run_sunspots_cycle23_joint_spatial_window_kde_plots <- function(
     per_window = per_window,
     output_dir = individual_pdf_dir,
     hdr_levels = hdr_levels,
-    back_alpha = back_alpha
+    back_alpha = back_alpha,
+    legend_window = 1L
   )
 
   windows_out <- windows$summary
