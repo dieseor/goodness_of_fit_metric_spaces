@@ -842,7 +842,7 @@ sunspots_joint_draw_contour_legend <- function(
   graphics::segments(0.45, 0.70, 0.58, 0.70, col = "#222222", lwd = 0.75)
   graphics::text(0.60, 0.70, "Parametric", adj = c(0, 0.5), cex = 0.82)
   graphics::segments(0.45, 0.50, 0.58, 0.50, col = "#222222", lwd = 0.75, lty = 2)
-  graphics::text(0.60, 0.50, "Nonparametric", adj = c(0, 0.5), cex = 0.82)
+  graphics::text(0.60, 0.50, "KDE", adj = c(0, 0.5), cex = 0.82)
   graphics::points(
     0.51, 0.30, pch = 16, cex = 0.65,
     col = grDevices::adjustcolor("#111111", alpha.f = 0.58)
@@ -857,7 +857,7 @@ sunspots_joint_draw_method_legend <- function() {
   graphics::plot.window(xlim = c(0, 1), ylim = c(0, 1))
   graphics::legend(
     "center",
-    legend = c("Parametric", "Nonparametric"),
+    legend = c("Parametric", "Nonparametric (KDE)"),
     col = c("#222222", "#222222"),
     lty = c(1, 2),
     lwd = c(1, 1),
@@ -946,127 +946,6 @@ sunspots_joint_render_contour_sphere_grid <- function(
   #   cex = 1.02
   # )
   invisible(output_path)
-}
-
-
-sunspots_joint_draw_inline_method_legend <- function(
-    x = -1.04,
-    y = 1.04,
-    cex = 0.52) {
-  graphics::legend(
-    x = x,
-    y = y,
-    legend = c("Parametric", "Nonparametric"),
-    col = c("#222222", "#222222"),
-    lty = c(1, 2),
-    lwd = c(0.75, 0.75),
-    bty = "n",
-    cex = cex,
-    seg.len = 1.6,
-    x.intersp = 0.45,
-    y.intersp = 0.85,
-    xjust = 0,
-    yjust = 1
-  )
-  invisible(NULL)
-}
-
-sunspots_joint_render_individual_contour_sphere_pdfs <- function(
-    lon_seq,
-    lat_seq,
-    per_window,
-    output_dir,
-    hdr_levels,
-    back_alpha = 0.18,
-    view_theta = 35,
-    view_phi = 18,
-    hdr_colors = c("#1f78b4", "#e31a1c", "#1B5E20"),
-    legend_window = 1L,
-    pdf_width = 3.2,
-    pdf_height = 3.2) {
-  if (length(per_window) < 1L) {
-    stop("`per_window` must contain at least one window.")
-  }
-  if (length(hdr_colors) != length(hdr_levels)) {
-    stop("`hdr_colors` and `hdr_levels` must have the same length.")
-  }
-
-  legend_window <- as.integer(legend_window)
-  if (length(legend_window) != 1L ||
-      !is.finite(legend_window) ||
-      legend_window < 1L ||
-      legend_window > length(per_window)) {
-    stop("`legend_window` must index one of the available windows.")
-  }
-
-  pdf_width <- as.numeric(pdf_width)
-  pdf_height <- as.numeric(pdf_height)
-  if (length(pdf_width) != 1L ||
-      length(pdf_height) != 1L ||
-      !is.finite(pdf_width) ||
-      !is.finite(pdf_height) ||
-      pdf_width <= 0 ||
-      pdf_height <= 0) {
-    stop("`pdf_width` and `pdf_height` must be positive finite scalars.")
-  }
-
-  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-  output_paths <- character(length(per_window))
-
-  for (i in seq_along(per_window)) {
-    output_paths[[i]] <- file.path(
-      output_dir,
-      sprintf("cycle23_joint_spatial_window_%02d_contours.pdf", i)
-    )
-
-    grDevices::pdf(
-      file = output_paths[[i]],
-      width = pdf_width,
-      height = pdf_height,
-      onefile = FALSE,
-      paper = "special",
-      bg = "transparent",
-      version = "1.4",
-      useDingbats = FALSE
-    )
-
-    old_par <- graphics::par(no.readonly = TRUE)
-    tryCatch(
-      {
-        graphics::par(
-          mar = c(0, 0, 0, 0),
-          oma = c(0, 0, 0, 0),
-          xpd = NA
-        )
-
-        sunspots_joint_draw_contour_sphere_panel(
-          lon_seq = lon_seq,
-          lat_seq = lat_seq,
-          parametric_density = per_window[[i]]$parametric,
-          kde_density = per_window[[i]]$kde,
-          parametric_thresholds = per_window[[i]]$hdr_parametric$threshold,
-          kde_thresholds = per_window[[i]]$hdr_kde$threshold,
-          x_window = per_window[[i]]$x_window,
-          main = "",
-          hdr_levels = hdr_levels,
-          back_alpha = back_alpha,
-          view_theta = view_theta,
-          view_phi = view_phi,
-          hdr_colors = hdr_colors
-        )
-
-        if (i == legend_window) {
-          sunspots_joint_draw_inline_method_legend()
-        }
-      },
-      finally = {
-        graphics::par(old_par)
-        grDevices::dev.off()
-      }
-    )
-  }
-
-  invisible(output_paths)
 }
 
 run_sunspots_cycle23_joint_spatial_window_kde_plots <- function(
@@ -1238,20 +1117,6 @@ run_sunspots_cycle23_joint_spatial_window_kde_plots <- function(
     back_alpha = back_alpha
   )
 
-  individual_pdf_dir <- file.path(
-    output_dir,
-    "individual_spheres_pdf"
-  )
-  individual_pdf_paths <- sunspots_joint_render_individual_contour_sphere_pdfs(
-    lon_seq = lon_seq,
-    lat_seq = lat_seq,
-    per_window = per_window,
-    output_dir = individual_pdf_dir,
-    hdr_levels = hdr_levels,
-    back_alpha = back_alpha,
-    legend_window = 1L
-  )
-
   windows_out <- windows$summary
   windows_out$center_date <- if ("calendar_day" %in% names(retained)) {
     as.character(retained$calendar_day[vapply(windows$windows, `[[`, integer(1L), "center_index")])
@@ -1289,7 +1154,6 @@ run_sunspots_cycle23_joint_spatial_window_kde_plots <- function(
     bandwidths = bandwidth_df,
     integrals = integrals_df,
     plot_path = plot_path,
-    individual_pdf_paths = individual_pdf_paths,
     output_dir = output_dir
   ))
 }
