@@ -623,13 +623,14 @@ sunspots_joint_draw_density_contours <- function(
   invisible(NULL)
 }
 
-sunspots_joint_draw_contour_labels <- function(
+
+sunspots_joint_contour_label_specs <- function(
     curves,
     thresholds,
     hdr_levels,
     camera,
-    colors,
-    cex = 0.54) {
+    cex = 0.54,
+    gap_padding = 0.012) {
 
   thresholds <- as.numeric(thresholds)
   hdr_levels <- as.numeric(hdr_levels)
@@ -638,11 +639,14 @@ sunspots_joint_draw_contour_labels <- function(
     stop("`thresholds` and `hdr_levels` must have the same length.")
   }
 
+  specs <- list()
+
   for (i in seq_along(thresholds)) {
 
     threshold <- thresholds[[i]]
 
-    matching_curves <- Filter(
+    matching_indices <- which(vapply(
+      curves,
       function(curve) {
         isTRUE(all.equal(
           curve$level,
@@ -650,12 +654,14 @@ sunspots_joint_draw_contour_labels <- function(
           tolerance = 1e-8
         ))
       },
-      curves
-    )
+      logical(1L)
+    ))
 
     candidate_runs <- list()
 
-    for (curve in matching_curves) {
+    for (curve_index in matching_indices) {
+
+      curve <- curves[[curve_index]]
 
       projected <- sunspots_joint_project_sphere_xyz(
         curve$xyz,
@@ -673,12 +679,14 @@ sunspots_joint_draw_contour_labels <- function(
           next
         }
 
-        arc_length <- sum(sqrt(
+        segment_length <- sqrt(
           diff(projected$x[idx])^2 +
             diff(projected$y[idx])^2
-        ))
+        )
+        arc_length <- sum(segment_length)
 
         candidate_runs[[length(candidate_runs) + 1L]] <- list(
+          curve_index = curve_index,
           projected = projected,
           index = idx,
           arc_length = arc_length
@@ -690,6 +698,7 @@ sunspots_joint_draw_contour_labels <- function(
       next
     }
 
+    # Retain the longest visible run, as in the previous implementation.
     best <- candidate_runs[[
       which.max(vapply(
         candidate_runs,
@@ -700,7 +709,20 @@ sunspots_joint_draw_contour_labels <- function(
     ]]
 
     idx <- best$index
-    middle <- idx[[ceiling(length(idx) / 2)]]
+
+    px <- best$projected$x[idx]
+    py <- best$projected$y[idx]
+
+    segment_length <- sqrt(
+      diff(px)^2 + diff(py)^2
+    )
+    cumulative_arc <- c(0, cumsum(segment_length))
+
+    # Put the label at the midpoint in projected arc length, rather
+    # than simply at the middle grid index.
+    target_arc <- tail(cumulative_arc, 1L) / 2
+    middle_local <- which.min(abs(cumulative_arc - target_arc))
+    middle <- idx[[middle_local]]
 
     x_label <- best$projected$x[[middle]]
     y_label <- best$projected$y[[middle]]
@@ -710,29 +732,151 @@ sunspots_joint_draw_contour_labels <- function(
       label,
       cex = cex,
       font = 2
-    ) * 1.25
-
-    label_height <- graphics::strheight(
-      label,
-      cex = cex,
-      font = 2
-    ) * 1.35
-
-    # Cubre un pequeño tramo de la curva para insertar la etiqueta.
-    graphics::rect(
-      xleft = x_label - label_width / 2,
-      ybottom = y_label - label_height / 2,
-      xright = x_label + label_width / 2,
-      ytop = y_label + label_height / 2,
-      col = "white",
-      border = NA
     )
 
-    graphics::text(
+    # Remove only the contour segment occupied by the label,
+    # plus a very small margin on either side.
+    half_gap <- label_width / 2 + gap_padding
+
+    gap_local <- which(
+      abs(cumulative_arc - cumulative_arc[[middle_local]]) <= half_gap
+    )
+
+    # Ensure that a genuine gap is visible even if the projected
+    # contour happens to be sampled relatively coarsely.
+    if (length(gap_local) < 2L) {
+      gap_local <- seq.int(
+        max(1L, middle_local - 1L),
+        min(length(idx), middle_local + 1L)
+      )
+    }
+
+    specs[[length(specs) + 1L]] <- list(
+      threshold_index = i,
+      curve_index = best$curve_index,
       x = x_label,
       y = y_label,
-      labels = label,
-      col = colors[[i]],
+      label = label,
+      gap_index = idx[gap_local]
+    )
+  }
+
+  specs
+}
+
+
+sunspots_joint_draw_density_contours_inline <- function(
+    curves,
+    thresholds,
+    camera,
+    colors,
+    lty,
+    lwd,
+    front,
+    back_alpha,
+    label_specs = list()) {
+
+  thresholds <- as.numeric(thresholds)
+
+  for (curve_index in seq_along(curves)) {
+
+    curve <- curves[[curve_index]]
+    color_index <- which.min(abs(thresholds - curve$level))
+    alpha <- if (isTRUE(front)) 1 else back_alpha
+
+    curve_specs <- Filter(
+      function(spec) identical(spec$curve_index, curve_index),
+      label_specs
+    )
+
+    gap_index <- integer(0L)
+
+    if (isTRUE(front) && length(curve_specs) > 0L) {
+      gap_index <- sort(unique(unlist(
+        lapply(curve_specs, function(spec) spec$gap_index),
+        use.names = FALSE
+      )))
+    }
+
+    # No label on this curve (or rear hemisphere): use the ordinary
+    # drawing routine.
+    if (length(gap_index) == 0L) {
+      sunspots_joint_draw_projected_curve(
+        xyz = curve$xyz,
+        camera = camera,
+        color = colors[[color_index]],
+        lty = lty,
+        lwd = lwd,
+        front = front,
+        alpha = alpha
+      )
+      next
+    }
+
+    # Front contour carrying a label: draw every visible part except
+    # the short interval reserved for the text.
+    projected <- sunspots_joint_project_sphere_xyz(
+      curve$xyz,
+      camera
+    )
+
+    runs <- sunspots_joint_visibility_runs(
+      projected$depth,
+      front = front
+    )
+
+    draw_color <- grDevices::adjustcolor(
+      colors[[color_index]],
+      alpha.f = alpha
+    )
+
+    for (idx in runs) {
+
+      keep <- !(idx %in% gap_index)
+
+      if (sum(keep) < 2L) {
+        next
+      }
+
+      keep_runs <- rle(keep)
+      run_end <- cumsum(keep_runs$lengths)
+      run_start <- c(1L, head(run_end, -1L) + 1L)
+
+      draw_runs <- which(
+        keep_runs$values &
+          keep_runs$lengths >= 2L
+      )
+
+      for (j in draw_runs) {
+        local_idx <- run_start[[j]]:run_end[[j]]
+        curve_idx <- idx[local_idx]
+
+        graphics::lines(
+          projected$x[curve_idx],
+          projected$y[curve_idx],
+          col = draw_color,
+          lty = lty,
+          lwd = lwd
+        )
+      }
+    }
+  }
+
+  invisible(NULL)
+}
+
+
+sunspots_joint_draw_contour_labels <- function(
+    label_specs,
+    colors,
+    cex = 0.54) {
+
+  for (spec in label_specs) {
+    graphics::text(
+      x = spec$x,
+      y = spec$y,
+      labels = spec$label,
+      col = colors[[spec$threshold_index]],
       cex = cex,
       font = 2
     )
@@ -740,7 +884,6 @@ sunspots_joint_draw_contour_labels <- function(
 
   invisible(NULL)
 }
-
 
 
 sunspots_joint_draw_contour_sphere_panel <- function(
@@ -776,9 +919,17 @@ sunspots_joint_draw_contour_sphere_panel <- function(
     lon_seq, lat_seq, kde_density, kde_thresholds
   )
 
+  label_specs <- sunspots_joint_contour_label_specs(
+    curves = parametric_curves,
+    thresholds = parametric_thresholds,
+    hdr_levels = hdr_levels,
+    camera = camera,
+    cex = 0.54
+  )
+
   # Rear geometry is drawn first; front geometry is then overlaid.
   for (front in c(FALSE, TRUE)) {
-    sunspots_joint_draw_density_contours(
+    sunspots_joint_draw_density_contours_inline(
       curves = parametric_curves,
       thresholds = parametric_thresholds,
       camera = camera,
@@ -786,7 +937,8 @@ sunspots_joint_draw_contour_sphere_panel <- function(
       lty = 1,
       lwd = 0.75,
       front = front,
-      back_alpha = back_alpha
+      back_alpha = back_alpha,
+      label_specs = label_specs
     )
     sunspots_joint_draw_density_contours(
       curves = kde_curves,
@@ -807,10 +959,7 @@ sunspots_joint_draw_contour_sphere_panel <- function(
   }
 
 sunspots_joint_draw_contour_labels(
-  curves = parametric_curves,
-  thresholds = parametric_thresholds,
-  hdr_levels = hdr_levels,
-  camera = camera,
+  label_specs = label_specs,
   colors = hdr_colors,
   cex = 0.54
 )
@@ -850,8 +999,16 @@ sunspots_joint_draw_parametric_sphere_panel <- function(
     parametric_thresholds
   )
 
+  label_specs <- sunspots_joint_contour_label_specs(
+    curves = parametric_curves,
+    thresholds = parametric_thresholds,
+    hdr_levels = hdr_levels,
+    camera = camera,
+    cex = 0.54
+  )
+
   for (front in c(FALSE, TRUE)) {
-    sunspots_joint_draw_density_contours(
+    sunspots_joint_draw_density_contours_inline(
       curves = parametric_curves,
       thresholds = parametric_thresholds,
       camera = camera,
@@ -859,7 +1016,8 @@ sunspots_joint_draw_parametric_sphere_panel <- function(
       lty = 1,
       lwd = 0.75,
       front = front,
-      back_alpha = back_alpha
+      back_alpha = back_alpha,
+      label_specs = label_specs
     )
     sunspots_joint_draw_window_scatter(
       x_window = x_window,
@@ -870,10 +1028,7 @@ sunspots_joint_draw_parametric_sphere_panel <- function(
   }
 
   sunspots_joint_draw_contour_labels(
-    curves = parametric_curves,
-    thresholds = parametric_thresholds,
-    hdr_levels = hdr_levels,
-    camera = camera,
+    label_specs = label_specs,
     colors = hdr_colors,
     cex = 0.54
   )
