@@ -28,6 +28,20 @@ sunspots_joint_require_dirstats <- function() {
   invisible(TRUE)
 }
 
+
+sunspots_joint_require_plot3d <- function() {
+  if (!requireNamespace("plot3D", quietly = TRUE)) {
+    stop(
+      paste(
+        "The plot3D package is required for the spherical density plots.",
+        "Install it with install.packages('plot3D')."
+      ),
+      call. = FALSE
+    )
+  }
+  invisible(TRUE)
+}
+
 sunspots_joint_lon_lat_from_xyz <- function(x) {
   x <- jp_normalize_unit_matrix(x, arg_name = "`x`", min_ncol = 3L)
   data.frame(
@@ -281,6 +295,377 @@ sunspots_joint_load_window_plot_inputs <- function(input_csv,
   list(retained = retained, fit = list(theta_hat = theta_hat, eta_hat = eta_hat), source = "refit")
 }
 
+sunspots_joint_sphere_surface_matrices <- function(lon_seq, lat_seq) {
+  lon_seq <- as.numeric(lon_seq)
+  lat_seq <- as.numeric(lat_seq)
+  if (length(lon_seq) < 3L || length(lat_seq) < 3L ||
+      any(!is.finite(lon_seq)) || any(!is.finite(lat_seq))) {
+    stop("`lon_seq` and `lat_seq` must contain at least three finite values.")
+  }
+
+  lon_rad <- lon_seq * pi / 180
+  lat_rad <- lat_seq * pi / 180
+  x <- outer(cos(lon_rad), cos(lat_rad), `*`)
+  y <- outer(sin(lon_rad), cos(lat_rad), `*`)
+  z <- matrix(
+    rep(sin(lat_rad), each = length(lon_rad)),
+    nrow = length(lon_rad),
+    ncol = length(lat_rad)
+  )
+
+  close_seam <- function(m) rbind(m, m[1L, , drop = FALSE])
+  list(
+    x = close_seam(x),
+    y = close_seam(y),
+    z = close_seam(z)
+  )
+}
+
+sunspots_joint_sphere_view_direction <- function(theta = 35, phi = 18) {
+  theta <- as.numeric(theta) * pi / 180
+  phi <- as.numeric(phi) * pi / 180
+  direction <- c(
+    cos(phi) * cos(theta),
+    cos(phi) * sin(theta),
+    sin(phi)
+  )
+  direction / sqrt(sum(direction^2))
+}
+
+sunspots_joint_visible_curve_runs <- function(xyz, view_direction) {
+  xyz <- as.matrix(xyz)
+  view_direction <- as.numeric(view_direction)
+  if (nrow(xyz) < 2L) return(list())
+
+  visible <- drop(xyz %*% view_direction) >= 0
+  runs <- rle(visible)
+  run_end <- cumsum(runs$lengths)
+  run_start <- c(1L, head(run_end, -1L) + 1L)
+  keep <- which(runs$values & runs$lengths >= 2L)
+
+  lapply(keep, function(i) {
+    xyz[run_start[[i]]:run_end[[i]], , drop = FALSE]
+  })
+}
+
+sunspots_joint_add_hdr_curves_3d <- function(
+    lon_seq,
+    lat_seq,
+    density_matrix,
+    thresholds,
+    view_direction,
+    radius = 1.008,
+    contour_colors = c("#1f78b4", "#e31a1c", "#111111")) {
+  thresholds <- as.numeric(thresholds)
+  if (length(thresholds) == 0L) return(invisible(NULL))
+
+  curves <- grDevices::contourLines(
+    x = lon_seq,
+    y = lat_seq,
+    z = density_matrix,
+    levels = thresholds
+  )
+
+  for (curve in curves) {
+    xyz <- sunspots_joint_xyz_from_lon_lat(curve$x, curve$y) * radius
+    curve_color <- contour_colors[[
+      which.min(abs(thresholds - curve$level))
+    ]]
+    visible_runs <- sunspots_joint_visible_curve_runs(
+      xyz = xyz,
+      view_direction = view_direction
+    )
+    for (run in visible_runs) {
+      plot3D::lines3D(
+        x = run[, 1L],
+        y = run[, 2L],
+        z = run[, 3L],
+        add = TRUE,
+        col = curve_color,
+        lwd = 1.15,
+        colkey = FALSE
+      )
+    }
+  }
+
+  invisible(NULL)
+}
+
+sunspots_joint_add_sphere_graticule <- function(
+    view_direction,
+    radius = 1.004,
+    color = grDevices::adjustcolor("#303030", alpha.f = 0.20)) {
+  lon_dense <- seq(-180, 180, length.out = 361L)
+  lat_dense <- seq(-90, 90, length.out = 181L)
+
+  add_visible_line <- function(xyz) {
+    visible_runs <- sunspots_joint_visible_curve_runs(
+      xyz = xyz * radius,
+      view_direction = view_direction
+    )
+    for (run in visible_runs) {
+      plot3D::lines3D(
+        x = run[, 1L],
+        y = run[, 2L],
+        z = run[, 3L],
+        add = TRUE,
+        col = color,
+        lwd = 0.45,
+        colkey = FALSE
+      )
+    }
+  }
+
+  for (latitude in c(-60, -30, 0, 30, 60)) {
+    add_visible_line(
+      sunspots_joint_xyz_from_lon_lat(
+        lon_dense,
+        rep(latitude, length(lon_dense))
+      )
+    )
+  }
+  for (longitude in seq(-180, 120, by = 60)) {
+    add_visible_line(
+      sunspots_joint_xyz_from_lon_lat(
+        rep(longitude, length(lat_dense)),
+        lat_dense
+      )
+    )
+  }
+
+  invisible(NULL)
+}
+
+sunspots_joint_draw_sphere_density_panel <- function(
+    lon_seq,
+    lat_seq,
+    density_values,
+    x_window,
+    hdr_thresholds,
+    density_lim,
+    palette_colors,
+    main,
+    view_theta = 35,
+    view_phi = 18) {
+  n_lon <- length(lon_seq)
+  n_lat <- length(lat_seq)
+  density_values <- as.numeric(density_values)
+  if (length(density_values) != n_lon * n_lat) {
+    stop("Density grid length is inconsistent with longitude/latitude grid.")
+  }
+
+  density_matrix <- matrix(
+    density_values,
+    nrow = n_lon,
+    ncol = n_lat,
+    byrow = FALSE
+  )
+  density_closed <- rbind(
+    density_matrix,
+    density_matrix[1L, , drop = FALSE]
+  )
+  sphere <- sunspots_joint_sphere_surface_matrices(lon_seq, lat_seq)
+  view_direction <- sunspots_joint_sphere_view_direction(
+    theta = view_theta,
+    phi = view_phi
+  )
+
+  plot3D::surf3D(
+    x = sphere$x,
+    y = sphere$y,
+    z = sphere$z,
+    colvar = density_closed,
+    col = palette_colors,
+    clim = density_lim,
+    colkey = FALSE,
+    border = NA,
+    lighting = TRUE,
+    ltheta = 110,
+    lphi = 25,
+    theta = view_theta,
+    phi = view_phi,
+    d = 2.35,
+    expand = 0.92,
+    xlim = c(-1.08, 1.08),
+    ylim = c(-1.08, 1.08),
+    zlim = c(-1.08, 1.08),
+    axes = FALSE,
+    box = FALSE,
+    bty = "n",
+    main = main,
+    cex.main = 0.72
+  )
+
+  sunspots_joint_add_sphere_graticule(
+    view_direction = view_direction
+  )
+  sunspots_joint_add_hdr_curves_3d(
+    lon_seq = lon_seq,
+    lat_seq = lat_seq,
+    density_matrix = density_matrix,
+    thresholds = hdr_thresholds,
+    view_direction = view_direction
+  )
+
+  x_window <- jp_normalize_unit_matrix(
+    x_window,
+    arg_name = "`x_window`",
+    min_ncol = 3L
+  )
+  visible <- drop(x_window %*% view_direction) >= 0
+  x_visible <- x_window[visible, , drop = FALSE] * 1.013
+  if (nrow(x_visible) > 0L) {
+    plot3D::points3D(
+      x = x_visible[, 1L],
+      y = x_visible[, 2L],
+      z = x_visible[, 3L],
+      add = TRUE,
+      colvar = NULL,
+      col = grDevices::adjustcolor("#111111", alpha.f = 0.48),
+      pch = 16,
+      cex = 0.32,
+      colkey = FALSE
+    )
+  }
+
+  invisible(NULL)
+}
+
+sunspots_joint_draw_common_density_key <- function(
+    density_lim,
+    palette_colors) {
+  graphics::plot.new()
+  graphics::plot.window(
+    xlim = density_lim,
+    ylim = c(0, 1),
+    xaxs = "i",
+    yaxs = "i"
+  )
+  breaks <- seq(
+    density_lim[[1L]],
+    density_lim[[2L]],
+    length.out = length(palette_colors) + 1L
+  )
+  graphics::rect(
+    xleft = head(breaks, -1L),
+    ybottom = 0,
+    xright = tail(breaks, -1L),
+    ytop = 1,
+    col = palette_colors,
+    border = NA
+  )
+  graphics::axis(
+    side = 1,
+    at = pretty(density_lim),
+    cex.axis = 0.78,
+    tck = -0.25
+  )
+  graphics::box()
+  graphics::mtext("Common density scale", side = 1, line = 1.55, cex = 0.82)
+  invisible(NULL)
+}
+
+sunspots_joint_render_sphere_grid <- function(
+    lon_seq,
+    lat_seq,
+    per_window,
+    windows_summary,
+    output_path,
+    density_lim,
+    palette_colors = hcl.colors(256L, palette = "YlOrRd", rev = FALSE),
+    view_theta = 35,
+    view_phi = 18) {
+  sunspots_joint_require_plot3d()
+
+  density_lim <- as.numeric(density_lim)
+  if (length(density_lim) != 2L || any(!is.finite(density_lim)) ||
+      density_lim[[2L]] < density_lim[[1L]]) {
+    stop("`density_lim` must contain two ordered finite values.")
+  }
+  if (density_lim[[2L]] == density_lim[[1L]]) {
+    padding <- max(abs(density_lim[[1L]]), 1) * 1e-8
+    density_lim <- density_lim + c(-padding, padding)
+  }
+
+  grDevices::png(
+    filename = output_path,
+    width = 3000,
+    height = 1450,
+    res = 200,
+    bg = "white"
+  )
+  old_par <- graphics::par(no.readonly = TRUE)
+  on.exit({
+    graphics::par(old_par)
+    grDevices::dev.off()
+  }, add = TRUE)
+
+  graphics::layout(
+    matrix(c(seq_len(10L), rep(11L, 5L)), nrow = 3L, byrow = TRUE),
+    heights = c(1, 1, 0.11)
+  )
+  graphics::par(
+    mar = c(0.05, 0.05, 1.65, 0.05),
+    oma = c(0.15, 0.15, 2.4, 0.15)
+  )
+
+  for (row_type in c("parametric", "kde")) {
+    for (i in seq_len(nrow(windows_summary))) {
+      density_values <- if (identical(row_type, "parametric")) {
+        per_window[[i]]$parametric
+      } else {
+        per_window[[i]]$kde
+      }
+      hdr_thresholds <- if (identical(row_type, "parametric")) {
+        per_window[[i]]$hdr_parametric$threshold
+      } else {
+        per_window[[i]]$hdr_kde$threshold
+      }
+      row_label <- if (identical(row_type, "parametric")) {
+        "Parametric"
+      } else {
+        "KDE"
+      }
+      panel_title <- sprintf(
+        "%s | W%d: %.0f-%.0f%% | n=%d",
+        row_label,
+        i,
+        100 * windows_summary$lower_rank_level[[i]],
+        100 * windows_summary$upper_rank_level[[i]],
+        windows_summary$n[[i]]
+      )
+
+      sunspots_joint_draw_sphere_density_panel(
+        lon_seq = lon_seq,
+        lat_seq = lat_seq,
+        density_values = density_values,
+        x_window = per_window[[i]]$x_window,
+        hdr_thresholds = hdr_thresholds,
+        density_lim = density_lim,
+        palette_colors = palette_colors,
+        main = panel_title,
+        view_theta = view_theta,
+        view_phi = view_phi
+      )
+    }
+  }
+
+  graphics::par(mar = c(2.3, 4, 0.15, 4))
+  sunspots_joint_draw_common_density_key(
+    density_lim = density_lim,
+    palette_colors = palette_colors
+  )
+  graphics::mtext(
+    "Cycle 23 spatial windows: conditional parametric density vs directional KDE",
+    side = 3,
+    outer = TRUE,
+    line = 0.65,
+    cex = 1.05
+  )
+
+  invisible(output_path)
+}
+
 run_sunspots_cycle23_joint_spatial_window_kde_plots <- function(
     input_csv = file.path("real_data", "sunspots", "output", "sunspots_cycle23_s2_all.csv"),
     output_dir = file.path("real_data", "sunspots", "output", "cycle23_joint_spatial_window_kde"),
@@ -295,6 +680,7 @@ run_sunspots_cycle23_joint_spatial_window_kde_plots <- function(
     hdr_levels = c(0.50, 0.80, 0.95),
     control = list()) {
   sunspots_joint_require_dirstats()
+  sunspots_joint_require_plot3d()
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   hemisphere_regression <- sunspots_time_varying_normalize_hemisphere_regression(hemisphere_regression)
   n_lon <- as.integer(n_lon)
@@ -413,57 +799,19 @@ run_sunspots_cycle23_joint_spatial_window_kde_plots <- function(
   )
 
   palette_colors <- hcl.colors(256L, palette = "YlOrRd", rev = FALSE)
-  plot_path <- file.path(output_dir, "cycle23_joint_spatial_windows_parametric_vs_kde.png")
-  grDevices::png(plot_path, width = 2400, height = 1200, res = 150)
-  old_par <- par(mfrow = c(2, nrow(windows$summary)), mar = c(2.4, 2.6, 2.4, 1.2), oma = c(0, 0, 3, 0))
-  on.exit({
-    par(old_par)
-    grDevices::dev.off()
-  }, add = TRUE)
-
-  for (row_type in c("parametric", "kde")) {
-    for (i in seq_len(nrow(windows$summary))) {
-      density_values <- if (identical(row_type, "parametric")) per_window[[i]]$parametric else per_window[[i]]$kde
-      zmat <- matrix(density_values, nrow = length(lon_seq), ncol = length(lat_seq), byrow = FALSE)
-      image(
-        x = lon_seq,
-        y = lat_seq,
-        z = zmat,
-        col = palette_colors,
-        zlim = zlim,
-        xlim = c(-180, 180),
-        ylim = c(-90, 90),
-        xlab = if (identical(row_type, "kde")) "Longitude (degrees)" else "",
-        ylab = if (i == 1L) {
-          if (identical(row_type, "parametric")) "Parametric" else "KDE"
-        } else "",
-        main = sprintf("W%d (%.2f, %.2f] | n=%d", i,
-                       windows$summary$lower_rank_level[[i]],
-                       windows$summary$upper_rank_level[[i]],
-                       windows$summary$n[[i]])
-      )
-      contour_levels <- if (identical(row_type, "parametric")) {
-        per_window[[i]]$hdr_parametric$threshold
-      } else {
-        per_window[[i]]$hdr_kde$threshold
-      }
-      contour(
-        x = lon_seq,
-        y = lat_seq,
-        z = zmat,
-        levels = contour_levels,
-        add = TRUE,
-        drawlabels = FALSE,
-        lwd = 1.1,
-        col = c("#1f78b4", "#e31a1c", "#111111")
-      )
-      ll <- sunspots_joint_lon_lat_from_xyz(per_window[[i]]$x_window)
-      points(ll$lon_deg, ll$lat_deg, pch = 16, cex = 0.22,
-             col = grDevices::adjustcolor("#111111", alpha.f = 0.35))
-      box()
-    }
-  }
-  mtext("Cycle 23 spatial windows: conditional parametric density vs DirStats KDE", outer = TRUE, cex = 1.2)
+  plot_path <- file.path(
+    output_dir,
+    "cycle23_joint_spatial_windows_parametric_vs_kde_spheres.png"
+  )
+  sunspots_joint_render_sphere_grid(
+    lon_seq = lon_seq,
+    lat_seq = lat_seq,
+    per_window = per_window,
+    windows_summary = windows$summary,
+    output_path = plot_path,
+    density_lim = zlim,
+    palette_colors = palette_colors
+  )
 
   windows_out <- windows$summary
   windows_out$center_date <- if ("calendar_day" %in% names(retained)) {
@@ -487,6 +835,8 @@ run_sunspots_cycle23_joint_spatial_window_kde_plots <- function(
     hdr_levels = paste(as.numeric(hdr_levels), collapse = ","),
     n_lon = n_lon,
     n_lat = n_lat,
+    plot_geometry = "sphere_3d",
+    plot_backend = "plot3D::surf3D",
     from_joint_output_dir = from_joint_output_dir %||% "",
     stringsAsFactors = FALSE
   ), file.path(output_dir, "cycle23_joint_spatial_window_metadata.csv"), row.names = FALSE)

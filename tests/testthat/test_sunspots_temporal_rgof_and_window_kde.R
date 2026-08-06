@@ -76,3 +76,25 @@ test_that("DirStats KDE integral is finite and close to one on S2", {
   expect_true(is.finite(integral))
   expect_equal(integral, 1, tolerance = 0.08)
 })
+
+
+test_that("sphere surface grid lies on S2 and closes the longitude seam", {
+  lon_seq <- seq(-180, 120, by = 60)
+  lat_seq <- seq(-90, 90, by = 30)
+  sphere <- sunspots_joint_sphere_surface_matrices(lon_seq, lat_seq)
+
+  expected_dim <- c(length(lon_seq) + 1L, length(lat_seq))
+  expect_equal(dim(sphere$x), expected_dim)
+  expect_equal(dim(sphere$y), expected_dim)
+  expect_equal(dim(sphere$z), expected_dim)
+
+  radii <- sqrt(sphere$x^2 + sphere$y^2 + sphere$z^2)
+  expect_equal(
+    radii,
+    matrix(1, nrow = expected_dim[[1L]], ncol = expected_dim[[2L]]),
+    tolerance = 1e-12
+  )
+  expect_equal(sphere$x[1L, ], sphere$x[nrow(sphere$x), ], tolerance = 1e-12)
+  expect_equal(sphere$y[1L, ], sphere$y[nrow(sphere$y), ], tolerance = 1e-12)
+  expect_equal(sphere$z[1L, ], sphere$z[nrow(sphere$z), ], tolerance = 1e-12)
+})
