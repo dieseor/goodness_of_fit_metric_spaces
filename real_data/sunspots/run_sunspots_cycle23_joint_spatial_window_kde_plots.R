@@ -715,11 +715,7 @@ sunspots_joint_draw_contour_legend <- function(
     col = grDevices::adjustcolor("#111111", alpha.f = 0.58)
   )
   graphics::text(0.60, 0.30, "Observed sunspots", adj = c(0, 0.5), cex = 0.82)
-  graphics::text(
-    0.03, 0.10,
-    sprintf("Rear contours and points: alpha = %.2f", back_alpha),
-    adj = c(0, 0.5), cex = 0.78
-  )
+
   invisible(NULL)
 }
 
