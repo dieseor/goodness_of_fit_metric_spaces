@@ -314,7 +314,7 @@ sunspots_joint_eval_window_densities <- function(x_grid,
                                                  theta_hat,
                                                  bandwidth_seed,
                                                  hdr_levels = c(0.50, 0.80, 0.95),
-                                                 bandwidth_starts = c(0.07, 0.10, 0.15, 0.25, 0.50, 1.00, 2.00),bandwidth_multiplier = 1,
+                                                 bandwidth_starts = c(0.25),bandwidth_multiplier = 1,
                                                  area_weights = NULL) {
   x_grid <- jp_normalize_unit_matrix(x_grid, arg_name = "`x_grid`", min_ncol = 3L)
   x_window <- jp_normalize_unit_matrix(x_window, arg_name = "`x_window`", min_ncol = 3L)
@@ -574,8 +574,8 @@ sunspots_joint_draw_window_scatter <- function(
     camera,
     front,
     back_alpha = 0.18,
-    point_cex = 0.34) {
-  x_window <- jp_normalize_unit_matrix(
+    point_cex = 75) {
+    x_window <- jp_normalize_unit_matrix(
     x_window,
     arg_name = "`x_window`",
     min_ncol = 3L
@@ -620,6 +620,126 @@ sunspots_joint_draw_density_contours <- function(
   invisible(NULL)
 }
 
+sunspots_joint_draw_contour_labels <- function(
+    curves,
+    thresholds,
+    hdr_levels,
+    camera,
+    colors,
+    cex = 0.54) {
+
+  thresholds <- as.numeric(thresholds)
+  hdr_levels <- as.numeric(hdr_levels)
+
+  if (length(thresholds) != length(hdr_levels)) {
+    stop("`thresholds` and `hdr_levels` must have the same length.")
+  }
+
+  for (i in seq_along(thresholds)) {
+
+    threshold <- thresholds[[i]]
+
+    matching_curves <- Filter(
+      function(curve) {
+        isTRUE(all.equal(
+          curve$level,
+          threshold,
+          tolerance = 1e-8
+        ))
+      },
+      curves
+    )
+
+    candidate_runs <- list()
+
+    for (curve in matching_curves) {
+
+      projected <- sunspots_joint_project_sphere_xyz(
+        curve$xyz,
+        camera
+      )
+
+      front_runs <- sunspots_joint_visibility_runs(
+        projected$depth,
+        front = TRUE
+      )
+
+      for (idx in front_runs) {
+
+        if (length(idx) < 5L) {
+          next
+        }
+
+        arc_length <- sum(sqrt(
+          diff(projected$x[idx])^2 +
+            diff(projected$y[idx])^2
+        ))
+
+        candidate_runs[[length(candidate_runs) + 1L]] <- list(
+          projected = projected,
+          index = idx,
+          arc_length = arc_length
+        )
+      }
+    }
+
+    if (length(candidate_runs) == 0L) {
+      next
+    }
+
+    best <- candidate_runs[[
+      which.max(vapply(
+        candidate_runs,
+        `[[`,
+        numeric(1L),
+        "arc_length"
+      ))
+    ]]
+
+    idx <- best$index
+    middle <- idx[[ceiling(length(idx) / 2)]]
+
+    x_label <- best$projected$x[[middle]]
+    y_label <- best$projected$y[[middle]]
+    label <- sprintf("%.0f%%", 100 * hdr_levels[[i]])
+
+    label_width <- graphics::strwidth(
+      label,
+      cex = cex,
+      font = 2
+    ) * 1.25
+
+    label_height <- graphics::strheight(
+      label,
+      cex = cex,
+      font = 2
+    ) * 1.35
+
+    # Cubre un pequeño tramo de la curva para insertar la etiqueta.
+    graphics::rect(
+      xleft = x_label - label_width / 2,
+      ybottom = y_label - label_height / 2,
+      xright = x_label + label_width / 2,
+      ytop = y_label + label_height / 2,
+      col = "white",
+      border = NA
+    )
+
+    graphics::text(
+      x = x_label,
+      y = y_label,
+      labels = label,
+      col = colors[[i]],
+      cex = cex,
+      font = 2
+    )
+  }
+
+  invisible(NULL)
+}
+
+
+
 sunspots_joint_draw_contour_sphere_panel <- function(
     lon_seq,
     lat_seq,
@@ -629,10 +749,11 @@ sunspots_joint_draw_contour_sphere_panel <- function(
     kde_thresholds,
     x_window,
     main,
+    hdr_levels,
     back_alpha = 0.18,
     view_theta = 35,
     view_phi = 18,
-    hdr_colors = c("#1f78b4", "#e31a1c", "#111111")) {
+    hdr_colors = c("#1f78b4", "#e31a1c", "#1B5E20")) {
   camera <- sunspots_joint_sphere_camera(view_theta, view_phi)
 
   graphics::plot.new()
@@ -682,6 +803,15 @@ sunspots_joint_draw_contour_sphere_panel <- function(
     )
   }
 
+sunspots_joint_draw_contour_labels(
+  curves = parametric_curves,
+  thresholds = parametric_thresholds,
+  hdr_levels = hdr_levels,
+  camera = camera,
+  colors = hdr_colors,
+  cex = 0.54
+)
+
   graphics::title(main = main, cex.main = 0.78, line = 0.25)
   invisible(NULL)
 }
@@ -729,7 +859,7 @@ sunspots_joint_render_contour_sphere_grid <- function(
     back_alpha = 0.18,
     view_theta = 35,
     view_phi = 18,
-    hdr_colors = c("#1f78b4", "#e31a1c", "#111111")) {
+    hdr_colors = c("#1f78b4", "#e31a1c", "#1B5E20")) {
   back_alpha <- as.numeric(back_alpha)
   if (length(back_alpha) != 1L || !is.finite(back_alpha) ||
       back_alpha < 0 || back_alpha > 1) {
@@ -778,6 +908,7 @@ sunspots_joint_render_contour_sphere_grid <- function(
       kde_thresholds = per_window[[i]]$hdr_kde$threshold,
       x_window = per_window[[i]]$x_window,
       main = panel_title,
+      hdr_levels = hdr_levels,
       back_alpha = back_alpha,
       view_theta = view_theta,
       view_phi = view_phi,
@@ -995,6 +1126,8 @@ run_sunspots_cycle23_joint_spatial_window_kde_plots <- function(
     plot_geometry = "orthographic_sphere_contours",
     plot_backend = "base_graphics_projection",
     back_alpha = back_alpha,
+    bandwidth_starts = paste(bandwidth_starts, collapse = ","),
+    bandwidth_multiplier = bandwidth_multiplier,
     from_joint_output_dir = from_joint_output_dir %||% "",
     stringsAsFactors = FALSE
   ), file.path(output_dir, "cycle23_joint_spatial_window_metadata.csv"), row.names = FALSE)
@@ -1019,7 +1152,7 @@ parse_sunspots_joint_spatial_window_kde_args <- function(args = commandArgs(trai
         "Options: --input_csv=PATH --output_dir=PATH --start_date=YYYY-MM-DD --end_date=YYYY-MM-DD ",
         "--dequantization_seed=INTEGER --bandwidth_seed=INTEGER --hemisphere_regression=asymmetric|shared ",
         "--from_joint_output_dir=PATH --n_lon=INTEGER --n_lat=INTEGER ",
-        "--hdr_levels=0.5,0.8,0.95 --back_alpha=NUMBER\n"
+        "--hdr_levels=0.5,0.8,0.95 --hdr_levels=0.5,0.8,0.95 --back_alpha=NUMBER --bandwidth_multiplier=NUMBER\n"
       ))
       quit(save = "no", status = 0L)
     }
@@ -1031,8 +1164,15 @@ parse_sunspots_joint_spatial_window_kde_args <- function(args = commandArgs(trai
       out[[key]] <- value
     }
     if (key %in% integer_keys) out[[key]] <- as.integer(value)
-    if (identical(key, "hdr_levels")) out[[key]] <- as.numeric(strsplit(value, ",", fixed = TRUE)[[1L]])
-    if (identical(key, "back_alpha")) out[[key]] <- as.numeric(value)
+    if (identical(key, "hdr_levels")) {
+      out[[key]] <- as.numeric(strsplit(value, ",", fixed = TRUE)[[1L]])
+    }
+    if (identical(key, "back_alpha")) {
+      out[[key]] <- as.numeric(value)
+    }
+    if (identical(key, "bandwidth_multiplier")) {
+      out[[key]] <- as.numeric(value)
+    }
   }
   out
 }
