@@ -93,18 +93,31 @@ test_that("two-beta time law is normalized, canonically ordered, and has analyti
   expect_gte(fit$n_successful_starts, 1L)
 })
 
-test_that("temporal beta-mixture selection minimizes the finite objective and warns if selected fit failed", {
+test_that("temporal beta-mixture selection only accepts converged fits", {
   fits <- list(
     list(value = 1, convergence = 1L, par = rep(0, 5L), message = "iteration limit"),
     list(value = 2, convergence = 0L, par = rep(0, 5L), message = "converged")
   )
-  expect_warning(
-    selected <- sunspots_joint_time_select_fit(fits),
-    "convergence != 0"
-  )
-  expect_identical(selected$fit$convergence, 1L)
+
+  selected <- sunspots_joint_time_select_fit(fits)
+
+  expect_identical(selected$fit$convergence, 0L)
+  expect_equal(selected$fit$value, 2)
+  expect_identical(selected$n_finite_fits, 2L)
   expect_identical(selected$n_converged_fits, 1L)
-  expect_false(selected$selected_converged)
+  expect_true(selected$selected_converged)
+})
+
+test_that("temporal beta-mixture selection fails if no fit converges", {
+  fits <- list(
+    list(value = 1, convergence = 1L, par = rep(0, 5L), message = "iteration limit"),
+    list(value = 2, convergence = 52L, par = rep(0, 5L), message = "line-search failure")
+  )
+
+  expect_error(
+    sunspots_joint_time_select_fit(fits),
+    "No temporal two-beta-mixture optimization converged"
+  )
 })
 
 test_that("temporal information criteria and boundary diagnostics use the fixed five parameters", {
@@ -243,4 +256,57 @@ test_that("the slow parametric reference refits the joint model on small samples
   expect_identical(names(values), c("ks", "cvm"))
   expect_true(all(is.finite(as.matrix(values))))
   expect_identical(dim(attr(values, "temporal_boundary_flags")), c(2L, 3L))
+})
+
+test_that("two-beta temporal formulas support positive shapes below one", {
+  eta <- sunspots_joint_time_canonicalize_eta(list(
+    weight1 = 0.4,
+    alpha1 = 0.7,
+    beta1 = 2.5,
+    alpha2 = 3.0,
+    beta2 = 0.8
+  ))
+
+  normalization <- stats::integrate(
+    function(s) sunspots_joint_time_density(s, eta),
+    lower = 0,
+    upper = 1,
+    subdivisions = 4000L,
+    rel.tol = 1e-10,
+    abs.tol = 1e-12
+  )$value
+  expect_equal(normalization, 1, tolerance = 1e-8)
+
+  quadrature <- sunspots_joint_time_quadrature(eta, n_nodes = 96L)
+  expect_equal(sum(quadrature$weights), 1, tolerance = 1e-12)
+  expect_lt(quadrature$mass_error, 1e-12)
+
+  set.seed(20260806)
+  s <- sample_sunspots_joint_time_beta_mixture2(80L, eta)
+  par <- sunspots_joint_time_pack_eta(eta)
+  analytic <- sunspots_joint_time_score_matrix(s, par)
+
+  step <- 1e-6
+  numeric <- vapply(seq_along(par), function(index) {
+    plus <- par
+    minus <- par
+    plus[[index]] <- plus[[index]] + step
+    minus[[index]] <- minus[[index]] - step
+    (
+      sunspots_joint_time_log_density(
+        s,
+        sunspots_joint_time_unpack_eta(plus)
+      ) -
+      sunspots_joint_time_log_density(
+        s,
+        sunspots_joint_time_unpack_eta(minus)
+      )
+    ) / (2 * step)
+  }, numeric(length(s)))
+
+  expect_equal(
+    as.numeric(analytic),
+    as.numeric(numeric),
+    tolerance = 1e-5
+  )
 })

@@ -117,16 +117,25 @@ prepare_sunspots_cycle23_joint_time_space_data <- function(
 prepare_sunspots_joint_time_data <- prepare_sunspots_cycle23_joint_time_space_data
 
 sunspots_joint_time_control <- function(control = list()) {
-  shape_lower <- as.numeric(control$time_beta_shape_lower %||% (1e-6))
+  shape_lower <- as.numeric(control$time_beta_shape_lower %||% 1e-6)
   shape_upper <- as.numeric(control$time_beta_shape_upper %||% 1e3)
   weight_eps <- as.numeric(control$time_beta_weight_eps %||% 0.01)
+
   if (!is.finite(shape_lower) ||
-    shape_lower <= 0 ||
-    !is.finite(shape_upper) ||
-    shape_upper <= shape_lower) {
-  stop("Time-beta shape bounds must satisfy 0 < lower < upper.")
+      shape_lower <= 0 ||
+      !is.finite(shape_upper) ||
+      shape_upper <= shape_lower) {
+    stop("Time-beta shape bounds must satisfy 0 < lower < upper.")
   }
-  list(shape_lower = shape_lower, shape_upper = shape_upper, weight_eps = weight_eps)
+  if (!is.finite(weight_eps) || weight_eps <= 0 || weight_eps >= 0.5) {
+    stop("`time_beta_weight_eps` must lie in (0, 0.5).")
+  }
+
+  list(
+    shape_lower = shape_lower,
+    shape_upper = shape_upper,
+    weight_eps = weight_eps
+  )
 }
 
 sunspots_joint_time_validate_eta <- function(eta, control = list()) {
@@ -303,32 +312,40 @@ sunspots_joint_time_information_criteria <- function(loglik, n, n_parameters = 5
 }
 
 sunspots_joint_time_select_fit <- function(fits) {
-  fits <- Filter(function(fit) {
+  finite_fits <- Filter(function(fit) {
     !inherits(fit, "try-error") &&
       is.list(fit) &&
       length(fit$value) == 1L &&
       is.finite(fit$value)
   }, fits)
-  if (length(fits) == 0L) stop("All temporal beta-mixture optimizations failed.")
 
   is_converged <- function(fit) {
     convergence <- as.integer(fit$convergence %||% NA_integer_)
-    length(convergence) == 1L && !is.na(convergence) && convergence == 0L
+    length(convergence) == 1L &&
+      !is.na(convergence) &&
+      convergence == 0L
   }
-  converged <- Filter(is_converged, fits)
-  best <- fits[[which.min(vapply(fits, `[[`, numeric(1L), "value"))]]
-  selected_converged <- is_converged(best)
-  if (!selected_converged) {
-    warning(
-      "The selected temporal beta-mixture optimization has convergence != 0; inspect the optimizer result.",
+  converged_fits <- Filter(is_converged, finite_fits)
+
+  if (length(converged_fits) == 0L) {
+    stop(
+      paste(
+        "No temporal two-beta-mixture optimization converged",
+        "with `optim$convergence == 0`."
+      ),
       call. = FALSE
     )
   }
+
+  best <- converged_fits[[
+    which.min(vapply(converged_fits, `[[`, numeric(1L), "value"))
+  ]]
+
   list(
     fit = best,
-    n_finite_fits = length(fits),
-    n_converged_fits = length(converged),
-    selected_converged = selected_converged
+    n_finite_fits = length(finite_fits),
+    n_converged_fits = length(converged_fits),
+    selected_converged = TRUE
   )
 }
 
