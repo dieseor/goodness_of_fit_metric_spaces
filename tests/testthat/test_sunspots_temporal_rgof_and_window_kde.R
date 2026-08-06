@@ -78,23 +78,33 @@ test_that("DirStats KDE integral is finite and close to one on S2", {
 })
 
 
-test_that("sphere surface grid lies on S2 and closes the longitude seam", {
-  lon_seq <- seq(-180, 120, by = 60)
-  lat_seq <- seq(-90, 90, by = 30)
-  sphere <- sunspots_joint_sphere_surface_matrices(lon_seq, lat_seq)
+test_that("orthographic sphere projection preserves the unit-sphere identity", {
+  camera <- sunspots_joint_sphere_camera(theta = 35, phi = 18)
+  basis <- rbind(camera$right, camera$up, camera$view)
+  expect_equal(basis %*% t(basis), diag(3), tolerance = 1e-12)
 
-  expected_dim <- c(length(lon_seq) + 1L, length(lat_seq))
-  expect_equal(dim(sphere$x), expected_dim)
-  expect_equal(dim(sphere$y), expected_dim)
-  expect_equal(dim(sphere$z), expected_dim)
-
-  radii <- sqrt(sphere$x^2 + sphere$y^2 + sphere$z^2)
+  xyz <- sunspots_joint_xyz_from_lon_lat(
+    lon_deg = c(-170, -20, 40, 135),
+    lat_deg = c(-60, -10, 25, 70)
+  )
+  projected <- sunspots_joint_project_sphere_xyz(xyz, camera)
   expect_equal(
-    radii,
-    matrix(1, nrow = expected_dim[[1L]], ncol = expected_dim[[2L]]),
+    projected$x^2 + projected$y^2 + projected$depth^2,
+    rep(1, nrow(xyz)),
     tolerance = 1e-12
   )
-  expect_equal(sphere$x[1L, ], sphere$x[nrow(sphere$x), ], tolerance = 1e-12)
-  expect_equal(sphere$y[1L, ], sphere$y[nrow(sphere$y), ], tolerance = 1e-12)
-  expect_equal(sphere$z[1L, ], sphere$z[nrow(sphere$z), ], tolerance = 1e-12)
+  expect_true(all(projected$x^2 + projected$y^2 <= 1 + 1e-12))
 })
+
+test_that("rear and front curve runs are separated by projected depth", {
+  depth <- c(-1, -0.5, 0.2, 0.8, -0.1, -0.2)
+  expect_equal(
+    sunspots_joint_visibility_runs(depth, front = FALSE),
+    list(1:2, 5:6)
+  )
+  expect_equal(
+    sunspots_joint_visibility_runs(depth, front = TRUE),
+    list(3:4)
+  )
+})
+
