@@ -32,7 +32,9 @@ test_that("temporal diagnostics derive full-cycle support and preserve loader re
   first <- prepare_sunspots_joint_time_data(input_csv, full$start_date, full$end_date, 17L)
   repeated <- prepare_sunspots_joint_time_data(input_csv, full$start_date, full$end_date, 17L)
   expect_equal(first$dequantization_jitter_day, repeated$dequantization_jitter_day)
-  expect_equal(first$dequantization_jitter_centered_day, first$dequantization_jitter_day - 0.5)
+  expect_equal(first$dequantization_jitter_centered_day, first$dequantization_jitter_day)
+  expect_true(all(first$dequantization_jitter_day > -0.5))
+  expect_true(all(first$dequantization_jitter_day < 0.5))
   expect_true(all(first$s > 0 & first$s < 1))
   expect_equal(sunspots_joint_temporal_sensitivity_seeds(20260712L), 20260712L + 0:19)
 })
@@ -75,6 +77,7 @@ test_that("joint GOF seed defaults are distinct and remain in output metadata", 
   )
   settings <- list(
     hemisphere_regression = "asymmetric", B = 2L, n_cores = 1L,
+    observed_profile_n_cores = 1L,
     start_date = "1997-06-01", end_date = "2006-01-01",
     center_seed = 1L, dequantization_seed = 2L, derivative_mc_seed = 3L, bootstrap_seed = 4L,
     time_quad_n = 64L, profile_l_max = 100L, spatial_quad_n = 400L,
