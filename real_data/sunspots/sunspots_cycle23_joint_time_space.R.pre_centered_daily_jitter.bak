@@ -95,30 +95,17 @@ prepare_sunspots_cycle23_joint_time_space_data <- function(
   retained <- retained[order(retained$calendar_day_start, retained$NOAA), , drop = FALSE]
   if (nrow(retained) == 0L) stop("The requested date interval retains no observations.")
 
-  # The recorded date is treated as the center of a one-day observation
-  # interval. Break artificial daily ties with an independent centered offset.
-  jitter <- sunspots_joint_with_seed(
-    dequantization_seed,
-    stats::runif(nrow(retained), min = -0.5, max = 0.5)
-  )
-  jitter <- pmin(
-    pmax(jitter, -0.5 + .Machine$double.eps),
-    0.5 - .Machine$double.eps
-  )
+  jitter <- sunspots_joint_with_seed(dequantization_seed, stats::runif(nrow(retained)))
+  jitter <- pmin(pmax(jitter, .Machine$double.eps), 1 - .Machine$double.eps)
   dequantized_seconds <- as.numeric(retained$calendar_day_start) + jitter * 86400
-
-  # The possible randomized times range from half a day before `start_date`
-  # to half a day before the exclusive `end_date`.
-  support_start_seconds <- as.numeric(start_time) - 0.5 * 86400
-  support_end_seconds <- as.numeric(end_time) - 0.5 * 86400
-  span_seconds <- support_end_seconds - support_start_seconds
-  s <- (dequantized_seconds - support_start_seconds) / span_seconds
+  span_seconds <- as.numeric(difftime(end_time, start_time, units = "secs"))
+  s <- (dequantized_seconds - as.numeric(start_time)) / span_seconds
   if (any(!is.finite(s)) || any(s <= 0 | s >= 1)) {
-    stop("Centered randomized times must lie strictly inside their support.")
+    stop("Dequantized times must lie strictly inside the analysis interval.")
   }
 
   retained$dequantization_jitter_day <- jitter
-  retained$dequantization_jitter_centered_day <- jitter
+  retained$dequantization_jitter_centered_day <- jitter - 0.5
   retained$dequantized_timestamp <- as.POSIXct(dequantized_seconds, origin = "1970-01-01", tz = "UTC")
   retained$s <- s
   retained$start_date <- start_date
