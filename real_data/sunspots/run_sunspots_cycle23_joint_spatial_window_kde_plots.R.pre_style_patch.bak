@@ -576,7 +576,7 @@ sunspots_joint_draw_window_scatter <- function(
     camera,
     front,
     back_alpha = 0.18,
-    point_cex = 0.3375) {
+    point_cex = 0.45) {
     x_window <- jp_normalize_unit_matrix(
     x_window,
     arg_name = "`x_window`",
@@ -588,11 +588,10 @@ sunspots_joint_draw_window_scatter <- function(
     graphics::points(
       projected$x[keep], projected$y[keep],
       pch = 16, cex = point_cex,
-      col = if (isTRUE(front)) {
-        "#000000"
-      } else {
-        grDevices::adjustcolor("#111111", alpha.f = back_alpha)
-      }
+      col = grDevices::adjustcolor(
+        "#111111",
+        alpha.f = if (isTRUE(front)) 0.58 else back_alpha
+      )
     )
   }
   invisible(NULL)
@@ -852,24 +851,6 @@ sunspots_joint_draw_contour_legend <- function(
   invisible(NULL)
 }
 
-sunspots_joint_draw_method_legend <- function() {
-  graphics::plot.new()
-  graphics::plot.window(xlim = c(0, 1), ylim = c(0, 1))
-  graphics::legend(
-    "center",
-    legend = c("Parametric", "Nonparametric (KDE)"),
-    col = c("#222222", "#222222"),
-    lty = c(1, 2),
-    lwd = c(1, 1),
-    horiz = TRUE,
-    bty = "n",
-    cex = 0.88,
-    seg.len = 3,
-    x.intersp = 1
-  )
-  invisible(NULL)
-}
-
 sunspots_joint_render_contour_sphere_grid <- function(
     lon_seq,
     lat_seq,
@@ -893,7 +874,7 @@ sunspots_joint_render_contour_sphere_grid <- function(
   grDevices::png(
     output_path,
     width = 3200,
-    height = 1000,
+    height = 720,
     res = 210,
     bg = "white"
   )
@@ -903,10 +884,7 @@ sunspots_joint_render_contour_sphere_grid <- function(
     grDevices::dev.off()
   }, add = TRUE)
 
-  graphics::layout(
-    matrix(c(seq_len(5L), rep(6L, 5L)), nrow = 2L, byrow = TRUE),
-    heights = c(1, 0.12)
-  )
+  graphics::layout(matrix(seq_len(5L), nrow = 1L))
   graphics::par(
     mar = c(0.1, 0.1, 1.8, 0.1),
     oma = c(0.1, 0.1, 0.4, 0.1)
@@ -935,9 +913,6 @@ sunspots_joint_render_contour_sphere_grid <- function(
       hdr_colors = hdr_colors
     )
   }
-
-  graphics::par(mar = c(0.1, 0.1, 0.1, 0.1))
-  sunspots_joint_draw_method_legend()
 # graphics::mtext(
   #   "Cycle 23 spatial windows: solid parametric contours and dashed KDE contours",
   #   side = 3,
