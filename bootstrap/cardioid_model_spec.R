@@ -34,6 +34,16 @@ if (!exists("d_sph_car", mode = "function") || !exists("p_proj_car_gamma", mode 
   source(cardioid_source_path_model_spec)
 }
 
+cardioid_rho_bounds <- function(k) {
+  k_numeric <- as.numeric(k)
+  if (length(k_numeric) != 1L || !is.finite(k_numeric) ||
+      k_numeric < 1 || k_numeric != floor(k_numeric)) {
+    stop("`k` must be a positive integer.")
+  }
+
+  c(lower = if (as.integer(k_numeric) %% 2L == 0L) -1 else 0, upper = 1)
+}
+
 fast_multiplier_cardioid_legendre <- function(z, k) {
   z <- as.numeric(z)
   switch(
@@ -91,19 +101,21 @@ normalize_cardioid_theta <- function(theta,
     stop("Cardioid theta must be a list containing `mu` and `rho`.")
   }
 
-  rho <- as.numeric(theta$rho)
-  mu <- as.numeric(theta$mu)
   theta_k <- theta$k %||% k
 
-  if (length(rho) != 1L || !is.finite(rho) || rho < 0 || rho > 1) {
-    stop("Cardioid theta requires `rho` in [0, 1].")
-  }
   if (is.null(theta_k)) {
     stop("Cardioid theta requires `k`.")
   }
-  theta_k <- as.integer(theta_k)
-  if (length(theta_k) != 1L || !is.finite(theta_k) || theta_k < 1L) {
-    stop("Cardioid theta requires a positive integer `k`.")
+  rho_bounds <- cardioid_rho_bounds(theta_k)
+
+  rho <- as.numeric(theta$rho)
+  mu <- as.numeric(theta$mu)
+  if (length(rho) != 1L || !is.finite(rho) ||
+      rho < rho_bounds[["lower"]] || rho > rho_bounds[["upper"]]) {
+    stop(sprintf(
+      "Cardioid theta requires `rho` in [%g, %g] for k = %d.",
+      rho_bounds[["lower"]], rho_bounds[["upper"]], as.integer(theta_k)
+    ))
   }
   if (length(mu) < 2L || any(!is.finite(mu))) {
     stop("Cardioid theta requires a finite vector `mu` of length at least 2.")
@@ -133,6 +145,22 @@ weighted_cardioid_resultant <- function(X, weights = NULL) {
 
   prob_weights <- normalize_probability_weights(weights, n_expected = nrow(X))
   colSums(X * prob_weights)
+}
+
+weighted_cardioid_k2_moment_start <- function(X, scaled_weights) {
+  p <- ncol(X)
+  probability_weights <- scaled_weights / sum(scaled_weights)
+  second_moment <- crossprod(X, X * probability_weights)
+  eig <- eigen(second_moment, symmetric = TRUE)
+  first_contrast <- abs(eig$values[[1L]] - mean(eig$values[-1L]))
+  last_index <- length(eig$values)
+  last_contrast <- abs(eig$values[[last_index]] - mean(eig$values[-last_index]))
+  selected_index <- if (first_contrast >= last_contrast) 1L else last_index
+
+  list(
+    mu = eig$vectors[, selected_index],
+    rho = (p + 2) / 2 * (p * eig$values[[selected_index]] - 1)
+  )
 }
 
 normalize_cardioid_mle_weights <- function(weights, n_expected) {
@@ -226,6 +254,7 @@ mle_sph_car_weighted <- function(X,
   X <- normalize_cardioid_data(X, control)
   p <- ncol(X)
   n <- nrow(X)
+  rho_bounds <- cardioid_rho_bounds(k)
   scaled_weights <- normalize_cardioid_mle_weights(weights, n_expected = n)
 
   if (!is.null(theta_start)) {
@@ -236,6 +265,12 @@ mle_sph_car_weighted <- function(X,
     if (is.null(rho0)) {
       rho0 <- theta_start$rho
     }
+  }
+
+  if (is.null(mu0) && is.null(rho0) && as.integer(k) == 2L) {
+    moment_start <- weighted_cardioid_k2_moment_start(X, scaled_weights)
+    mu0 <- moment_start$mu
+    rho0 <- moment_start$rho
   }
 
   resultant <- weighted_cardioid_resultant(X, weights = weights)
@@ -260,17 +295,21 @@ mle_sph_car_weighted <- function(X,
   }
 
   if (is.null(rho0)) {
-    rho0 <- if (resultant_norm <= 1e-12) 0 else min(max(resultant_norm, 0), 1)
+    rho0 <- if (resultant_norm <= 1e-12) {
+      0
+    } else {
+      min(max(resultant_norm, rho_bounds[["lower"]]), rho_bounds[["upper"]])
+    }
   } else {
     rho0 <- as.numeric(rho0)
     if (length(rho0) != 1L || !is.finite(rho0)) {
       stop("`rho0` must be a finite scalar.")
     }
-    rho0 <- min(max(rho0, 0), 1)
+    rho0 <- min(max(rho0, rho_bounds[["lower"]]), rho_bounds[["upper"]])
   }
 
   objective <- function(par) {
-    rho <- min(max(par[[1L]], 0), 1)
+    rho <- min(max(par[[1L]], rho_bounds[["lower"]]), rho_bounds[["upper"]])
     mu_raw <- par[-1L]
     mu_norm <- sqrt(sum(mu_raw^2))
     if (!is.finite(mu_norm) || mu_norm <= 0) {
@@ -291,13 +330,13 @@ mle_sph_car_weighted <- function(X,
     par = c(rho0, mu0),
     fn = objective,
     method = "L-BFGS-B",
-    lower = c(0, rep(-Inf, p)),
-    upper = c(1, rep(Inf, p)),
+    lower = c(rho_bounds[["lower"]], rep(-Inf, p)),
+    upper = c(rho_bounds[["upper"]], rep(Inf, p)),
     control = optim_control
   )
   mu_hat <- opt$par[-1L]
   mu_hat <- mu_hat / sqrt(sum(mu_hat^2))
-  rho_hat <- min(max(opt$par[[1L]], 0), 1)
+  rho_hat <- min(max(opt$par[[1L]], rho_bounds[["lower"]]), rho_bounds[["upper"]])
 
   list(
     mu = mu_hat,
@@ -368,25 +407,19 @@ prepare_cardioid_fast_multiplier <- function(spec,
       derivative_mc_seed = NA_integer_
     ))
   }
-  if (theta_hat$rho >= 1 - rho_boundary_eps) {
-    return(list(
-      fallback_to_reestimated = TRUE,
-      fallback_reason = "cardioid_rho_one_boundary",
-      derivative_method = NA_character_,
-      derivative_mc_size = NA_integer_,
-      derivative_mc_seed = NA_integer_
-    ))
-  }
-
   chart <- fast_multiplier_sphere_chart(theta_hat$mu)
   par0 <- c(0, 0, theta_hat$rho)
+  rho_bounds <- cardioid_rho_bounds(k)
+  rho_lower_interior <- rho_bounds[["lower"]] +
+    if (rho_bounds[["lower"]] < 0) 1e-10 else 0
+  rho_upper_interior <- rho_bounds[["upper"]] - 1e-10
 
   state_from_par <- function(par) {
     mapped <- fast_multiplier_sphere_chart_map(chart, par[1:2])
     normalize_cardioid_theta(
       list(
         mu = mapped$mu,
-        rho = min(max(par[[3L]], 0), 1 - 1e-10),
+        rho = min(max(par[[3L]], rho_lower_interior), rho_upper_interior),
         k = k
       ),
       k = k,

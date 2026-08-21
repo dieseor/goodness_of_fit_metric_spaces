@@ -37,6 +37,40 @@ test_that("cardioid rho zero recovers the S2 uniform geodesic profile", {
   expect_equal(observed, expected, tolerance = 1e-12)
 })
 
+test_that("cardioid rho domain depends on the parity of k", {
+  even_theta <- normalize_cardioid_theta(
+    list(mu = c(0, 0, 1), rho = -0.4, k = 2)
+  )
+  expect_equal(even_theta$rho, -0.4)
+
+  expect_error(
+    normalize_cardioid_theta(list(mu = c(0, 0, 1), rho = -0.4, k = 3)),
+    "rho.*\\[0, 1\\]"
+  )
+})
+
+test_that("weighted C2 MLE can select the negative rho branch", {
+  set.seed(923)
+  x <- r_sph_car(n = 500L, mu = c(0, 0, 1), rho = -0.6, k = 2)
+  fit <- mle_sph_car_weighted(x, k = 2)
+
+  expect_lt(fit$rho, 0)
+})
+
+test_that("odd-order cardioid sampler has the stated Gegenbauer moment", {
+  set.seed(847)
+  rho <- 0.4
+
+  for (k in c(1L, 3L)) {
+    x <- r_sph_car(n = 40000L, mu = c(0, 0, 1), rho = rho, k = k)
+    z <- x[, 3L]
+    qk <- drop(sphunif::Gegen_polyn(theta = acos(z), k = k, p = 3)) /
+      drop(sphunif::Gegen_polyn(theta = 0, k = k, p = 3))
+
+    expect_equal(mean(qk), rho / sphunif::d_p_k(p = 3, k = k), tolerance = 0.012)
+  }
+})
+
 test_that("cardioid profiles respect geodesic and chordal boundaries", {
   theta <- list(mu = c(0, 0, 1), rho = 0.25, k = 2)
   omega <- c(0, 1, 0)
