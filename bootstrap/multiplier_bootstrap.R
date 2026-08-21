@@ -2635,9 +2635,91 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
     }
     list(indices = block_indices, ks = out_ks, cvm = out_cvm)
   }
+  show_progress <- isTRUE(control$progress_bar %||% FALSE)
+  progress_label <- as.character(control$progress_label %||% "bootstrap")
+  run_fast_blocks_with_progress <- function() {
+    pb <- utils::txtProgressBar(
+      min = 0,
+      max = n_reps,
+      style = 3,
+      file = stderr()
+    )
+    cat(sprintf("\n[%s] ", progress_label), file = stderr())
+    on.exit({
+      close(pb)
+      cat("\n", file = stderr())
+    }, add = TRUE)
+
+    results <- vector("list", length(replicate_blocks))
+    completed_reps <- 0L
+    update_progress <- function(reps) {
+      completed_reps <<- completed_reps + as.integer(reps)
+      utils::setTxtProgressBar(pb, completed_reps)
+    }
+
+    if (.Platform$OS.type != "unix") {
+      for (i in seq_along(replicate_blocks)) {
+        results[[i]] <- run_fast_block(replicate_blocks[[i]])
+        update_progress(length(replicate_blocks[[i]]))
+      }
+      return(results)
+    }
+
+    active_jobs <- list()
+    next_idx <- 1L
+    launch_job <- function(i) {
+      job <- parallel::mcparallel(
+        run_fast_block(replicate_blocks[[i]]),
+        detached = FALSE,
+        silent = TRUE
+      )
+      active_jobs[[as.character(job$pid)]] <<- list(
+        job = job,
+        index = i,
+        reps = length(replicate_blocks[[i]])
+      )
+    }
+
+    while (next_idx <= length(replicate_blocks) &&
+        length(active_jobs) < min(n_cores, length(replicate_blocks))) {
+      launch_job(next_idx)
+      next_idx <- next_idx + 1L
+    }
+    while (length(active_jobs) > 0L) {
+      collected <- parallel::mccollect(
+        jobs = lapply(active_jobs, `[[`, "job"),
+        wait = TRUE,
+        timeout = 0.5
+      )
+      if (is.null(collected) || length(collected) == 0L) {
+        next
+      }
+      for (pid in names(collected)) {
+        meta <- active_jobs[[pid]]
+        value <- collected[[pid]]
+        if (inherits(value, "try-error")) {
+          stop(sprintf("Parallel fast bootstrap block failed: %s", as.character(value)))
+        }
+        results[[meta$index]] <- value
+        update_progress(meta$reps)
+        active_jobs[[pid]] <- NULL
+        if (next_idx <= length(replicate_blocks)) {
+          launch_job(next_idx)
+          next_idx <- next_idx + 1L
+        }
+      }
+    }
+    results
+  }
   loop_start <- proc.time()[["elapsed"]]
   block_results <- if (length(replicate_blocks) == 1L) {
-    list(run_fast_block(replicate_blocks[[1L]]))
+    if (show_progress) {
+      run_fast_blocks_with_progress()
+    } else {
+      list(run_fast_block(replicate_blocks[[1L]]))
+    }
+  } else if (show_progress) {
+    run_fast_blocks_with_progress()
   } else if (.Platform$OS.type == "unix") {
     parallel::mclapply(
       replicate_blocks,

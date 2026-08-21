@@ -15,6 +15,15 @@ utils_path <- if (file.exists("utils.R")) {
 }
 source(utils_path)
 
+profile_derivatives_path <- if (file.exists(file.path("bootstrap", "deterministic_profile_derivatives.R"))) {
+  file.path("bootstrap", "deterministic_profile_derivatives.R")
+} else if (file.exists(file.path("..", "bootstrap", "deterministic_profile_derivatives.R"))) {
+  file.path("..", "bootstrap", "deterministic_profile_derivatives.R")
+} else {
+  stop("Could not find bootstrap/deterministic_profile_derivatives.R.")
+}
+source(profile_derivatives_path)
+
 
 # Load required libraries
 library(rotasym)  # For vMF functions (c_vMF, r_vMF)
@@ -211,6 +220,32 @@ report_covariance_diagnostics <- function(cov_matrix, tol = 1e-10) {
   cov_diag
 }
 
+vmf_profile_derivative_matrix_xi <- function(omega_grid,
+                                              t_grid,
+                                              mu,
+                                              kappa,
+                                              distance_type) {
+  omega_grid <- as.matrix(omega_grid)
+  t_grid <- as.numeric(t_grid)
+  q <- length(mu) - 1L
+  if (q < 2L) {
+    stop("The deterministic vMF profile derivatives require S^q with q >= 2.")
+  }
+
+  profile_derivatives <- lapply(seq_len(nrow(omega_grid)), function(i) {
+    vmf_profile_and_derivative_xi(
+      omega = omega_grid[i, ],
+      xi = kappa * mu,
+      t_values = t_grid,
+      distance_type = distance_type
+    )
+  })
+
+  do.call(rbind, lapply(seq_len(length(t_grid)), function(k) {
+    do.call(rbind, lapply(profile_derivatives, function(value) value$derivative[k, ]))
+  }))
+}
+
 cov_vmf <- function(omega_grid, t_grid, mu, kappa, distance_type = "chordal", n_mc_samples = 1000, n_cores = 10, seed = NULL, upper_triangle = FALSE, mc_samples = NULL, h0 = c("simple","composite"), unknown_param = NULL, cov_method = c("mc", "exact_s1_simple", "integral_s2_simple"), cdf_grid_size = 16385) {
   omega_grid <- as.matrix(omega_grid)
   t_grid <- as.numeric(t_grid)
@@ -223,7 +258,9 @@ cov_vmf <- function(omega_grid, t_grid, mu, kappa, distance_type = "chordal", n_
   h0 <- match.arg(h0)
   cov_method <- match.arg(cov_method)
   cat("Creating vMF covariance matrix of size", n_total, "x", n_total, "\n")
-  cat("Using", n_cores, "cores\n")
+  if (cov_method == "mc") {
+    cat("Using a common Monte Carlo sample for all covariance entries\n")
+  }
 
   if (cov_method == "exact_s1_simple") {
     if (length(mu) != 2) {
@@ -262,11 +299,7 @@ cov_vmf <- function(omega_grid, t_grid, mu, kappa, distance_type = "chordal", n_
     if (ncol(omega_grid) != 3) {
       stop("`cov_method = 'integral_s2_simple'` requires `omega_grid` to have exactly 3 columns.")
     }
-    if (h0 != "simple") {
-      stop("`cov_method = 'integral_s2_simple'` is only available for `h0 = 'simple'`.")
-    }
-
-    cat("Using exact-integral S2 covariance branch for the simple null.\n")
+    cat("Using deterministic S2 covariance branch.\n")
     start_time <- Sys.time()
     cov_matrix <- cov_vmf_s2_simple_integral(
       omega_grid = omega_grid,
@@ -275,6 +308,25 @@ cov_vmf <- function(omega_grid, t_grid, mu, kappa, distance_type = "chordal", n_
       kappa = kappa,
       distance_type = distance_type
     )
+    if (h0 == "composite") {
+      q <- length(mu) - 1L
+      A_q_kappa <- besselI(kappa, nu = (q + 1) / 2, expon.scaled = TRUE) /
+        besselI(kappa, nu = (q - 1) / 2, expon.scaled = TRUE)
+      scalar_coef <- 1 - A_q_kappa^2 - ((q + 1) * A_q_kappa / kappa)
+      information_matrix <- (A_q_kappa / kappa) * diag(q + 1) +
+        scalar_coef * outer(mu, mu)
+      profile_derivative_matrix <- vmf_profile_derivative_matrix_xi(
+        omega_grid = omega_grid,
+        t_grid = t_grid,
+        mu = mu,
+        kappa = kappa,
+        distance_type = distance_type
+      )
+      cov_matrix <- cov_matrix -
+        profile_derivative_matrix %*%
+        solve(information_matrix) %*%
+        t(profile_derivative_matrix)
+    }
     end_time <- Sys.time()
     time_elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
     cat("Covariance matrix created in", round(time_elapsed, 1), "seconds!\n\n")
@@ -306,120 +358,43 @@ cov_vmf <- function(omega_grid, t_grid, mu, kappa, distance_type = "chordal", n_
   scalar_coef <- 1 - A_q_kappa^2 - ((q + 1) * A_q_kappa / kappa)
   var_X <- (A_q_kappa / kappa) * diag(q + 1) + scalar_coef * outer(mu, mu)
   
-  # Setup parallel cluster
-  # Force single-threaded BLAS/OpenMP to reduce non-deterministic numeric operations across processes
-  Sys.setenv(OPENBLAS_NUM_THREADS = "1", MKL_NUM_THREADS = "1")
-  utils_path_worker <- normalizePath(utils_path, winslash = "/", mustWork = TRUE)
-  cl <- makeCluster(n_cores)
-  on.exit(stopCluster(cl), add = TRUE)  # Ensure cluster is stopped even if interrupted
-  # Set seed for workers if provided, else default to 42
-  clusterSetRNGStream(cl, iseed = ifelse(is.null(seed), 42, seed))
-  clusterExport(cl, c("utils_path_worker"), envir = environment())
-  
-  # Export functions and variables to workers
-  clusterEvalQ(cl, {
-    library(rotasym)
-    source(utils_path_worker)
-    # Do not source vmf_cov_functions.R on workers to avoid function definition collisions
-    # Exporting the master functions via clusterExport below ensures workers execute
-  })
-  # Reduce BLAS/OpenMP threads on workers for deterministic arithmetic if possible
-  clusterEvalQ(cl, {
-    try({
-      
-      if (requireNamespace("RhpcBLASctl", quietly = TRUE)) {
-        RhpcBLASctl::blas_set_num_threads(1)
-        RhpcBLASctl::omp_set_num_threads(1)
-      }
-    }, silent = TRUE)
-  })
-
-  # Index mapping for flattened grid columns
-  omega_idx_vec <- ((0:(n_total - 1)) %% n_omega) + 1
-  t_idx_vec <- ((0:(n_total - 1)) %/% n_omega) + 1
-
-  # --- Precompute shared intermediates for vectorized rows (avoid per-row recomputation) ---
-  cat("Precomputing intermediates for vMF covariance (shared across rows)...\n")
-  precomp_loc <- compute_precomp_vmf(mc_samples, omega_grid, t_grid, mu, kappa, distance_type, A_q_kappa)
-  # add index vectors used for flattening to the precomp list
-  precomp <- c(precomp_loc, list(omega_idx_vec = omega_idx_vec, t_idx_vec = t_idx_vec))
-
-  # Ensure the h0 value is exported as a plain variable to workers (avoid quoting or name shadowing)
-  h0_val <- h0
-
-  # Export all needed functions and variables from the main environment
-  clusterExport(cl, c(
-    "check_dot_products", "sphere_distance", 
-    "compute_conditional_expectation_vmf",
-    "row_cov_vmf", "compute_precomp_vmf",
-    "omega_grid", "t_grid", "mu", "kappa", "distance_type",
-    "mc_samples", "A_q_kappa", "var_X", "precomp", "omega_idx_vec", "t_idx_vec",
-    "h0", "h0_val", "unknown_param"
-  ), envir = environment())
-  # Export control flags
-  clusterExport(cl, c("upper_triangle", "n_total"), envir = environment())
-  
+  cat("Computing the Monte Carlo covariance estimate...\n")
   start_time <- Sys.time()
+  precomp <- compute_precomp_vmf(
+    mc_samples, omega_grid, t_grid, mu, kappa, distance_type, A_q_kappa
+  )
+  indicator_matrix <- do.call(cbind, lapply(precomp$in_ball_list, function(x) x * 1))
+  joint_probabilities <- crossprod(indicator_matrix) / n_mc_samples
 
-  
-  # Parallel computation: create chunked tasks for dynamic load balancing and reduced RPC overhead
-  # Choose a chunk_size so each core has multiple chunks for better load balancing
-  default_chunks_per_core <- 4
-  chunk_size <- max(1, floor(n_total / (n_cores * default_chunks_per_core)))
-  # Split into contiguous chunks for better cache locality and fewer RPCs
-  row_indices <- seq_len(n_total)
-  row_chunks <- split(row_indices, ceiling(seq_along(row_indices) / chunk_size))
-  
-  cat("Computing", sum(sapply(row_chunks, length)), "rows in parallel\n")
-  
-  # Compute rows in parallel
-  results <- parLapply(cl, row_chunks, function(row_indices) {
-    local_rows <- list()
-    for (i in row_indices) {
-      # Execute the row computation on the worker; errors will propagate
+  if (h0 == "simple") {
+    empirical_profiles <- colMeans(indicator_matrix)
+    cov_matrix <- joint_probabilities - tcrossprod(empirical_profiles)
+  } else {
+    # Proposition 4.3: C_tilde = C - dot(F)' I_xi^{-1} dot(F).
+    # The profile and its canonical-parameter derivative are evaluated by the
+    # same deterministic quadrature used in the vMF multiplier bootstrap.
+    profile_derivative_matrix <- vmf_profile_derivative_matrix_xi(
+      omega_grid = omega_grid,
+      t_grid = t_grid,
+      mu = mu,
+      kappa = kappa,
+      distance_type = distance_type
+    )
+    profile_values <- t(vapply(seq_len(n_omega), function(i) {
+      vmf_profile_and_derivative_xi(
+        omega = omega_grid[i, ],
+        xi = kappa * mu,
+        t_values = t_grid,
+        distance_type = distance_type
+      )$F
+    }, numeric(n_t)))
+    theoretical_profiles <- as.vector(profile_values)
+    inv_information <- solve(var_X)
 
-        row_vec <- row_cov_vmf(i, omega_grid, t_grid, mu, kappa,
-                    distance_type, mc_samples,
-                    A_q_kappa, var_X, precomp = precomp,
-                  col_idxs = if (upper_triangle) seq(i, n_total) else NULL,
-                   h0 = h0_val, unknown_param = unknown_param)
-        diag_output <- NULL
-      local_rows[[length(local_rows) + 1]] <- list(i = i, row = row_vec, diag = diag_output)
-    }
-    return(local_rows)
-  })
-
-
-  # Print diagnostics and errors from all workers (only non-empty diagnostics)
-  for (worker_results in results) {
-    for (result in worker_results) {
-      if (!is.null(result$diag) && length(result$diag) > 0 && any(nzchar(result$diag))) {
-        cat(paste(result$diag, collapse = "\n"), "\n")
-      }
-      if (!is.null(result$error)) cat(sprintf("[ERROR] idx=%d: %s\n", result$i, result$error))
-    }
+    cov_matrix <- joint_probabilities -
+      tcrossprod(theoretical_profiles) -
+      profile_derivative_matrix %*% inv_information %*% t(profile_derivative_matrix)
   }
-  
-  # Assemble matrix
-  cov_matrix <- matrix(0, n_total, n_total)
-  for (worker_results in results) {
-    for (result in worker_results) {
-      if (!is.null(result$row) && length(result$row) == n_total) {
-        non_na_cols <- which(!is.na(result$row))
-        if (length(non_na_cols) > 0) {
-          # Only assign upper triangle part (i <= j) so each symmetric pair is written exactly once
-          upper_cols <- non_na_cols[non_na_cols >= result$i]
-          if (length(upper_cols) > 0) {
-            cov_matrix[result$i, upper_cols] <- result$row[upper_cols]
-            # Mirror for symmetry: set symmetric entries exactly to the same values
-            cov_matrix[upper_cols, result$i] <- result$row[upper_cols]
-          }
-        }
-      }
-    }
-  }
-
-  # No automatic PSD enforcement: we do not alter covariance matrices here.
 
   end_time <- Sys.time()
   time_elapsed <- as.numeric(difftime(end_time, start_time, units = "secs"))
@@ -577,14 +552,20 @@ simulate_empirical_process_vmf <- function(omega_grid, t_grid, n, mu, kappa,
   
   # Setup parallel cluster
   utils_path_worker <- normalizePath(utils_path, winslash = "/", mustWork = TRUE)
-  cl <- makeCluster(n_cores)
+  lib_paths_worker <- .libPaths()
+  # Avoid running the project's .Rprofile in each PSOCK worker. The workers
+  # receive the active renv library paths explicitly below.
+  cl <- makeCluster(n_cores, rscript_args = "--no-init-file")
   on.exit(stopCluster(cl), add = TRUE)  # Ensure cluster is stopped even if interrupted
   # Allow caller to pass seed for reproducibility; fallback to 123
   clusterSetRNGStream(cl, iseed = ifelse(is.null(seed), 123, seed))
-  clusterExport(cl, c("utils_path_worker"), envir = environment())
+  clusterExport(cl, c("utils_path_worker", "lib_paths_worker"), envir = environment())
   
   # Setup workers with correct directory and sources
-  clusterEvalQ(cl, source(utils_path_worker))
+  clusterEvalQ(cl, {
+    .libPaths(lib_paths_worker)
+    source(utils_path_worker)
+  })
   
   # Export function to workers
   clusterEvalQ(cl, {
@@ -754,12 +735,12 @@ visualize_convergence_to_limit_vmf <- function(n_values = c(50, 100, 500),
     n_total <- n_omega * n_t
     q <- length(mu) - 1
 
-    # MC samples
-    mc_samples <- rotasym::r_vMF(n = n_mc_samples, mu = mu, kappa = kappa)
-    A_q_kappa <- besselI(kappa, nu = (q + 1) / 2, expon.scaled = TRUE) /
-                 besselI(kappa, nu = (q - 1) / 2, expon.scaled = TRUE)
-    scalar_coef <- 1 - A_q_kappa^2 - ((q + 1) * A_q_kappa / kappa)
-    var_X <- (A_q_kappa / kappa) * diag(q + 1) + scalar_coef * outer(mu, mu)
+    # The deterministic S2 branch does not use an auxiliary Monte Carlo sample.
+    mc_samples <- if (cov_method == "mc") {
+      rotasym::r_vMF(n = n_mc_samples, mu = mu, kappa = kappa)
+    } else {
+      NULL
+    }
 
     # Generate t grid with a small epsilon to avoid numerical issues
 

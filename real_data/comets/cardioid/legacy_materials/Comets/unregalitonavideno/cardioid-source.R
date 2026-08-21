@@ -113,6 +113,18 @@ q_proj_car <- function(u, rho, k, p, exact = TRUE) {
 
 }
 
+cardioid_rho_bounds <- function(k) {
+
+  k_numeric <- as.numeric(k)
+  if (length(k_numeric) != 1L || !is.finite(k_numeric) ||
+      k_numeric < 1 || k_numeric != floor(k_numeric)) {
+    stop("`k` must be a positive integer.")
+  }
+
+  c(lower = if (as.integer(k_numeric) %% 2L == 0L) -1 else 0, upper = 1)
+
+}
+
 r_sph_car <- function(n, mu, rho, k, rejection = TRUE, odd_trick = TRUE,
                       cubic = TRUE) {
 
@@ -171,7 +183,8 @@ r_sph_car <- function(n, mu, rho, k, rejection = TRUE, odd_trick = TRUE,
                     nrow(samp), "samples generated out of", n,
                     "required. Generating extra samples."))
       samp_extra <- r_sph_car(n = n - nrow(samp), mu = mu, rho = rho,
-                              k = k, rejection = TRUE)
+                              k = k, rejection = rejection,
+                              odd_trick = odd_trick, cubic = cubic)
       samp <- rbind(samp, samp_extra)
 
     }
@@ -514,10 +527,18 @@ avar_gm_rho <- function(rho, k, p) {
 
 mle_sph_car <- function(X, k, mu0 = NULL, rho0 = NULL, ...) {
 
+  rho_bounds <- cardioid_rho_bounds(k)
+
+  if (is.null(mu0) && is.null(rho0) && as.integer(k) == 2L) {
+    moment_start <- mm_sph_car(X = X, k = k)
+    mu0 <- moment_start$mu
+    rho0 <- moment_start$rho
+  }
+
   ll <- function(par) {
     -sum(d_sph_car(x = X, mu = par[-1] / sqrt(sum(par[-1]^2)),
-                   # rho = max(min(par[1], 1), ifelse(k %% 2 == 0, -1, 0)),
-                   rho = max(min(par[1], 1), 0),
+                   rho = min(max(par[1], rho_bounds[["lower"]]),
+                             rho_bounds[["upper"]]),
                    k = k, log = TRUE))
   }
   if (is.null(mu0)) {
@@ -526,17 +547,18 @@ mle_sph_car <- function(X, k, mu0 = NULL, rho0 = NULL, ...) {
   }
   if (is.null(rho0)) {
     rho0 <- sqrt(sum(mu0^2))
-    rho0 <- max(min(rho0, 1), 0)
+    rho0 <- min(max(rho0, rho_bounds[["lower"]]), rho_bounds[["upper"]])
+  } else {
+    rho0 <- min(max(as.numeric(rho0), rho_bounds[["lower"]]),
+                rho_bounds[["upper"]])
   }
   opt <- optim(par = c(rho0, mu0), fn = ll, method = "L-BFGS-B",
-               # lower = c(ifelse(k %% 2 == 0, -1, 0), rep(-Inf, length(mu0))),
-               # upper = c(1, rep(Inf, length(mu0))),
-               lower = c(0, rep(-Inf, length(mu0))),
-               upper = c(1, rep(Inf, length(mu0))),
+               lower = c(rho_bounds[["lower"]], rep(-Inf, length(mu0))),
+               upper = c(rho_bounds[["upper"]], rep(Inf, length(mu0))),
                ...)
   opt$par[-1] <- opt$par[-1] / sqrt(sum(opt$par[-1]^2))
-  # opt$par[1] <- max(min(opt$par[1], 1), ifelse(k %% 2 == 0, -1, 0))
-  opt$par[1] <- max(min(opt$par[1], 1), 0)
+  opt$par[1] <- min(max(opt$par[1], rho_bounds[["lower"]]),
+                    rho_bounds[["upper"]])
   return(list("mu" = opt$par[-1], "rho" = opt$par[1], "k" = k,
               "ll" = -opt$value, "opt" = opt))
 

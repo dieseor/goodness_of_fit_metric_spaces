@@ -1497,7 +1497,7 @@ test_that("mixture fast multiplier preparations expose the expected dimensions",
   expect_equal(dim(prep_scw$D_ks), c(nrow(ks_grid$omega_grid) * length(ks_grid$t_grid), 7))
 })
 
-test_that("cardioid rho near one uses the recorded slow fallback", {
+test_that("cardioid rho one uses the fast branch", {
   x_card <- r_sph_car(12, mu = c(0, 0, 1), rho = 0.4, k = 2)
   spec_card <- make_cardioid_spec(k = 2, distance_type = "geodesic", unknown_param = "both")
   result <- multiplier_bootstrap_gof(
@@ -1515,9 +1515,9 @@ test_that("cardioid rho near one uses the recorded slow fallback", {
     control = list(derivative_mc_size = 500L, derivative_mc_seed = 51L)
   )
   expect_identical(result$diagnostics$bootstrap_method, "fast_multiplier")
-  expect_identical(result$diagnostics$effective_bootstrap_method, "reestimated")
-  expect_true(isTRUE(result$diagnostics$fallback_to_reestimated))
-  expect_identical(result$diagnostics$fallback_reason, "cardioid_rho_one_boundary")
+  expect_identical(result$diagnostics$effective_bootstrap_method, "fast_multiplier")
+  expect_false(isTRUE(result$diagnostics$fallback_to_reestimated))
+  expect_true(is.na(result$diagnostics$fallback_reason))
   expect_length(result$bootstrap$statistics$ks, 3L)
   expect_true(all(is.finite(result$bootstrap$statistics$ks)))
 })
@@ -1739,8 +1739,8 @@ test_that("cardioid rho near zero uses the recorded slow fallback", {
   expect_identical(result$diagnostics$fallback_reason, "cardioid_rho_zero_nonidentification")
 })
 
-test_that("cardioid interior still uses the fast branch", {
-  x_card <- r_sph_car(12, mu = c(0, 0, 1), rho = 0.3, k = 2)
+test_that("cardioid even-order negative rho uses the fast branch", {
+  x_card <- r_sph_car(12, mu = c(0, 0, 1), rho = -0.3, k = 2)
   spec_card <- make_cardioid_spec(k = 2, distance_type = "geodesic", unknown_param = "both")
   result <- multiplier_bootstrap_gof(
     data = x_card,
@@ -1752,7 +1752,7 @@ test_that("cardioid interior still uses the fast branch", {
     seed = 62,
     n_cores = 1,
     bootstrap_method = "fast_multiplier",
-    observed_theta_hat = list(mu = c(0, 0, 1), rho = 0.3, k = 2),
+    observed_theta_hat = list(mu = c(0, 0, 1), rho = -0.3, k = 2),
     keep = list(observed_process = FALSE, bootstrap_statistics = TRUE),
     control = list(derivative_mc_size = 500L, derivative_mc_seed = 63L)
   )
