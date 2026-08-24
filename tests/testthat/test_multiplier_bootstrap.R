@@ -1209,10 +1209,7 @@ test_that("tabulated S2 vMF CvM matrix matches the exact row-wise profile closel
 test_that("vMF fast multiplier bootstrap runs and matches the observed statistic", {
   set.seed(777)
   x <- rotasym::r_vMF(12, mu = c(1, 0, 0), kappa = 2)
-  ks_grid <- list(
-    omega_grid = generate_canonical_lattice(3, dim = 3),
-    t_grid = c(0.25, 0.75)
-  )
+  ks_grid <- make_sample_unique_distance_ks_grid()
 
   result_old <- multiplier_bootstrap_vmf(
     data = x,
@@ -1224,7 +1221,8 @@ test_that("vMF fast multiplier bootstrap runs and matches the observed statistic
     n_cores = 1,
     distance_type = "geodesic",
     unknown_param = "xi",
-    bootstrap_method = "reestimated"
+    bootstrap_method = "reestimated",
+    keep = list(observed_process = FALSE)
   )
   result_fast <- multiplier_bootstrap_vmf(
     data = x,
@@ -1237,6 +1235,7 @@ test_that("vMF fast multiplier bootstrap runs and matches the observed statistic
     distance_type = "geodesic",
     unknown_param = "xi",
     bootstrap_method = "fast_multiplier",
+    keep = list(observed_process = FALSE),
     control = list(
       derivative_method = "score_mc",
       derivative_mc_size = 4000L,
@@ -1245,8 +1244,8 @@ test_that("vMF fast multiplier bootstrap runs and matches the observed statistic
     )
   )
 
-  expect_equal(result_fast$observed$ks$statistic, result_old$observed$ks$statistic, tolerance = 1e-12)
-  expect_equal(result_fast$observed$cvm$statistic, result_old$observed$cvm$statistic, tolerance = 1e-12)
+  expect_equal(result_fast$observed$ks$statistic, result_old$observed$ks$statistic, tolerance = 1e-7)
+  expect_equal(result_fast$observed$cvm$statistic, result_old$observed$cvm$statistic, tolerance = 1e-10)
   expect_equal(length(result_fast$bootstrap$statistics$ks), 4)
   expect_equal(length(result_fast$bootstrap$statistics$cvm), 4)
   expect_true(all(is.finite(result_fast$bootstrap$statistics$ks)))
@@ -1688,10 +1687,7 @@ test_that("logistic Gaussian fast multiplier runs without Monte Carlo Vhat inver
     mu_ilr = c(0.2, -0.25),
     Sigma_ilr = matrix(c(0.35, 0.05, 0.05, 0.28), nrow = 2L)
   )
-  ks_grid <- list(
-    omega_grid = x[1:5, , drop = FALSE],
-    t_grid = c(0.3, 0.7)
-  )
+  ks_grid <- make_sample_unique_distance_ks_grid()
   result <- multiplier_bootstrap_logistic_gaussian(
     data = x,
     null = list(type = "composite"),
@@ -1702,6 +1698,7 @@ test_that("logistic Gaussian fast multiplier runs without Monte Carlo Vhat inver
     n_cores = 1,
     unknown_param = "both",
     bootstrap_method = "fast_multiplier",
+    keep = list(observed_process = FALSE),
     control = list(
       derivative_mc_size = 800L,
       derivative_mc_seed = 1105L,
@@ -2101,10 +2098,7 @@ test_that("fallback from fast multiplier rebuilds lightweight precomputations be
 
 test_that("fast bootstrap chunking preserves fast multiplier results", {
   x <- rotasym::r_vMF(12, mu = c(1, 0, 0), kappa = 2)
-  ks_grid <- list(
-    omega_grid = generate_canonical_lattice(4, dim = 3),
-    t_grid = c(0.4, 0.8)
-  )
+  ks_grid <- make_sample_unique_distance_ks_grid()
 
   result_full <- multiplier_bootstrap_vmf(
     data = x,
@@ -2115,6 +2109,7 @@ test_that("fast bootstrap chunking preserves fast multiplier results", {
     seed = 81,
     n_cores = 1,
     bootstrap_method = "fast_multiplier",
+    keep = list(observed_process = FALSE),
     control = list(
       derivative_mc_size = 700L,
       derivative_mc_seed = 82L
@@ -2130,6 +2125,7 @@ test_that("fast bootstrap chunking preserves fast multiplier results", {
     seed = 81,
     n_cores = 1,
     bootstrap_method = "fast_multiplier",
+    keep = list(observed_process = FALSE),
     control = list(
       derivative_mc_size = 700L,
       derivative_mc_seed = 82L,

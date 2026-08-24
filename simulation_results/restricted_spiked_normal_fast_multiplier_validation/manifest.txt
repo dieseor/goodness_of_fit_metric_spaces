@@ -1,0 +1,6 @@
+seed: 20260825
+cores: 10
+B: 99
+score/Fisher Monte Carlo size: 100000
+fast multiplier: C++ contiguous_double, fused sample KS/CvM, score_mc derivative
+paper V=-Fisher; generic engine Vhat=Fisher is the algebraically equivalent internal representation
