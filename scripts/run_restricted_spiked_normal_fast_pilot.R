@@ -22,7 +22,7 @@ lambda_values <- as.numeric(strsplit(arg_value("lambdas"), ",", fixed = TRUE)[[1
 output_dir <- arg_value("output_dir")
 seed <- as.integer(arg_value("seed") %||% "20260826")
 if (any(!is.finite(c(M, B, cores, n_values, lambda_values, seed))) ||
-    M < 1L || B < 1L || cores < 1L || any(n_values < 2L) || any(lambda_values < 0)) {
+    M < 1L || B < 1L || cores < 1L || any(n_values < 2L) || any(lambda_values <= 0)) {
   stop("Invalid pilot arguments.")
 }
 

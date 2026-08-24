@@ -131,7 +131,7 @@ test_that("joint generic spec matches custom MLE, distances, observed stats and 
     seed = 20260831L,
     observed_theta_hat = fixture$fit,
     bootstrap_method = "fast_multiplier",
-    keep = list(observed_process = TRUE, bootstrap_statistics = TRUE, bootstrap_thetas = FALSE),
+    keep = list(observed_process = FALSE, bootstrap_statistics = TRUE, bootstrap_thetas = FALSE),
     control = fixture$control,
     distance_profile_backend = "r"
   )

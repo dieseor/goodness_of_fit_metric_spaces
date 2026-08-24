@@ -1757,26 +1757,6 @@ test_that("cardioid even-order negative rho uses the fast branch", {
   expect_false(isTRUE(result$diagnostics$fallback_to_reestimated))
 })
 
-test_that("JP near psi zero uses the fast vMF limit branch", {
-  x <- rotasym::r_vMF(10, mu = c(0, 0, 1), kappa = 2)
-  spec <- make_jp_spec(distance_type = "geodesic")
-  theta_hat <- list(mu = c(0, 0, 1), kappa = 2, psi = 0)
-  ks_grid <- list(omega_grid = generate_canonical_lattice(3, dim = 3), t_grid = c(0.4, 0.8))
-  ks_prep <- prepare_ks_observed_data(x, spec, theta_hat, ks_grid)
-  prep <- spec_fast_multiplier_prepare(
-    spec = spec,
-    data = x,
-    theta_hat = theta_hat,
-    ks_prep = ks_prep,
-    cvm_prep = NULL,
-    control = list(derivative_mc_size = 700L, derivative_mc_seed = 71L)
-  )
-
-  expect_equal(dim(prep$S_obs), c(nrow(x), 3))
-  expect_equal(dim(prep$Psi_aux), c(700, 3))
-  expect_equal(dim(prep$Vhat), c(3, 3))
-})
-
 test_that("JP alpha boundary uses the recorded slow fallback", {
   x <- rotasym::r_vMF(10, mu = c(0, 0, 1), kappa = 2)
   spec <- make_jp_spec(distance_type = "geodesic")

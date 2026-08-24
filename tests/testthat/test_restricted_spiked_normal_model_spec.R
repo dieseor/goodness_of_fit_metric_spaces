@@ -84,12 +84,16 @@ test_that("restricted-spiked MLE stops at a numerically null profiled radius", {
   )
 })
 
-test_that("restricted-spiked MLE permits the lambda boundary without altering the model", {
-  set.seed(41045)
-  x <- rrestricted_spiked_normal(80L, c(0.8, -0.2), 0)
-  fitted <- fit_restricted_spiked_normal_theta(x, null = list(type = "composite"))
-  expect_true(is.finite(fitted$lambda) && fitted$lambda >= 0)
-  expect_true(is.finite(fitted$loglik))
+test_that("restricted-spiked model excludes the lambda boundary", {
+  expect_error(
+    normalize_restricted_spiked_normal_theta(list(theta = c(0.8, -0.2), lambda = 0)),
+    "strictly positive"
+  )
+  x <- rbind(c(1.05, 0), c(0.55, 0), c(0.8, 0.25), c(0.8, -0.25))
+  expect_error(
+    fit_restricted_spiked_normal_theta(x, null = list(type = "composite")),
+    "excluded boundary"
+  )
 })
 
 test_that("restricted-spiked likelihood equals mvtnorm density", {
@@ -132,7 +136,7 @@ test_that("restricted-spiked custom MLE agrees with the independent OpenMx refer
 
 test_that("restricted-spiked analytical score matches numerical gradients across dimensions", {
   configurations <- list(
-    list(theta = c(0.7, -0.4), lambda = 0),
+    list(theta = c(0.7, -0.4), lambda = 1e-4),
     list(theta = c(0.8, 0.2), lambda = 0.35),
     list(theta = c(0.6, -0.3, 0.2, 0.1, -0.4), lambda = 2.5)
   )
@@ -147,13 +151,6 @@ test_that("restricted-spiked analytical score matches numerical gradients across
       parameter <- c(configuration$theta, configuration$lambda)
       numeric_gradient <- vapply(seq_along(parameter), function(j) {
         left <- parameter; right <- parameter
-        if (j == length(parameter) && left[[j]] == 0) {
-          right[[j]] <- right[[j]] + step
-          return((
-            restricted_spiked_normal_loglik(point, list(theta = right[seq_len(d)], lambda = right[[d + 1L]])) -
-              restricted_spiked_normal_loglik(point, list(theta = left[seq_len(d)], lambda = left[[d + 1L]]))
-          ) / step)
-        }
         left[[j]] <- left[[j]] - step
         right[[j]] <- right[[j]] + step
         (
@@ -182,7 +179,9 @@ test_that("restricted-spiked V is minus the analytical Fisher information", {
 
 test_that("restricted-spiked fast preparation uses its own score and Fisher information", {
   set.seed(4108)
-  x <- rrestricted_spiked_normal(18L, c(0.8, -0.3), 0.8)
+  # This test requires an interior fitted spike because the model now rejects
+  # the non-identified lambda = 0 boundary explicitly.
+  x <- rrestricted_spiked_normal(80L, c(0.8, -0.3), 2)
   spec <- make_restricted_spiked_normal_spec()
   theta_hat <- spec$fit_theta(x, null = list(type = "composite"))
   ks_prep <- prepare_ks_observed_data(
