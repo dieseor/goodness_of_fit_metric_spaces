@@ -461,16 +461,27 @@ compute_theoretical_sample_profile_vmf <- function(center,
   theoretical_distance_profile_vmf(center, mu, kappa, radii, distance_type)
 }
 
+validate_vmf_sample_profile_method <- function(profile_method) {
+  profile_method <- match.arg(profile_method, c("integral", "tabulated"))
+  if (identical(profile_method, "tabulated")) {
+    stop(
+      "Be careful: the tabulated method is not so accurate; the integral method is recommended.",
+      call. = FALSE
+    )
+  }
+  profile_method
+}
+
 compute_sample_ks_sup_vmf <- function(sample_data,
                                       mu,
                                       kappa,
                                       distance_type = "chordal",
                                       h0 = c("simple", "composite"),
                                       unknown_param = NULL,
-                                      profile_method = c("tabulated", "integral"),
+                                      profile_method = c("integral", "tabulated"),
                                       profile_n_u = 4097L) {
   h0 <- match.arg(h0)
-  profile_method <- match.arg(profile_method)
+  profile_method <- validate_vmf_sample_profile_method(profile_method)
   if (h0 == "composite") {
     xi_hat <- compute_mle_xi(sample_data)
     kappa_hat <- sqrt(sum(xi_hat^2))
@@ -492,19 +503,6 @@ compute_sample_ks_sup_vmf <- function(sample_data,
   } else {
     dot_products <- pmax(pmin(dot_products, 1), -1)
     distance_matrix <- acos(dot_products)
-  }
-
-  if (identical(profile_method, "tabulated") && ncol(sample_data) == 3L) {
-    theoretical_matrix <- distance_profile_vmf_s2_cvm_grid(
-      X = sample_data,
-      mu = mu_hat,
-      kappa = kappa_hat,
-      n_u = as.integer(profile_n_u)
-    )
-    empirical_matrix <- t(vapply(seq_len(n), function(i) {
-      rank(distance_matrix[i, ], ties.method = "max") / n
-    }, numeric(n)))
-    return(sqrt(n) * max(abs(empirical_matrix - theoretical_matrix)))
   }
 
   max_diff <- 0
@@ -544,11 +542,11 @@ simulate_empirical_process_vmf <- function(omega_grid, t_grid, n, mu, kappa,
                                           h0 = c("simple","composite"),
                                           unknown_param = NULL,
                                           empirical_ks_mode = c("sample", "grid"),
-                                          sample_profile_method = c("tabulated", "integral"),
+                                          sample_profile_method = c("integral", "tabulated"),
                                           sample_profile_n_u = 4097L) {
   h0 <- match.arg(h0)
   empirical_ks_mode <- match.arg(empirical_ks_mode)
-  sample_profile_method <- match.arg(sample_profile_method)
+  sample_profile_method <- validate_vmf_sample_profile_method(sample_profile_method)
   cat("=== Simulating Empirical Process for vMF Distribution ===\n")
   cat("Empirical KS mode:", empirical_ks_mode, "\n")
   
@@ -727,7 +725,7 @@ visualize_convergence_to_limit_vmf <- function(n_values = c(50, 100, 500),
                                               h0 = c("simple","composite"),
                                               unknown_param = NULL,
                                               empirical_ks_mode = c("sample", "grid"),
-                                              sample_profile_method = c("tabulated", "integral"),
+                                              sample_profile_method = c("integral", "tabulated"),
                                               sample_profile_n_u = 4097L,
                                               cov_method = c("mc", "exact_s1_simple", "integral_s2_simple"),
                                               cdf_grid_size = 16385,
@@ -737,7 +735,7 @@ visualize_convergence_to_limit_vmf <- function(n_values = c(50, 100, 500),
   h0 <- match.arg(h0)
   cov_method <- match.arg(cov_method)
   empirical_ks_mode <- match.arg(empirical_ks_mode)
-  sample_profile_method <- match.arg(sample_profile_method)
+  sample_profile_method <- validate_vmf_sample_profile_method(sample_profile_method)
   
   # Use provided omega_grid/t_grid if present, otherwise create automatically
   cat("Empirical KS mode:", empirical_ks_mode, "\n")

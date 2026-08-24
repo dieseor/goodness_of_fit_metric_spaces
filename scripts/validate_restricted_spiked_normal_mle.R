@@ -41,7 +41,7 @@ theta_design <- function(d) {
 
 dimensions <- c(2L, 5L)
 n_values <- c(50L, 200L, 800L)
-lambda_values <- c(0, 0.01, 0.5, 2, 8)
+lambda_values <- c(0.05, 0.5, 2, 8)
 design <- do.call(rbind, lapply(dimensions, function(d) {
   theta_list <- theta_design(d)
   do.call(rbind, lapply(names(theta_list), function(theta_name) {

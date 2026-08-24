@@ -33,7 +33,7 @@ design <- do.call(rbind, lapply(c(2L, 5L), function(d) {
   expand.grid(
     d = d,
     theta_name = c("axis", "diagonal"),
-    lambda = c(0, 1e-6, 0.5, 2),
+    lambda = c(1e-4, 0.05, 0.5, 2),
     stringsAsFactors = FALSE
   )
 }))
@@ -55,13 +55,6 @@ numeric_score_error <- function(x, theta, lambda, step = 1e-6) {
   ))
   numerical <- vapply(seq_along(parameter), function(j) {
     left <- parameter; right <- parameter
-    if (j == d + 1L && lambda == 0) {
-      right[[j]] <- right[[j]] + step
-      return((
-        restricted_spiked_normal_loglik(x, list(theta = right[seq_len(d)], lambda = right[[d + 1L]])) -
-          restricted_spiked_normal_loglik(x, list(theta = left[seq_len(d)], lambda = left[[d + 1L]]))
-      ) / step)
-    }
     left[[j]] <- left[[j]] - step
     right[[j]] <- right[[j]] + step
     (

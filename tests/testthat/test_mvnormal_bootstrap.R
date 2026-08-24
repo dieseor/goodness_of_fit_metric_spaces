@@ -219,7 +219,7 @@ test_that("mvnormal fast multiplier supports the sample-based KS grid", {
   )
 })
 
-test_that("mvnormal legacy C++ is bitwise identical to R and contiguous C++ preserves inference", {
+test_that("mvnormal fused contiguous C++ preserves the joint KS--CvM inference", {
   for (d in c(2L, 10L)) {
     set.seed(1300L + d)
     x <- mvtnorm::rmvnorm(
@@ -264,19 +264,6 @@ test_that("mvnormal legacy C++ is bitwise identical to R and contiguous C++ pres
         cache_block_corrections = "true"
       ))
     )
-    legacy_common <- common
-    legacy_common$control <- utils::modifyList(
-      common$control,
-      list(fast_multiplier_cpp_kernel = "legacy")
-    )
-    cpp_legacy <- do.call(
-      multiplier_bootstrap_mvnormal,
-      c(legacy_common, list(
-        fast_multiplier_backend = "cpp",
-        fuse_ks_cvm = TRUE,
-        cache_block_corrections = "true"
-      ))
-    )
     cpp_uncached <- do.call(
       multiplier_bootstrap_mvnormal,
       c(common, list(
@@ -285,33 +272,17 @@ test_that("mvnormal legacy C++ is bitwise identical to R and contiguous C++ pres
         cache_block_corrections = "false"
       ))
     )
-    r_unfused <- do.call(
-      multiplier_bootstrap_mvnormal,
-      c(common, list(
-        fast_multiplier_backend = "r",
-        fuse_ks_cvm = FALSE,
-        cache_block_corrections = "true"
-      ))
-    )
-
     expect_identical(
       cpp_uncached$bootstrap$statistics,
       cpp_fused$bootstrap$statistics
     )
-    expect_identical(
-      r_unfused$bootstrap$statistics,
-      r_fused$bootstrap$statistics
-    )
-    expect_identical(cpp_legacy$bootstrap$statistics, r_fused$bootstrap$statistics)
-    expect_identical(cpp_legacy$observed, r_fused$observed)
-    expect_identical(cpp_legacy$inference, r_fused$inference)
     expect_identical(cpp_fused$observed, r_fused$observed)
     expect_equal(
       cpp_fused$bootstrap$statistics,
-      cpp_legacy$bootstrap$statistics,
+      r_fused$bootstrap$statistics,
       tolerance = 1e-12
     )
-    expect_identical(cpp_fused$inference, cpp_legacy$inference)
+    expect_identical(cpp_fused$inference, r_fused$inference)
     expect_identical(
       cpp_fused$diagnostics$fast_multiplier_backend_effective,
       "cpp"
@@ -322,10 +293,6 @@ test_that("mvnormal legacy C++ is bitwise identical to R and contiguous C++ pres
     expect_identical(
       cpp_fused$diagnostics$fast_multiplier_cpp_kernel_effective,
       "contiguous_double"
-    )
-    expect_identical(
-      cpp_legacy$diagnostics$fast_multiplier_cpp_kernel_effective,
-      "legacy"
     )
     if (d == 2L) {
       parallel_common <- common

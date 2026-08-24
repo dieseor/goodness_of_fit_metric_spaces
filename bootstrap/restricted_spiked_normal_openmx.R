@@ -24,8 +24,8 @@ fit_restricted_spiked_normal_openmx <- function(data,
   start_theta <- as.numeric(start_theta %||% custom_start$theta)
   start_lambda <- as.numeric(start_lambda %||% custom_start$lambda)[1L]
   if (length(start_theta) != d || any(!is.finite(start_theta)) ||
-      !is.finite(start_lambda) || start_lambda < 0 || sum(start_theta^2) == 0) {
-    stop("OpenMx restricted-spiked starts must have a non-zero finite theta and lambda >= 0.")
+      !is.finite(start_lambda) || start_lambda <= 0 || sum(start_theta^2) == 0) {
+    stop("OpenMx restricted-spiked starts must have a non-zero finite theta and strictly positive lambda.")
   }
 
   theta_labels <- paste0("theta_", seq_len(d))
@@ -38,6 +38,8 @@ fit_restricted_spiked_normal_openmx <- function(data,
     ),
     OpenMx::mxMatrix(
       type = "Full", nrow = 1L, ncol = 1L, free = TRUE,
+      # OpenMx supports a closed lower bound only.  A fitted value numerically
+      # at zero is rejected below by the shared strict model validator.
       values = matrix(start_lambda, nrow = 1L), lbound = matrix(0, nrow = 1L),
       labels = "lambda_parameter", name = "lambda"
     ),

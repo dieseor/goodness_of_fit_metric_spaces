@@ -41,13 +41,28 @@ bootstrap/multiplier_bootstrap.R       # KS/CvM statistics and multiplier resamp
 `bootstrap/restricted_spiked_normal_model_spec.R` implements the separate
 restricted family
 \(N_d(\theta, I_d + \lambda u(\theta)u(\theta)^\top)\), where
-\(u(\theta)=\theta/\|\theta\|\), \(\theta\ne0\), and \(\lambda\ge0\).
+\(u(\theta)=\theta/\|\theta\|\), \(\theta\ne0\), and \(\lambda>0\).
 It is not PPCA and does not estimate the mean and spike direction separately.
 Its production MLE profiles over \(\lambda\) and obtains the leading
 eigenvector at each value; `bootstrap/restricted_spiked_normal_openmx.R`
 contains an independent OpenMx reference used only by the validation suite.
 The custom estimator stops with an explicit error if its profiled radius is
 numerically indistinguishable from zero; it does not regularise that case.
+
+The paper's double-spike power experiment is implemented by
+`scripts/run_restricted_spiked_normal_covariance_alternatives.R`. A single
+runner selects one of four mean configurations with `--mean_config`:
+`axis_075`, `axis_100`, `diagonal_150`, or `diagonal_100`. Its paper defaults
+are `d=2,5`, `n=50,100,200,400`, `beta=0,0.25,0.5,1`, `M=1000`, `B=5000`,
+`N_deriv=10000`, and `lambda=2`. Both KS and CvM use the observed sample
+points and their unique observed distance thresholds, sharing the same fast
+sample cache. The historical base seeds are retained per mean configuration
+(`20260831` for the non-unit means and `20260833` for the unit means). Each
+configuration has a separate output directory and a strict
+manifest, atomic checkpoints, deterministic seeds, and an output lock. The C3
+intermediate benchmark is submitted through
+`scripts/run_c3_restricted_spiked_normal_benchmark.sbatch`; production Slurm
+resources are intentionally chosen only after those benchmark measurements.
 
 ### Fast multivariate-normal loop
 

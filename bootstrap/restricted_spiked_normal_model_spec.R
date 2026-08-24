@@ -1,7 +1,7 @@
 # Restricted Gaussian model with a mean-aligned rank-one covariance spike.
 #
 #   X ~ N_d(theta, I_d + lambda u(theta) u(theta)^T),
-#   u(theta) = theta / ||theta||, lambda >= 0.
+#   u(theta) = theta / ||theta||, lambda > 0.
 #
 # This is deliberately distinct from both the unrestricted multivariate
 # Gaussian adapter and PPCA: theta controls the mean and the spike direction.
@@ -51,8 +51,8 @@ normalize_restricted_spiked_normal_theta <- function(theta,
       length(theta_vector) != ambient_dim) {
     stop("Restricted-spiked normal theta has incompatible ambient dimension.")
   }
-  if (length(lambda) != 1L || !is.finite(lambda) || lambda < 0) {
-    stop("Restricted-spiked normal `lambda` must be a finite scalar greater than or equal to zero.")
+  if (length(lambda) != 1L || !is.finite(lambda) || lambda <= 0) {
+    stop("Restricted-spiked normal `lambda` must be a strictly positive finite scalar.")
   }
   radius <- sqrt(sum(theta_vector^2))
   if (!is.finite(radius) || radius == 0) {
@@ -276,10 +276,10 @@ restricted_spiked_normal_profile_maximize <- function(xbar, S,
     stop("`tol` must be a strictly positive finite scalar.")
   }
   bound <- restricted_spiked_normal_profile_upper_tau(xbar, S)
-  # A linear scan resolves interior maxima, while the quadratic scan gives
-  # the boundary lambda = 0 the same numerical scrutiny.  This is necessary
-  # because a narrow positive-lambda maximum can lie before the first point
-  # of a purely linear grid.
+  # A linear scan resolves interior maxima, while the quadratic scan also
+  # diagnoses a profile maximum at the excluded boundary lambda = 0.  This is
+  # necessary because a narrow positive-lambda maximum can lie before the
+  # first point of a purely linear grid.
   grid_fraction <- seq(0, 1, length.out = grid_size)
   tau_grid <- sort(c(
     bound$tau_upper * grid_fraction,
@@ -361,6 +361,15 @@ fit_restricted_spiked_normal_theta <- function(data, weights = NULL, null,
         "is numerically too close to zero (r = %.6e; tolerance = %.6e)."
       ),
       profile$best$r, radius_tolerance
+    ))
+  }
+  if (!is.finite(profile$best$lambda) || profile$best$lambda <= 0) {
+    stop(sprintf(
+      paste0(
+        "Restricted-spiked normal MLE stopped: the profiled lambda is numerically ",
+        "at the excluded boundary lambda = 0 (lambda = %.6e)."
+      ),
+      profile$best$lambda
     ))
   }
   theta_hat <- profile$best$r * profile$best$u
