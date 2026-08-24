@@ -36,6 +36,19 @@ bootstrap/multiplier_bootstrap.R       # KS/CvM statistics and multiplier resamp
 
 `utils.R` is therefore the main location for generic mathematical and numerical utilities, including most shared theoretical distance-profile evaluations.  `bootstrap/model_specs.R` defines the model-specification interface and loads all family adapters. Each `bootstrap/*_model_spec.R` file owns the normalization, fitting, distance, profile, and fast-bootstrap components of one model family.
 
+### Restricted mean-aligned spiked normal model
+
+`bootstrap/restricted_spiked_normal_model_spec.R` implements the separate
+restricted family
+\(N_d(\theta, I_d + \lambda u(\theta)u(\theta)^\top)\), where
+\(u(\theta)=\theta/\|\theta\|\), \(\theta\ne0\), and \(\lambda\ge0\).
+It is not PPCA and does not estimate the mean and spike direction separately.
+Its production MLE profiles over \(\lambda\) and obtains the leading
+eigenvector at each value; `bootstrap/restricted_spiked_normal_openmx.R`
+contains an independent OpenMx reference used only by the validation suite.
+The custom estimator stops with an explicit error if its profiled radius is
+numerically indistinguishable from zero; it does not regularise that case.
+
 ### Fast multivariate-normal loop
 
 For `multiplier_bootstrap_mvnormal(..., bootstrap_method = "fast_multiplier")`,

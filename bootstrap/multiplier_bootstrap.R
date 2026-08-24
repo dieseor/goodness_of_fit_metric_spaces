@@ -2544,6 +2544,21 @@ run_fast_multiplier_bootstrap <- function(weight_matrix,
   }
   fusion_effective <- isTRUE(fusion_requested) &&
     want_ks && want_cvm && sample_backend_eligible
+  if (want_ks && want_cvm &&
+      (!isTRUE(cvm_prep$shared_with_ks) ||
+       !isTRUE(shared_sample_stream) ||
+       !isTRUE(fusion_effective))) {
+    stop(
+      paste(
+        "Joint fast-multiplier KS and CvM were requested, but their shared",
+        "sample preparation and fused evaluation are not active.",
+        "Use the sample-points unique-distance KS grid, set",
+        "`keep$observed_process = FALSE`, and leave",
+        "`control$fast_multiplier_fuse_ks_cvm = TRUE`."
+      ),
+      call. = FALSE
+    )
+  }
   prep_seconds <- proc.time()[["elapsed"]] - prep_start
 
   n_reps <- nrow(weight_matrix)

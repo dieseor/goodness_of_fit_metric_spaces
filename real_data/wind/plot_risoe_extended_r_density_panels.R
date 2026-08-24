@@ -1,19 +1,19 @@
 #!/usr/bin/env Rscript
 
 # Separate, publication-ready density panels in the original r=s/mean(s)
-# coordinate for the November--December--January start4 samples at 77 m and
-# 77 m, and the May--June--July start4 sample at 77 m.
+# coordinate for the November--December--January and May--June--July start4
+# samples at 77 m.
 #
 # The November--December--January KDEs use the manual bandwidths from
 # plot_risoe_nov_dec_jan_start4_r_density_contours_manual_bw.R.
 # The May--June--July KDE uses the bandwidth selected by the existing LCV code.
 #
-# All six panels share axes, HDR levels, point styling, dimensions, and
-# typography with plot_risoe_paper_r_density_panels.R. The four
+# All four panels share axes, HDR levels, point styling, dimensions, and
+# typography with plot_risoe_paper_r_density_panels.R. The two
 # November--December--January panels share one density scale, while the two
 # May--June--July panels share a second density scale. Each scale is shown to
 # the right of the corresponding nonparametric panel: November--December--
-# January at 77 m and May--June--July at 77 m.
+# January and May--June--July, both at 77 m.
 
 script_argument <- commandArgs(trailingOnly = FALSE)
 script_argument <- script_argument[grepl("^--file=", script_argument)]
@@ -59,7 +59,6 @@ paper_output_dir <- file.path(
 # These are the manual bandwidths used in
 # plot_risoe_nov_dec_jan_start4_r_density_contours_manual_bw.R.
 manual_bandwidths <- list(
-  `77` = c(h_r = 0.30, kappa_theta = 1.50),
   `77` = c(h_r = 0.30, kappa_theta = 1.50)
 )
 
@@ -247,7 +246,6 @@ run_extended_density_panels <- function(output_dir = paper_output_dir) {
 
   cases <- list(
     nov_dec_jan_77m_start4 = build_nov_dec_jan_case(selected, 77L),
-    nov_dec_jan_77m_start4 = build_nov_dec_jan_case(selected, 77L),
     may_jun_jul_77m_start4 = build_target_case(selected)
   )
 
@@ -274,10 +272,6 @@ run_extended_density_panels <- function(output_dir = paper_output_dir) {
       cases$nov_dec_jan_77m_start4,
       manual_bandwidths[["77"]]
     ),
-    nov_dec_jan_77m_start4 = make_density_object(
-      cases$nov_dec_jan_77m_start4,
-      manual_bandwidths[["77"]]
-    ),
     may_jun_jul_77m_start4 = make_density_object(
       cases$may_jun_jul_77m_start4,
       may_jun_jul_bandwidths
@@ -286,10 +280,7 @@ run_extended_density_panels <- function(output_dir = paper_output_dir) {
 
   # Two common fill scales are used: one for all November--December--
   # January panels and one for both May--June--July panels.
-  nov_dec_jan_ids <- c(
-    "nov_dec_jan_77m_start4",
-    "nov_dec_jan_77m_start4"
-  )
+  nov_dec_jan_ids <- "nov_dec_jan_77m_start4"
   may_jun_jul_ids <- "may_jun_jul_77m_start4"
 
   nov_dec_jan_fill_max <- max(vapply(

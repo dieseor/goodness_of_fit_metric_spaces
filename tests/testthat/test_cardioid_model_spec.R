@@ -188,3 +188,65 @@ test_that("cardioid composite bootstrap stores varying theta stars", {
   expect_identical(result$diagnostics$method, "distance_profiles")
   expect_true(isTRUE(result$diagnostics$weighted_mle))
 })
+
+test_that("joint fast KS and CvM refuse an unshared dense evaluation", {
+  set.seed(812)
+  X <- r_sph_car(n = 12L, mu = c(0, 0, 1), rho = 0.35, k = 2L)
+
+  expect_error(
+    multiplier_bootstrap_gof(
+      data = X,
+      spec = make_cardioid_spec(k = 2L, distance_type = "geodesic"),
+      null = list(type = "composite"),
+      statistics = c("ks", "cvm"),
+      ks_grid = make_sample_unique_distance_ks_grid(),
+      B = 2L,
+      seed = 91L,
+      n_cores = 1L,
+      bootstrap_method = "fast_multiplier",
+      keep = list(
+        observed_process = TRUE,
+        bootstrap_statistics = TRUE,
+        bootstrap_thetas = FALSE
+      ),
+      control = list(derivative_mc_size = 50L)
+    ),
+    "shared sample preparation and fused evaluation are not active",
+    fixed = TRUE
+  )
+})
+
+test_that("joint fast KS and CvM use the shared fused C++ path", {
+  set.seed(813)
+  X <- r_sph_car(n = 12L, mu = c(0, 0, 1), rho = 0.35, k = 2L)
+
+  result <- multiplier_bootstrap_gof(
+    data = X,
+    spec = make_cardioid_spec(k = 2L, distance_type = "geodesic"),
+    null = list(type = "composite"),
+    statistics = c("ks", "cvm"),
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    B = 3L,
+    seed = 92L,
+    n_cores = 1L,
+    bootstrap_method = "fast_multiplier",
+    keep = list(
+      observed_process = FALSE,
+      bootstrap_statistics = TRUE,
+      bootstrap_thetas = FALSE
+    ),
+    control = list(
+      derivative_mc_size = 50L,
+      fast_multiplier_backend = "cpp",
+      fast_multiplier_fuse_ks_cvm = TRUE
+    )
+  )
+
+  expect_true(isTRUE(result$diagnostics$shared_sample_ks_cvm_cache))
+  expect_true(isTRUE(result$diagnostics$fast_multiplier_fuse_ks_cvm_effective))
+  expect_identical(result$diagnostics$fast_multiplier_backend_effective, "cpp")
+  expect_identical(
+    result$diagnostics$fast_cvm_mode,
+    "sample_points_unique_distances_sorted_rows"
+  )
+})
