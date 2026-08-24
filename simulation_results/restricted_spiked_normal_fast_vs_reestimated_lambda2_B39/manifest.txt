@@ -1,0 +1,7 @@
+matched fast versus reestimated diagnostic: restricted single-spiked normal
+lambda=2; B=39; outer cores=8; seed=20260832
+d=2,5; n=50,200
+theta designs: 0.75 e1; 1.5 (1,...,1)/sqrt(d)
+Each pair uses the identical dataset and the same bootstrap seed.
+KS: sample unique-distance grid; fast: C++ contiguous_double fused KS-CvM.
+derivative=score_mc, auxiliary size=1000; CvM block size=50.
