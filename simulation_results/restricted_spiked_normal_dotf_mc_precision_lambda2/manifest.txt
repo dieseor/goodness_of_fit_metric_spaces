@@ -1,0 +1,9 @@
+restricted single-spiked normal dot-F score-MC precision diagnostic
+lambda=2; cores=10; seed=20260834
+candidate auxiliary sizes: 1000,10000; replications each: 20
+reference auxiliary size: 200000
+evaluation grid: 12 centres x 5 conditional-distance quantiles = 60 points/configuration
+configurations: d=2,5 and theta=.75e1, e1, 1.5*1/sqrt(d), 1/sqrt(d)
+target: E[1{||X-omega||<=t} psi_(theta,lambda)(X)] at the true restricted null parameter
+dotf_point_errors.csv stores every evaluation-point error, not only its aggregate.
+This diagnoses auxiliary Monte Carlo error only; it does not run GOF or assess plug-in theta error.
