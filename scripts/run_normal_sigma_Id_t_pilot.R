@@ -37,14 +37,40 @@ standardized_multivariate_t <- function(n, d, nu) {
   z * sqrt((nu - 2) / w)
 }
 
+normal_sigma_Id_t_production_betas <- c(0, 0.25, 0.5, 1)
+
 normal_sigma_Id_t_design <- function(dimensions, n_values, beta_values, M) {
+  dimensions <- sort(unique(as.integer(dimensions)))
+  n_values <- sort(unique(as.integer(n_values)))
+  beta_values <- sort(unique(as.numeric(beta_values)))
+
+  if (!all(beta_values %in% normal_sigma_Id_t_production_betas)) {
+    stop("beta_values must be a subset of c(0, 0.25, 0.5, 1).")
+  }
+
   design <- expand.grid(
-    d = sort(unique(as.integer(dimensions))),
-    n = sort(unique(as.integer(n_values))),
-    beta = sort(unique(as.numeric(beta_values))),
+    d = dimensions,
+    n = n_values,
+    beta = beta_values,
     stringsAsFactors = FALSE
   )
-  design$design_id <- seq_len(nrow(design))
+
+  # design_id is defined from the complete production beta catalogue, so
+  # splitting production by beta does not change seeds or existing keys.
+  catalog <- expand.grid(
+    d = dimensions,
+    n = n_values,
+    beta = normal_sigma_Id_t_production_betas,
+    stringsAsFactors = FALSE
+  )
+  catalog$design_id <- seq_len(nrow(catalog))
+
+  design_key <- paste(design$d, design$n, design$beta, sep = "|")
+  catalog_key <- paste(catalog$d, catalog$n, catalog$beta, sep = "|")
+  idx <- match(design_key, catalog_key)
+  if (anyNA(idx)) stop("Could not assign stable production design_id values.")
+
+  design$design_id <- catalog$design_id[idx]
   merge(design, data.frame(replication = seq_len(as.integer(M))), by = NULL)
 }
 

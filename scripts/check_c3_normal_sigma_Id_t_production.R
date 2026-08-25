@@ -13,6 +13,7 @@ main <- function() {
   output_dir <- as.character(args$output_dir %||% "")
   d <- suppressWarnings(as.integer(args$d %||% NA_integer_))
   nu <- suppressWarnings(as.numeric(args$nu %||% NA_real_))
+  beta <- suppressWarnings(as.numeric(args$beta %||% NA_real_))
   M <- suppressWarnings(as.integer(args$M %||% 1000L))
   B <- suppressWarnings(as.integer(args$B %||% 5000L))
   base_seed <- suppressWarnings(as.integer(args$seed %||% 20260728L))
@@ -36,6 +37,10 @@ main <- function() {
     stop(sprintf("The production pairing requires d=%d with nu=%d.", d, expected_nu),
          call. = FALSE)
   }
+  if (length(beta) != 1L || !is.finite(beta) ||
+      !beta %in% normal_sigma_Id_t_production_betas) {
+    stop("`--beta` must be one of 0, 0.25, 0.5 or 1.", call. = FALSE)
+  }
   if (!identical(M, 1000L) || !identical(B, 5000L) ||
       !identical(derivative_mc_size, 10000L) ||
       !identical(cvm_block_size, 50L) || is.na(base_seed)) {
@@ -46,7 +51,7 @@ main <- function() {
   design <- normal_sigma_Id_t_design(
     dimensions = d,
     n_values = c(50L, 100L, 200L, 400L),
-    beta_values = c(0, 0.25, 0.5, 1),
+    beta_values = beta,
     M = M
   )
   expected_manifest <- unique(design[c("d", "n", "beta", "design_id")])
