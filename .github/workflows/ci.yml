@@ -18,10 +18,10 @@ jobs:
         with:
           r-version: '4.4.2'
 
-      - name: Install GNU Scientific Library
+      - name: Install system libraries required by renv packages
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libgsl-dev
+          sudo apt-get install --yes libgsl-dev libnetcdf-dev
 
       - name: Restore renv library
         uses: r-lib/actions/setup-renv@v2
