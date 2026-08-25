@@ -61,8 +61,8 @@ test_that("the C3 wrapper uses beta-specific production resources", {
   )
 
   expect_true(any(grepl("^#SBATCH --cpus-per-task=16$", lines)))
-  expect_true(any(grepl("^#SBATCH --time=01:00:00$", lines)))
-  expect_true(any(grepl("^#SBATCH --mem=4G$", lines)))
+  expect_true(any(grepl("^#SBATCH --time=00:40:00$", lines)))
+  expect_true(any(grepl("^#SBATCH --mem=5G$", lines)))
   expect_true(any(grepl("--M=1000 --B=5000", lines, fixed = TRUE)))
   expect_true(any(grepl("--n_values=50,100,200,400", lines, fixed = TRUE)))
   expect_true(any(grepl("--beta_values=${beta_value}", lines, fixed = TRUE)))
