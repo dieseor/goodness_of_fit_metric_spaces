@@ -1,23 +1,30 @@
 #!/bin/bash
 
-#SBATCH --job-name=rspike_finalpilot
+#SBATCH --job-name=rspike_prod
 #SBATCH --account=uc3m-influentia-15
 #SBATCH --output=logs/rspike_finalpilot_%j.out
 #SBATCH --error=logs/rspike_finalpilot_%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --time=00:45:00
-#SBATCH --mem=6G
+#SBATCH --time=00:40:00
+#SBATCH --mem=7G
 #SBATCH --partition=batch
 
 set -euo pipefail
 
-mean_config="axis_075"
+if [[ $# -ne 2 ]]; then
+    echo "Usage: sbatch script CONFIG BETA"
+    exit 2
+fi
+
+mean_config="$1"
+beta_value="$2"
+beta_label=$(echo "$beta_value" | sed "s/\\./p/")
 
 cd "$SLURM_SUBMIT_DIR"
 
-output_dir="simulation_results/restricted_spiked_normal_finalpilot/${mean_config}_d2_d5_n50_100_200_400_M1000_B5000_beta05_Nderiv10000"
+output_dir="simulation_results/restricted_spiked_normal_finalpilot/${mean_config}_d2_d5_n50_100_200_400_M1000_B5000_beta${beta_label}_Nderiv10000"
 
 mkdir -p logs
 
@@ -51,7 +58,7 @@ Rscript --vanilla scripts/check_c3_restricted_spiked_normal.R \
   --B=5000 \
   --dimensions=2,5 \
   --n_values=50,100,200,400 \
-  --beta_values=0.5 \
+  --beta_values=${beta_value} \
   --lambda=2 \
   --derivative_mc_size=10000 \
   --cvm_block_size=50 \
@@ -66,7 +73,7 @@ Rscript --vanilla scripts/run_restricted_spiked_normal_covariance_alternatives.R
   --B=5000 \
   --dimensions=2,5 \
   --n_values=50,100,200,400 \
-  --beta_values=0.5 \
+  --beta_values=${beta_value} \
   --lambda=2 \
   --derivative_mc_size=10000 \
   --cvm_block_size=50 \
@@ -85,7 +92,7 @@ Rscript --vanilla scripts/check_c3_restricted_spiked_normal.R \
   --B=5000 \
   --dimensions=2,5 \
   --n_values=50,100,200,400 \
-  --beta_values=0.5 \
+  --beta_values=${beta_value} \
   --lambda=2 \
   --derivative_mc_size=10000 \
   --cvm_block_size=50 \
