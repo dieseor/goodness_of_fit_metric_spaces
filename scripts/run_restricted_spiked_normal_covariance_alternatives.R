@@ -291,7 +291,7 @@ run_restricted_spiked_covariance_alternatives <- function(
     dimensions = c(2L, 5L), n_values = c(50L, 100L, 200L, 400L),
     beta_values = c(0, 0.25, 0.5, 1), lambda = 2,
     derivative_mc_size = 10000L, cvm_block_size = 50L, cores = 4L,
-    checkpoint_results = 64L, base_seed = NULL, show_progress = TRUE) {
+    checkpoint_results = 2000L, base_seed = NULL, show_progress = TRUE) {
   if (is.null(base_seed)) base_seed <- restricted_spiked_default_seed(mean_config)
   numeric_settings <- c(M, B, dimensions, n_values, beta_values, lambda,
                         derivative_mc_size, cvm_block_size, cores,
@@ -545,7 +545,7 @@ if (sys.nframe() == 0L) {
     derivative_mc_size = derivative_mc_size,
     cvm_block_size = as.integer(args$cvm_block_size %||% 50L),
     cores = as.integer(args$cores %||% 4L),
-    checkpoint_results = as.integer(args$checkpoint_results %||% 64L),
+    checkpoint_results = as.integer(args$checkpoint_results %||% 2000L),
     base_seed = as.integer(args$seed %||% restricted_spiked_default_seed(mean_config)),
     show_progress = !identical(tolower(as.character(args$show_progress %||% "true")),
                                "false")
