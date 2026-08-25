@@ -21,7 +21,7 @@ jobs:
       - name: Install system libraries required by renv packages
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libgsl-dev libnetcdf-dev
+          sudo apt-get install --yes libgsl-dev libnetcdf-dev libglu1-mesa-dev
 
       - name: Restore renv library
         uses: r-lib/actions/setup-renv@v2
