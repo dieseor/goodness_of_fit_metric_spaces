@@ -6,9 +6,9 @@
 #SBATCH --error=logs/rspike_finalpilot_%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
-#SBATCH --time=00:40:00
-#SBATCH --mem=7G
+#SBATCH --cpus-per-task=16
+#SBATCH --time=01:15:00
+#SBATCH --mem=6G
 #SBATCH --partition=batch
 
 set -euo pipefail

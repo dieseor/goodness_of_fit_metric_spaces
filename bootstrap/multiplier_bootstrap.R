@@ -3558,34 +3558,19 @@ multiplier_bootstrap_mvnormal <- function(data,
   control$fast_multiplier_backend <- fast_multiplier_backend
   control$fast_multiplier_fuse_ks_cvm <- fuse_ks_cvm
   control$fast_multiplier_cache_corrections <- cache_block_corrections
-  legacy_mc_control <- is.null(control$derivative_method) &&
-    (!is.null(control$derivative_mc_size) ||
-       !is.null(control$derivative_mc_seed))
-  if (legacy_mc_control) {
-    warning(
-      paste(
-        "Multivariate-normal fast multiplier: legacy derivative MC controls",
-        "were supplied without `derivative_method`. Selecting `score_mc`."
-      ),
-      call. = FALSE
-    )
-  }
-  requested_method <- tolower(as.character(
-    control$derivative_method %||% if (legacy_mc_control) "score_mc" else "auto"
-  ))
+  requested_method <- tolower(as.character(control$derivative_method %||% "auto"))
   effective_method <- if (requested_method %in% c("auto", "deterministic")) {
-    "quadrature"
+    "score_mc"
   } else {
     requested_method
   }
   selection_source <- if (!is.null(control$derivative_method)) {
     if (identical(requested_method, "auto")) "explicit_auto" else "explicit"
-  } else if (legacy_mc_control) {
-    "legacy_mc_controls"
   } else {
     "model_default"
   }
   control$derivative_method <- effective_method
+  control$derivative_mc_size <- as.integer(control$derivative_mc_size %||% 10000L)
   spec <- make_mvnormal_spec(unknown_param = unknown_param)
   result <- multiplier_bootstrap_gof(
     data = data,
@@ -3905,34 +3890,19 @@ multiplier_bootstrap_logistic_gaussian <- function(data,
                                                    control = list(),
                                                    unknown_param = "both",
                                                    distance_profile_backend = c("r", "cpp")) {
-  legacy_mc_control <- is.null(control$derivative_method) &&
-    (!is.null(control$derivative_mc_size) ||
-       !is.null(control$derivative_mc_seed))
-  if (legacy_mc_control) {
-    warning(
-      paste(
-        "Logistic-Gaussian fast multiplier: legacy derivative MC controls",
-        "were supplied without `derivative_method`. Selecting `score_mc`."
-      ),
-      call. = FALSE
-    )
-  }
-  requested_method <- tolower(as.character(
-    control$derivative_method %||% if (legacy_mc_control) "score_mc" else "auto"
-  ))
+  requested_method <- tolower(as.character(control$derivative_method %||% "auto"))
   effective_method <- if (requested_method %in% c("auto", "deterministic")) {
-    "quadrature"
+    "score_mc"
   } else {
     requested_method
   }
   selection_source <- if (!is.null(control$derivative_method)) {
     if (identical(requested_method, "auto")) "explicit_auto" else "explicit"
-  } else if (legacy_mc_control) {
-    "legacy_mc_controls"
   } else {
     "model_default"
   }
   control$derivative_method <- effective_method
+  control$derivative_mc_size <- as.integer(control$derivative_mc_size %||% 10000L)
   spec <- make_logistic_gaussian_spec(unknown_param = unknown_param)
 
   result <- multiplier_bootstrap_gof(

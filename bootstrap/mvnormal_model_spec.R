@@ -223,22 +223,13 @@ prepare_mvnormal_fast_multiplier <- function(spec,
     )
   }
 
-  legacy_mc_control <- !is.null(control$derivative_mc_size) ||
-    !is.null(control$derivative_mc_seed)
-  if (is.null(control$derivative_method) && legacy_mc_control) {
-    warning(
-      paste(
-        "Multivariate-normal fast multiplier: `derivative_method` was not",
-        "supplied, but legacy `derivative_mc_size`/`derivative_mc_seed`",
-        "controls were found. Selecting `score_mc`; set",
-        "`derivative_method = 'score_mc'` or 'quadrature' explicitly."
-      ),
-      call. = FALSE
-    )
-  }
+  # Score-MC is the production default for the composite multivariate-normal
+  # model. The quadrature branch below is retained only for explicit
+  # reproducibility/diagnostic calls.
   derivative_control <- fast_multiplier_parse_derivative_control(
     control,
-    default_method = if (legacy_mc_control) "score_mc" else "quadrature"
+    default_method = "score_mc",
+    default_mc_size = 10000L
   )
   store_paper_quantities <- isTRUE(control$fast_multiplier_store_paper_quantities)
   paper_score_obs <- if (store_paper_quantities) {
