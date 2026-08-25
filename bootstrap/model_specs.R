@@ -270,7 +270,8 @@ fast_multiplier_numeric_jacobian <- function(fun,
 }
 
 fast_multiplier_parse_derivative_control <- function(control = list(),
-                                                     default_method = "score_mc") {
+                                                     default_method = "score_mc",
+                                                     default_mc_size = 1000L) {
   default_method <- tolower(as.character(default_method))
   if (length(default_method) != 1L ||
       !default_method %in% c("score_mc", "quadrature")) {
@@ -297,7 +298,11 @@ fast_multiplier_parse_derivative_control <- function(control = list(),
     derivative_method <- default_method
   }
 
-  derivative_mc_size <- as.integer(control$derivative_mc_size %||% 1000L)
+  default_mc_size <- as.integer(default_mc_size)
+  if (!is.finite(default_mc_size) || default_mc_size <= 0L) {
+    stop("`default_mc_size` must be a strictly positive integer.")
+  }
+  derivative_mc_size <- as.integer(control$derivative_mc_size %||% default_mc_size)
   if (!is.finite(derivative_mc_size) || derivative_mc_size <= 0L) {
     stop("`control$derivative_mc_size` must be a strictly positive integer.")
   }

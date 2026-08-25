@@ -325,7 +325,7 @@ generate_section6_sample <- function(design_row) {
 }
 
 section6_control <- function(derivative_mc_size, derivative_seed, cvm_block_size,
-                             derivative_method = "quadrature") {
+                             derivative_method = "score_mc") {
   derivative_method <- tolower(as.character(derivative_method))
   if (length(derivative_method) != 1L ||
       !derivative_method %in% c("score_mc", "quadrature")) {
@@ -352,7 +352,7 @@ section6_control <- function(derivative_mc_size, derivative_seed, cvm_block_size
 
 run_section6_bootstrap <- function(design_row, x, B, seed, derivative_seed,
                                    derivative_mc_size, cvm_block_size,
-                                   derivative_method = "quadrature",
+                                   derivative_method = "score_mc",
                                    bootstrap_method = "fast_multiplier",
                                    n_cores = 1L) {
   family <- as.character(design_row$family)
@@ -416,7 +416,7 @@ empty_section6_results <- function() {
 }
 
 run_section6_job <- function(job, B, base_seed, derivative_mc_size, cvm_block_size,
-                             derivative_method = "quadrature") {
+                             derivative_method = "score_mc") {
   started <- proc.time()[["elapsed"]]
   data_seed <- section6_seed(base_seed, job$design_id, job$rep, 0L)
   bootstrap_seed <- section6_seed(base_seed, job$design_id, job$rep, 1L)
@@ -588,7 +588,7 @@ section6_validate_manifest_design <- function(manifest_path, design, M, B,
                                               base_seed,
                                               derivative_mc_size,
                                               cvm_block_size,
-                                              derivative_method = "quadrature") {
+                                              derivative_method = "score_mc") {
   if (!file.exists(manifest_path)) return(invisible(TRUE))
   manifest <- utils::read.csv(manifest_path, stringsAsFactors = FALSE)
   required <- c(
@@ -645,7 +645,7 @@ section6_validate_manifest_design <- function(manifest_path, design, M, B,
 
 section6_make_manifest <- function(design, M, B, cores, base_seed,
                                    derivative_mc_size, cvm_block_size,
-                                   derivative_method = "quadrature") {
+                                   derivative_method = "score_mc") {
   transform(design,
     M = as.integer(M), B = as.integer(B), cores = as.integer(cores),
     base_seed = as.integer(base_seed), derivative_mc_size = as.integer(derivative_mc_size),
@@ -669,9 +669,9 @@ recover_section6_results <- function(source_dir, target_dir, family,
                                      beta_values = c(0, 0.5, 1),
                                      cores = 8L,
                                      base_seed = 20260727L,
-                                     derivative_mc_size = 1000L,
+                                     derivative_mc_size = 10000L,
                                      cvm_block_size = 50L,
-                                     derivative_method = "quadrature") {
+                                     derivative_method = "score_mc") {
   source_path <- file.path(source_dir, "raw_results.csv")
   target_result_path <- file.path(target_dir, "raw_results.csv")
   target_manifest_path <- file.path(target_dir, "manifest.csv")
@@ -848,9 +848,9 @@ run_section6_family <- function(family,
                                 beta_values = c(0, 0.5, 1),
                                 cores = 8L,
                                 base_seed = 20260727L,
-                                derivative_mc_size = 1000L,
+                                derivative_mc_size = 10000L,
                                 cvm_block_size = 50L,
-                                derivative_method = "quadrature",
+                                derivative_method = "score_mc",
                                 checkpoint_results = 64L,
                                 show_progress = TRUE,
                                 scenarios = NULL) {
@@ -861,7 +861,7 @@ run_section6_family <- function(family,
   if (.Platform$OS.type != "unix" && cores > 1L) stop("This runner requires a Unix platform for outer parallelism.")
   derivative_method <- tolower(as.character(derivative_method))
   if (identical(derivative_method, "auto")) {
-    derivative_method <- "quadrature"
+    derivative_method <- "score_mc"
   }
   if (length(derivative_method) != 1L ||
       !derivative_method %in% c("score_mc", "quadrature")) {
@@ -964,9 +964,9 @@ if (sys.nframe() == 0L) {
     beta_values = parse_section6_csv(args$beta_values, c(0, 0.5, 1), "numeric"),
     cores = as.integer(args$cores %||% 8L),
     base_seed = as.integer(args$seed %||% 20260727L),
-    derivative_mc_size = as.integer(args$derivative_mc_size %||% 1000L),
+    derivative_mc_size = as.integer(args$derivative_mc_size %||% 10000L),
     cvm_block_size = as.integer(args$cvm_block_size %||% 50L),
-    derivative_method = tolower(as.character(args$derivative_method %||% "quadrature")),
+    derivative_method = tolower(as.character(args$derivative_method %||% "score_mc")),
     scenarios = if (is.null(args$scenarios)) NULL else parse_section6_csv(args$scenarios, NULL, "character")
   )
   if (!is.null(args$recover_from)) {

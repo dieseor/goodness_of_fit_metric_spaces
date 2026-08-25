@@ -15,7 +15,7 @@ main <- function() {
   output_dir <- as.character(args$output_dir %||% "")
   base_seed <- suppressWarnings(as.integer(args$seed %||% NA_integer_))
   derivative_method <- tolower(as.character(
-    args$derivative_method %||% "quadrature"
+    args$derivative_method %||% "score_mc"
   ))
   mode <- tolower(as.character(args$mode %||% "preflight"))
   dimensions <- parse_section6_csv(
@@ -40,8 +40,8 @@ main <- function() {
   if (!mode %in% c("preflight", "final")) {
     stop("`--mode` must be either 'preflight' or 'final'.", call. = FALSE)
   }
-  if (!identical(derivative_method, "quadrature")) {
-    stop("Section 6 Normal/LG production requires `--derivative_method=quadrature`.",
+  if (!identical(derivative_method, "score_mc")) {
+    stop("Section 6 Normal/LG production requires `--derivative_method=score_mc`.",
          call. = FALSE)
   }
   if (!length(dimensions) || anyNA(dimensions) ||
@@ -143,7 +143,7 @@ main <- function() {
     M = 1000L,
     B = 5000L,
     base_seed = base_seed,
-    derivative_mc_size = 1000L,
+    derivative_mc_size = 10000L,
     cvm_block_size = 50L,
     derivative_method = derivative_method
   )
@@ -200,14 +200,9 @@ main <- function() {
     results$fast_multiplier_cpp_kernel_effective == "contiguous_double" &
     results$fast_multiplier_fuse_ks_cvm_requested &
     results$fast_multiplier_fuse_ks_cvm_effective &
-    results$derivative_method_requested == "quadrature" &
-    results$derivative_method_effective == "quadrature" &
+    results$derivative_method_requested == "score_mc" &
+    results$derivative_method_effective == "score_mc" &
     results$derivative_method_selection_source == "explicit" &
-    results$quadrature_algorithm == "joint_ruben_gamma_mixture" &
-    is.finite(results$quadrature_abs_tol) &
-    results$quadrature_abs_tol > 0 &
-    is.finite(results$quadrature_max_residual_error_estimate) &
-    results$quadrature_max_residual_error_estimate <= results$quadrature_abs_tol * 1.01 &
     results$ks_grid == "sample_unique_distances" &
     !results$fallback_to_reestimated
   if (!isTRUE(all(conforming))) {
