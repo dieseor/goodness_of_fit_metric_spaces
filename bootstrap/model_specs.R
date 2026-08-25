@@ -987,6 +987,7 @@ source(mvnormal_quadform_path)
 model_spec_adapter_files <- c(
   "normal_model_spec.R",
   "mvnormal_model_spec.R",
+  "spherical_normal_model_spec.R",
   "restricted_spiked_normal_model_spec.R",
   "logistic_gaussian_model_spec.R",
   "vmf_model_spec.R",
