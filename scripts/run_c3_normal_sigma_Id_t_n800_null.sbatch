@@ -15,7 +15,7 @@ set -euo pipefail
 
 cd "$SLURM_SUBMIT_DIR"
 
-output_dir="simulation_results/section6_new_scenarios/final_normal_sigma_Id_t_d5_nu6_n800_M1000_B5000_beta0_Nderiv10000"
+output_dir="simulation_results/section6_new_scenarios/final_normal_sigma_Id_t_d5_nu6_n800_M1000_B5000_beta0_Nderiv10000_cachetrue"
 
 mkdir -p logs
 
@@ -52,8 +52,9 @@ Rscript --vanilla scripts/run_normal_sigma_Id_t_pilot.R \
   --nu=6 \
   --derivative_mc_size=10000 \
   --cvm_block_size=50 \
+  --cache_corrections=true \
   "--cores=${SLURM_CPUS_PER_TASK}" \
-  --checkpoint_results=250 \
+  --checkpoint_results=500 \
   --seed=20260728 \
   --show_progress=true
 
