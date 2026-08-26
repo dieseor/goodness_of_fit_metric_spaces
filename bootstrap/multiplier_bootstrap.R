@@ -1028,6 +1028,63 @@ prepare_cvm_observed_data_from_sample_ks <- function(data,
   )
 }
 
+# For the reestimated bootstrap, KS on the sample-points/unique-distances grid
+# and the generic CvM statistic use exactly the same n x n profile matrix.  The
+# fast route already shares this object; this constructor exposes the same
+# observed-data cache to the reestimated route without changing either
+# statistic.  Models with a custom CvM preparation or bootstrap statistic are
+# deliberately excluded by `reestimated_sample_ks_cvm_fusion_eligible()`.
+prepare_cvm_observed_data_from_full_sample_ks <- function(ks_prep) {
+  required <- c(
+    "distance_matrix", "rank_matrix", "order_matrix", "sorted_distance_matrix",
+    "rank_linear_index", "empirical_profile", "theoretical_profile",
+    "process_matrix", "statistic", "ks_grid_mode", "light"
+  )
+  if (!all(required %in% names(ks_prep)) || isTRUE(ks_prep$light) ||
+      !identical(ks_prep$ks_grid_mode %||% "", "sample_points_unique_distances")) {
+    stop("A full sample-based KS preparation is required to share its CvM cache.")
+  }
+
+  list(
+    distance_matrix = ks_prep$distance_matrix,
+    rank_matrix = ks_prep$rank_matrix,
+    order_matrix = ks_prep$order_matrix,
+    sorted_distance_matrix = ks_prep$sorted_distance_matrix,
+    rank_linear_index = ks_prep$rank_linear_index,
+    empirical_profile = ks_prep$empirical_profile,
+    theoretical_profile = ks_prep$theoretical_profile,
+    process_matrix = ks_prep$process_matrix,
+    statistic = mean(ks_prep$process_matrix^2),
+    light = FALSE,
+    shared_with_ks = TRUE
+  )
+}
+
+reestimated_sample_ks_cvm_fusion_eligible <- function(spec,
+                                                       ks_prep,
+                                                       cvm_prep,
+                                                       want_ks,
+                                                       want_cvm,
+                                                       control = list()) {
+  requested <- control$reestimated_fuse_ks_cvm %||% TRUE
+  if (length(requested) != 1L || is.na(requested) || !is.logical(requested)) {
+    stop("`control$reestimated_fuse_ks_cvm` must be TRUE or FALSE when supplied.")
+  }
+  if (!isTRUE(requested) || !isTRUE(want_ks) || !isTRUE(want_cvm) ||
+      is.null(ks_prep) || is.null(cvm_prep) ||
+      !identical(ks_prep$ks_grid_mode %||% "", "sample_points_unique_distances") ||
+      !isTRUE(cvm_prep$shared_with_ks) || isTRUE(ks_prep$light) ||
+      isTRUE(cvm_prep$light) || is.function(spec$cvm_prepare) ||
+      is.function(spec$cvm_bootstrap_stat)) {
+    return(FALSE)
+  }
+  identical(ks_prep$distance_matrix, cvm_prep$distance_matrix) &&
+    identical(ks_prep$rank_matrix, cvm_prep$rank_matrix) &&
+    identical(ks_prep$rank_linear_index, cvm_prep$rank_linear_index) &&
+    identical(ks_prep$empirical_profile, cvm_prep$empirical_profile) &&
+    identical(ks_prep$theoretical_profile, cvm_prep$theoretical_profile)
+}
+
 compute_weighted_sample_profile_matrix <- function(order_matrix = NULL,
                                                    rank_linear_index = NULL,
                                                    normalized_weights,
@@ -1201,6 +1258,7 @@ run_bootstrap_chunk <- function(weight_chunk,
                                 cvm_prep = NULL,
                                 want_ks = FALSE,
                                 want_cvm = FALSE,
+                                fuse_sample_ks_cvm = FALSE,
                                 keep_bootstrap_thetas = FALSE,
                                 theta_start = NULL,
                                 replicate_indices = NULL) {
@@ -1348,7 +1406,32 @@ run_bootstrap_chunk <- function(weight_chunk,
       }
     }
 
-    if (want_ks) {
+    if (isTRUE(fuse_sample_ks_cvm)) {
+      f_star_sample <- compute_weighted_sample_profile_matrix(
+        order_matrix = ks_prep$order_matrix,
+        rank_linear_index = ks_prep$rank_linear_index,
+        normalized_weights = normalized_weights
+      )
+      if (identical(null$type, "simple")) {
+        process_star_sample <- scale_factor * sqrt(n) * (
+          f_star_sample - ks_prep$empirical_profile
+        )
+      } else {
+        f_theta_star_sample <- compute_theoretical_sample_profile_matrix(
+          spec = spec,
+          data = data,
+          distance_matrix = ks_prep$distance_matrix,
+          theta = theta_star,
+          control = control
+        )
+        process_star_sample <- scale_factor * sqrt(n) * (
+          (f_star_sample - f_theta_star_sample) -
+            (ks_prep$empirical_profile - ks_prep$theoretical_profile)
+        )
+      }
+      ks_values[b] <- max(abs(process_star_sample))
+      cvm_values[b] <- mean(process_star_sample^2)
+    } else if (want_ks) {
       if (identical(ks_prep$ks_grid_mode %||% "", "sample_points_unique_distances")) {
         ks_values[b] <- compute_ks_sample_stat_blocked(
           spec = spec,
@@ -1390,7 +1473,7 @@ run_bootstrap_chunk <- function(weight_chunk,
       }
     }
 
-    if (want_cvm) {
+    if (want_cvm && !isTRUE(fuse_sample_ks_cvm)) {
       cvm_control <- utils::modifyList(
         control,
         list(
@@ -2865,6 +2948,7 @@ run_reestimated_bootstrap_chunks <- function(weight_matrix,
                                              cvm_prep,
                                              want_ks,
                                              want_cvm,
+                                             fuse_sample_ks_cvm = FALSE,
                                              keep_bootstrap_thetas,
                                              theta_hat,
                                              n_cores = 1L) {
@@ -2905,6 +2989,7 @@ run_reestimated_bootstrap_chunks <- function(weight_matrix,
       cvm_prep = cvm_prep,
       want_ks = want_ks,
       want_cvm = want_cvm,
+      fuse_sample_ks_cvm = fuse_sample_ks_cvm,
       keep_bootstrap_thetas = keep_bootstrap_thetas,
       theta_start = theta_hat,
       replicate_indices = replicate_index_chunks[[i]]
@@ -3032,6 +3117,7 @@ run_reestimated_bootstrap_chunks <- function(weight_matrix,
     "cvm_prep",
     "want_ks",
     "want_cvm",
+    "fuse_sample_ks_cvm",
     "scale_factor",
     "run_bootstrap_chunk",
     "compute_grid_weighted_profile",
@@ -3091,6 +3177,7 @@ run_reestimated_bootstrap_chunks <- function(weight_matrix,
       cvm_prep = cvm_prep,
       want_ks = want_ks,
       want_cvm = want_cvm,
+      fuse_sample_ks_cvm = fuse_sample_ks_cvm,
       keep_bootstrap_thetas = keep_bootstrap_thetas,
       theta_start = theta_hat,
       replicate_indices = replicate_index_chunks[[i]]
@@ -3197,6 +3284,13 @@ multiplier_bootstrap_gof <- function(data,
         ks_prep = ks_prep,
         control = control
       )
+    } else if (identical(bootstrap_method, "reestimated") &&
+               isTRUE(want_ks) && !isTRUE(ks_prep$light) &&
+               identical(ks_prep$ks_grid_mode %||% "", "sample_points_unique_distances") &&
+               !is.function(spec$cvm_prepare) &&
+               !is.function(spec$cvm_bootstrap_stat) &&
+               isTRUE(control$reestimated_fuse_ks_cvm %||% TRUE)) {
+      prepare_cvm_observed_data_from_full_sample_ks(ks_prep)
     } else {
       prepare_cvm_observed_data(
         data = data_normalized,
@@ -3209,6 +3303,17 @@ multiplier_bootstrap_gof <- function(data,
   } else {
     NULL
   }
+
+  reestimated_fuse_sample_ks_cvm <- if (identical(bootstrap_method, "reestimated")) {
+    reestimated_sample_ks_cvm_fusion_eligible(
+      spec = spec,
+      ks_prep = ks_prep,
+      cvm_prep = cvm_prep,
+      want_ks = want_ks,
+      want_cvm = want_cvm,
+      control = control
+    )
+  } else FALSE
 
   raw_multiplier_matrix <- generate_multiplier_matrix(
     B = B,
@@ -3249,6 +3354,7 @@ multiplier_bootstrap_gof <- function(data,
       cvm_prep = cvm_prep,
       want_ks = want_ks,
       want_cvm = want_cvm,
+      fuse_sample_ks_cvm = reestimated_fuse_sample_ks_cvm,
       keep_bootstrap_thetas = keep$bootstrap_thetas,
       theta_hat = theta_hat,
       n_cores = n_cores_effective
@@ -3329,6 +3435,14 @@ multiplier_bootstrap_gof <- function(data,
       lightweight_ks_prep = isTRUE(ks_prep$light),
       lightweight_cvm_prep = isTRUE(cvm_prep$light),
       shared_sample_ks_cvm_cache = isTRUE(cvm_prep$shared_with_ks),
+      reestimated_fuse_ks_cvm_requested =
+        if (identical(bootstrap_method, "reestimated")) {
+          isTRUE(control$reestimated_fuse_ks_cvm %||% TRUE)
+        } else NA,
+      reestimated_fuse_ks_cvm_effective =
+        if (identical(bootstrap_method, "reestimated")) {
+          reestimated_fuse_sample_ks_cvm
+        } else NA,
       ks_prep_bytes = if (!is.null(ks_prep)) as.numeric(object.size(ks_prep)) else NA_real_,
       cvm_prep_bytes = if (!is.null(cvm_prep)) as.numeric(object.size(cvm_prep)) else NA_real_,
       derivative_method = chunk_results[[1L]]$derivative_method %||% NA_character_,
