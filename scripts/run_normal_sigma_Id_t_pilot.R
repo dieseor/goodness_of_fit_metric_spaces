@@ -148,7 +148,8 @@ run_normal_sigma_Id_t_pilot <- function(output_dir, M = 100L, B = 499L,
                                            n_values = c(50L, 100L, 200L, 400L),
                                            beta_values = c(0, 0.5, 1), nu = 3,
                                            derivative_mc_size = 10000L,
-                                           cvm_block_size = 50L, cores = 10L,
+                                           cvm_block_size = 50L,
+                                           cache_corrections = "auto", cores = 10L,
                                            checkpoint_results = 100L,
                                            base_seed = 20260825L,
                                            show_progress = TRUE) {
@@ -168,7 +169,8 @@ run_normal_sigma_Id_t_pilot <- function(output_dir, M = 100L, B = 499L,
     alternative = "standardized_multivariate_t", derivative_method = "score_mc",
     statistics = "ks,cvm", ks_grid = "sample_points_unique_distances",
     bootstrap_method = "fast_multiplier", fast_backend = "cpp",
-    fast_kernel = "contiguous_double", fast_fused = TRUE
+    fast_kernel = "contiguous_double", fast_fused = TRUE,
+    fast_cache_corrections = as.character(cache_corrections)
   )
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
   lock <- file.path(output_dir, ".normal_sigma_Id_t.lock")
@@ -216,11 +218,11 @@ run_normal_sigma_Id_t_pilot <- function(output_dir, M = 100L, B = 499L,
           control = list(derivative_method = "score_mc", derivative_mc_size = derivative_mc_size,
             derivative_mc_seed = derivative_seed, fast_multiplier_cvm_block_size = cvm_block_size,
             fast_multiplier_backend = "cpp", fast_multiplier_cpp_kernel = "contiguous_double",
-            fast_multiplier_fuse_ks_cvm = TRUE, fast_multiplier_cache_corrections = "auto",
+            fast_multiplier_fuse_ks_cvm = TRUE, fast_multiplier_cache_corrections = cache_corrections,
             fast_multiplier_stream_chunk_size = 100L),
           distance_profile_backend = "r", fast_multiplier_backend = "cpp",
           fast_multiplier_cpp_kernel = "contiguous_double", fuse_ks_cvm = TRUE,
-          cache_block_corrections = "auto"
+          cache_block_corrections = cache_corrections
         ), warning = function(w) {
           warnings <<- c(warnings, conditionMessage(w)); invokeRestart("muffleWarning")
         }
@@ -303,6 +305,7 @@ if (sys.nframe() == 0L) {
     nu = as.numeric(args$nu %||% 3),
     derivative_mc_size = as.integer(args$derivative_mc_size %||% 10000L),
     cvm_block_size = as.integer(args$cvm_block_size %||% 50L),
+    cache_corrections = tolower(as.character(args$cache_corrections %||% "auto")),
     cores = as.integer(args$cores %||% 10L),
     checkpoint_results = as.integer(args$checkpoint_results %||% 100L),
     base_seed = as.integer(args$seed %||% 20260825L),
