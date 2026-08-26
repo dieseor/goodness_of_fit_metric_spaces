@@ -1,0 +1,8 @@
+CvM null critical-value diagnostic
+d=5; n=200; M=10; B=99; outer cores=10; inner bootstrap cores=1
+derivative=score_mc; N_deriv=10000; fast backend=C++ contiguous_double
+Scenario 1.1 H0: N_d(theta_d, I_d + 2 theta_d theta_d^T), theta_d=d^{-1/2}1_d; restricted mean-aligned single spike
+Scenario 1.2 H0: N_d(0,I_d); fitted null N_d(mu,sigma^2 I_d)
+Per replication: observed CvM, bootstrap q90/q95/q97.5/q99, bootstrap mean/sd, p-value and reject
+Final comparison: Monte Carlo q95 of observed CvM versus distribution of conditional bootstrap q95 values
+base seed=20260826

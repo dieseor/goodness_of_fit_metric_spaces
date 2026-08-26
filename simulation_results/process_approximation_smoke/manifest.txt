@@ -1,0 +1,13 @@
+d=2,5
+n=200
+M=5
+B=30
+K=20
+N_oracle=10000
+N_deriv=1000
+N_g0=3000
+cores=10
+seed=20260901
+scenario_1_1=theta_d=d^(-1/2)1_d, lambda=2
+scenario_1_2=mu=0, sigma=1
+norm=sqrt(mean(G^2))
