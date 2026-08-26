@@ -174,14 +174,16 @@ if (file.exists(manifest_path)) {
   old <- utils::read.csv(manifest_path, stringsAsFactors = FALSE)
   expected <- transform(design, M = M, B = B, derivative_mc_size = derivative_mc_size,
                         cvm_block_size = cvm_block_size, base_seed = seed,
-                        same_multiplier_seed = TRUE, reestimated_fuse_ks_cvm = TRUE)
+                        same_multiplier_seed = TRUE, reestimated_fuse_ks_cvm = TRUE,
+                        fast_cache_corrections = "true")
   if (!isTRUE(all.equal(old, expected, check.attributes = FALSE))) {
     stop("Existing manifest is incompatible. Use a new output directory.")
   }
 } else {
   manifest <- transform(design, M = M, B = B, derivative_mc_size = derivative_mc_size,
                         cvm_block_size = cvm_block_size, base_seed = seed,
-                        same_multiplier_seed = TRUE, reestimated_fuse_ks_cvm = TRUE)
+                        same_multiplier_seed = TRUE, reestimated_fuse_ks_cvm = TRUE,
+                        fast_cache_corrections = "true")
   atomic_write_csv(manifest, manifest_path)
 }
 
@@ -231,7 +233,7 @@ run_one <- function(row) {
       control = list(derivative_method = "score_mc", derivative_mc_size = derivative_mc_size,
                      derivative_mc_seed = derivative_seed, fast_multiplier_cvm_block_size = cvm_block_size,
                      fast_multiplier_backend = "cpp", fast_multiplier_cpp_kernel = "contiguous_double",
-                     fast_multiplier_fuse_ks_cvm = TRUE, fast_multiplier_cache_corrections = "auto",
+                     fast_multiplier_fuse_ks_cvm = TRUE, fast_multiplier_cache_corrections = "true",
                      fast_multiplier_stream_chunk_size = 100L,
                      reestimated_fuse_ks_cvm = TRUE),
       distance_profile_backend = "r"
@@ -243,7 +245,7 @@ run_one <- function(row) {
     fast <- capture(do.call(runner, c(common, list(
       seed = bootstrap_seed, bootstrap_method = "fast_multiplier",
       fast_multiplier_backend = "cpp", fast_multiplier_cpp_kernel = "contiguous_double",
-      fuse_ks_cvm = TRUE, cache_block_corrections = "auto"
+      fuse_ks_cvm = TRUE, cache_block_corrections = "true"
     ))))
     elapsed_fast <- proc.time()[["elapsed"]] - fast_started
     slow_started <- proc.time()[["elapsed"]]
