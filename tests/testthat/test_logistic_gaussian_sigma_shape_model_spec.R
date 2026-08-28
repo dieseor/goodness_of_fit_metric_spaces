@@ -80,7 +80,7 @@ test_that("t-logistic generator produces valid simplex observations", {
   expect_equal(rowSums(x), rep(1, 10), tolerance = 1e-12)
 })
 
-test_that("t scenario estimates only mu with covariance fixed at identity", {
+test_that("base Logistic-Gaussian adapter supports mu-only fitting with fixed identity covariance", {
   set.seed(350)
   d <- 5L
   mu0 <- c(0.2, -0.1, 0.3, 0, 0.15)
