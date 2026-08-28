@@ -1,16 +1,12 @@
-# Restricted Logistic-Gaussian model used only by the two Section 7 scenarios
-# based on Maphosa et al. (2026):
+# Restricted Logistic-Gaussian model used by the Dirichlet Section 7 scenario:
 #
-#   ilr(X) ~ N_d(mu, sigma^2 A_d),
-#   A_d = diag(1, ..., 1, 1/(d + 1)),
+#   ilr(X) ~ N_d(mu, sigma^2 I_d),
 #   mu in R^d, sigma > 0.
 #
-# A_d is the covariance shape obtained when the logistic-normal model
-#   Y ~ N_d(0, I_d),  X_k = exp(Y_k) / (1 + sum_j exp(Y_j))
-# is expressed in the ilr coordinates used by this repository.
+# The t-logistic scenario instead uses covariance I_d fixed and estimates
+# only mu through the existing Logistic-Gaussian adapter.
 #
-# This file is deliberately self-contained relative to the existing
-# Logistic-Gaussian adapter. It does not modify the unrestricted adapter.
+# This file does not modify the unrestricted Logistic-Gaussian adapter.
 
 if (!exists("make_logistic_gaussian_spec", mode = "function")) {
   lg_sigma_shape_candidates <- c(
@@ -28,20 +24,20 @@ if (!exists("make_logistic_gaussian_spec", mode = "function")) {
   source(lg_sigma_shape_path)
 }
 
-logistic_gaussian_maphosa_shape <- function(ilr_dim) {
+logistic_gaussian_identity_shape <- function(ilr_dim) {
   d <- as.integer(ilr_dim)
   if (length(d) != 1L || !is.finite(d) || d < 1L) {
     stop("`ilr_dim` must be a strictly positive integer.")
   }
-  diag(c(rep.int(1, max(0L, d - 1L)), 1 / (d + 1)), nrow = d, ncol = d)
+  diag(d)
 }
 
-logistic_gaussian_maphosa_shape_inverse <- function(ilr_dim) {
+logistic_gaussian_identity_shape_inverse <- function(ilr_dim) {
   d <- as.integer(ilr_dim)
   if (length(d) != 1L || !is.finite(d) || d < 1L) {
     stop("`ilr_dim` must be a strictly positive integer.")
   }
-  diag(c(rep.int(1, max(0L, d - 1L)), d + 1), nrow = d, ncol = d)
+  diag(d)
 }
 
 normalize_logistic_gaussian_sigma_shape_theta <- function(theta,
@@ -67,7 +63,7 @@ normalize_logistic_gaussian_sigma_shape_theta <- function(theta,
   }
 
   d <- ambient_dim - 1L
-  shape_ilr <- logistic_gaussian_maphosa_shape(d)
+  shape_ilr <- logistic_gaussian_identity_shape(d)
   Sigma_ilr <- sigma^2 * shape_ilr
   base <- normalize_logistic_gaussian_theta(
     list(mu_ilr = mu_ilr, Sigma_ilr = Sigma_ilr),
@@ -79,7 +75,7 @@ normalize_logistic_gaussian_sigma_shape_theta <- function(theta,
     sigma = sigma,
     sigma2 = sigma^2,
     shape_ilr = shape_ilr,
-    shape_inverse_ilr = logistic_gaussian_maphosa_shape_inverse(d)
+    shape_inverse_ilr = logistic_gaussian_identity_shape_inverse(d)
   ))
 }
 
@@ -188,7 +184,7 @@ fit_logistic_gaussian_sigma_shape_theta <- function(data, weights = NULL, null,
 
   mu_hat <- colSums(z * probability_weights)
   centered <- sweep(z, 2L, mu_hat, FUN = "-")
-  shape_inverse <- logistic_gaussian_maphosa_shape_inverse(normalized$ilr_dim)
+  shape_inverse <- logistic_gaussian_identity_shape_inverse(normalized$ilr_dim)
   quadratic <- rowSums((centered %*% shape_inverse) * centered)
   sigma2_hat <- sum(probability_weights * quadratic) / normalized$ilr_dim
 
@@ -210,7 +206,7 @@ fit_logistic_gaussian_sigma_shape_theta <- function(data, weights = NULL, null,
   fit$fit_diagnostics <- list(
     weighted = !is.null(weights),
     optimizer = "closed_form_mle",
-    covariance_shape = "maphosa_M2_ilr"
+    covariance_shape = "identity_ilr"
   )
   fit
 }

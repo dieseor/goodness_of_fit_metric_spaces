@@ -6,11 +6,11 @@ on.exit(setwd(oldwd), add = TRUE)
 source(file.path("bootstrap", "logistic_gaussian_sigma_shape_bootstrap.R"))
 source(file.path("scripts", "run_logistic_gaussian_sigma_shape_scenarios.R"))
 
-test_that("Maphosa M2 covariance shape is correct in repository ilr coordinates", {
+test_that("restricted Logistic-Gaussian covariance shape is identity", {
   for (d in c(2L, 5L)) {
-    A <- logistic_gaussian_maphosa_shape(d)
-    expect_equal(diag(A), c(rep(1, d - 1L), 1 / (d + 1)), tolerance = 0)
-    expect_equal(A %*% logistic_gaussian_maphosa_shape_inverse(d), diag(d), tolerance = 1e-14)
+    A <- logistic_gaussian_identity_shape(d)
+    expect_equal(A, diag(d), tolerance = 0)
+    expect_equal(A %*% logistic_gaussian_identity_shape_inverse(d), diag(d), tolerance = 1e-14)
   }
 })
 
@@ -27,7 +27,7 @@ test_that("restricted Logistic-Gaussian weighted MLE has the closed form", {
   z <- logistic_gaussian_ilr_matrix(x)
   mu_expected <- colSums(z * probability_weights)
   centered <- sweep(z, 2L, mu_expected, FUN = "-")
-  Ainv <- logistic_gaussian_maphosa_shape_inverse(d)
+  Ainv <- logistic_gaussian_identity_shape_inverse(d)
   sigma2_expected <- sum(
     probability_weights * rowSums((centered %*% Ainv) * centered)
   ) / d
@@ -40,7 +40,7 @@ test_that("restricted Logistic-Gaussian weighted MLE has the closed form", {
 
   expect_equal(fit$mu_ilr, mu_expected, tolerance = 1e-12)
   expect_equal(fit$sigma^2, sigma2_expected, tolerance = 1e-12)
-  expect_equal(fit$Sigma_ilr, sigma2_expected * logistic_gaussian_maphosa_shape(d), tolerance = 1e-12)
+  expect_equal(fit$Sigma_ilr, sigma2_expected * logistic_gaussian_identity_shape(d), tolerance = 1e-12)
 })
 
 test_that("restricted score vanishes at the unweighted MLE", {
@@ -74,10 +74,35 @@ test_that("Dirichlet M5 alpha has the intended pattern and concentration", {
 test_that("t-logistic generator produces valid simplex observations", {
   skip_if_not_installed("mvtnorm")
   set.seed(303)
-  x <- r_maphosa_t_logistic(n = 10, d = 5, nu = 4, standardized = FALSE)
+  x <- r_t_logistic_ilr(n = 10, d = 5, nu = 4, standardized = TRUE)
   expect_equal(dim(x), c(10L, 6L))
   expect_true(all(x > 0))
   expect_equal(rowSums(x), rep(1, 10), tolerance = 1e-12)
+})
+
+test_that("t scenario estimates only mu with covariance fixed at identity", {
+  set.seed(350)
+  d <- 5L
+  mu0 <- c(0.2, -0.1, 0.3, 0, 0.15)
+
+  x <- rlogistic_gaussian_simplex(
+    n = 80,
+    mu_ilr = mu0,
+    Sigma_ilr = diag(d)
+  )
+  z <- logistic_gaussian_ilr_matrix(x)
+
+  fit <- fit_logistic_gaussian_theta(
+    data = x,
+    null = list(
+      type = "composite",
+      fixed = list(Sigma_ilr = diag(d))
+    ),
+    unknown_param = "mu"
+  )
+
+  expect_equal(fit$mu_ilr, colMeans(z), tolerance = 1e-12)
+  expect_equal(fit$Sigma_ilr, diag(d), tolerance = 0)
 })
 
 test_that("Dirichlet generator uses gtools and produces valid simplex observations", {

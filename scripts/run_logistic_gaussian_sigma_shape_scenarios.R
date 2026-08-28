@@ -2,26 +2,15 @@
 
 # Resumable pilot / production runner for the two Logistic-Gaussian scenarios:
 #
-# Null fitted family:
-#   ilr(X) ~ N_d(mu, sigma^2 A_d),
-#   A_d = diag(1, ..., 1, 1/(d+1)).
-#
-# Data-generating null (beta = 0):
-#   LG(0, A_d), exactly M2 of Maphosa et al. (2026), expressed in the ilr
-#   coordinates used by this repository.
-#
 # Scenario t4:
-#   P_beta = (1-beta) LG(0, A_d) + beta S_{4,d},
-# where S_{4,d} is M3 of Maphosa et al. expressed in ilr coordinates.
-# By default the t uses scale A_d, reproducing M3 exactly. Set
-# --t_standardized=TRUE to use scale ((nu-2)/nu) A_d so its covariance is A_d.
+#   fitted null: ilr(X) ~ N_d(mu, I_d), with only mu estimated;
+#   P_beta = (1-beta) LG(0, I_d) + beta S_{4,d}.
+# By default S_{4,d} is standardized to have covariance I_d.
 #
 # Scenario dirichlet:
-#   P_beta = (1-beta) LG(0, A_d) + beta Dir(alpha_d),
-#   alpha_{d,k} = c * 10 k / ((d+1)(d+2)), k = 1,...,d+1.
-# The default c=1 reproduces the Dirichlet component of M5 exactly. The scalar
-# c is exposed only so a pilot can alter concentration without changing the
-# relative alpha pattern if the default alternative saturates too early.
+#   fitted null: ilr(X) ~ N_d(mu, sigma^2 I_d), with mu and sigma estimated;
+#   P_beta = (1-beta) LG(0, I_d) + beta Dir(alpha_d),
+#   alpha_{d,k} = c * 10 k / ((d+1)(d+2)), k=1,...,d+1.
 #
 # No existing runner or model adapter is modified by this file.
 
@@ -84,12 +73,12 @@ maphosa_dirichlet_alpha <- function(d, concentration_multiplier = 1) {
   concentration_multiplier * 10 * seq_len(D) / (D * (D + 1L))
 }
 
-r_maphosa_t_logistic <- function(n, d, nu = 4, standardized = FALSE) {
+r_t_logistic_ilr <- function(n, d, nu = 4, standardized = TRUE) {
   if (!requireNamespace("mvtnorm", quietly = TRUE)) {
     stop("Package 'mvtnorm' is required for the t-logistic scenario.")
   }
   if (nu <= 2) stop("`nu` must exceed 2.")
-  shape <- logistic_gaussian_maphosa_shape(d)
+  shape <- logistic_gaussian_identity_shape(d)
   scale <- if (isTRUE(standardized)) ((nu - 2) / nu) * shape else shape
   z <- mvtnorm::rmvt(
     n = as.integer(n),
@@ -113,7 +102,7 @@ r_maphosa_dirichlet <- function(n, d, concentration_multiplier = 1) {
 }
 
 generate_lg_sigma_shape_sample <- function(scenario, n, d, beta, nu = 4,
-                                            t_standardized = FALSE,
+                                            t_standardized = TRUE,
                                             dirichlet_concentration_multiplier = 1) {
   scenario <- match.arg(scenario, lg_sigma_shape_scenarios)
   n <- as.integer(n)
@@ -133,7 +122,7 @@ generate_lg_sigma_shape_sample <- function(scenario, n, d, beta, nu = 4,
 
   replacement <- switch(
     scenario,
-    t4 = r_maphosa_t_logistic(
+    t4 = r_t_logistic_ilr(
       n = sum(take_h1),
       d = d,
       nu = nu,
@@ -240,6 +229,11 @@ summarize_results <- function(x) {
 }
 
 conforming <- function(x, derivative_mc_size) {
+  expected_vhat_method <- ifelse(
+    x$scenario == "t4",
+    "fitted_gaussian_influence_reparameterization",
+    "logistic_gaussian_sigma_shape_analytic_fisher"
+  )
   x$status == "ok" &
     x$effective_bootstrap_method == "fast_multiplier" &
     !x$fallback_to_reestimated &
@@ -248,7 +242,7 @@ conforming <- function(x, derivative_mc_size) {
     x$fast_fused &
     x$derivative_method == "score_mc" &
     x$derivative_mc_size == as.integer(derivative_mc_size) &
-    x$vhat_method == "logistic_gaussian_sigma_shape_analytic_fisher"
+    x$vhat_method == expected_vhat_method
 }
 
 write_status <- function(path, total, results, started, cores, derivative_mc_size) {
@@ -278,7 +272,7 @@ run_logistic_gaussian_sigma_shape_scenarios <- function(
     beta_values = c(0, 0.25, 0.5, 1),
     scenarios = c("t4", "dirichlet"),
     nu = 4,
-    t_standardized = FALSE,
+    t_standardized = TRUE,
     dirichlet_concentration_multiplier = 1,
     derivative_mc_size = 10000L,
     cvm_block_size = 50L,
@@ -314,7 +308,16 @@ run_logistic_gaussian_sigma_shape_scenarios <- function(
     base_seed = as.integer(base_seed),
     derivative_mc_size = as.integer(derivative_mc_size),
     cvm_block_size = as.integer(cvm_block_size),
-    null_model = "LG(mu,sigma^2 A_d), A_d=diag(1,...,1,1/(d+1))",
+    null_model = ifelse(
+      manifest$scenario == "t4",
+      "LG(mu,I_d)",
+      "LG(mu,sigma^2 I_d)"
+    ),
+    estimated_parameters = ifelse(
+      manifest$scenario == "t4",
+      "mu",
+      "mu,sigma"
+    ),
     derivative_method = "score_mc",
     statistics = "ks,cvm",
     ks_grid = "sample_points_unique_distances",
@@ -399,38 +402,73 @@ run_logistic_gaussian_sigma_shape_scenarios <- function(
 
       warnings <- character()
       fit <- withCallingHandlers(
-        multiplier_bootstrap_logistic_gaussian_sigma_shape(
-          data = x,
-          null = list(type = "composite"),
-          statistics = c("ks", "cvm"),
-          ks_grid = make_sample_unique_distance_ks_grid(),
-          B = B,
-          alpha = 0.05,
-          n_cores = 1L,
-          seed = bootstrap_seed,
-          bootstrap_method = "fast_multiplier",
-          keep = list(
-            observed_process = FALSE,
-            bootstrap_statistics = FALSE,
-            bootstrap_thetas = FALSE
-          ),
-          control = list(
-            derivative_method = "score_mc",
-            derivative_mc_size = derivative_mc_size,
-            derivative_mc_seed = derivative_seed,
-            fast_multiplier_cvm_block_size = cvm_block_size,
+        if (identical(base$scenario, "t4")) {
+          multiplier_bootstrap_logistic_gaussian(
+            data = x,
+            null = list(
+              type = "composite",
+              fixed = list(Sigma_ilr = diag(base$d))
+            ),
+            statistics = c("ks", "cvm"),
+            ks_grid = make_sample_unique_distance_ks_grid(),
+            B = B,
+            alpha = 0.05,
+            n_cores = 1L,
+            seed = bootstrap_seed,
+            bootstrap_method = "fast_multiplier",
+            keep = list(
+              observed_process = FALSE,
+              bootstrap_statistics = FALSE,
+              bootstrap_thetas = FALSE
+            ),
+            control = list(
+              derivative_method = "score_mc",
+              derivative_mc_size = derivative_mc_size,
+              derivative_mc_seed = derivative_seed,
+              fast_multiplier_cvm_block_size = cvm_block_size,
+              fast_multiplier_backend = "cpp",
+              fast_multiplier_cpp_kernel = "contiguous_double",
+              fast_multiplier_fuse_ks_cvm = TRUE,
+              fast_multiplier_cache_corrections = "auto",
+              fast_multiplier_stream_chunk_size = 100L
+            ),
+            unknown_param = "mu",
+            distance_profile_backend = "r"
+          )
+        } else {
+          multiplier_bootstrap_logistic_gaussian_sigma_shape(
+            data = x,
+            null = list(type = "composite"),
+            statistics = c("ks", "cvm"),
+            ks_grid = make_sample_unique_distance_ks_grid(),
+            B = B,
+            alpha = 0.05,
+            n_cores = 1L,
+            seed = bootstrap_seed,
+            bootstrap_method = "fast_multiplier",
+            keep = list(
+              observed_process = FALSE,
+              bootstrap_statistics = FALSE,
+              bootstrap_thetas = FALSE
+            ),
+            control = list(
+              derivative_method = "score_mc",
+              derivative_mc_size = derivative_mc_size,
+              derivative_mc_seed = derivative_seed,
+              fast_multiplier_cvm_block_size = cvm_block_size,
+              fast_multiplier_backend = "cpp",
+              fast_multiplier_cpp_kernel = "contiguous_double",
+              fast_multiplier_fuse_ks_cvm = TRUE,
+              fast_multiplier_cache_corrections = "auto",
+              fast_multiplier_stream_chunk_size = 100L
+            ),
+            distance_profile_backend = "r",
             fast_multiplier_backend = "cpp",
             fast_multiplier_cpp_kernel = "contiguous_double",
-            fast_multiplier_fuse_ks_cvm = TRUE,
-            fast_multiplier_cache_corrections = "auto",
-            fast_multiplier_stream_chunk_size = 100L
-          ),
-          distance_profile_backend = "r",
-          fast_multiplier_backend = "cpp",
-          fast_multiplier_cpp_kernel = "contiguous_double",
-          fuse_ks_cvm = TRUE,
-          cache_block_corrections = "auto"
-        ),
+            fuse_ks_cvm = TRUE,
+            cache_block_corrections = "auto"
+          )
+        },
         warning = function(w) {
           warnings <<- c(warnings, conditionMessage(w))
           invokeRestart("muffleWarning")
@@ -438,11 +476,18 @@ run_logistic_gaussian_sigma_shape_scenarios <- function(
       )
 
       theta_hat <- fit$observed$theta_hat
-      score <- logistic_gaussian_sigma_shape_score_matrix(x, theta_hat)
+      if (identical(base$scenario, "t4")) {
+        z <- logistic_gaussian_ilr_matrix(x)
+        score <- sweep(z, 2L, theta_hat$mu_ilr, FUN = "-")
+        sigma_hat <- 1
+      } else {
+        score <- logistic_gaussian_sigma_shape_score_matrix(x, theta_hat)
+        sigma_hat <- theta_hat$sigma
+      }
       diagnostics <- fit$diagnostics
       out <- cbind(base, data.frame(
         mu_hat = paste(theta_hat$mu_ilr, collapse = ";"),
-        sigma_hat = theta_hat$sigma,
+        sigma_hat = sigma_hat,
         score_mean_norm = sqrt(sum(colMeans(score)^2)),
         ks_statistic = fit$inference$ks$observed,
         cvm_statistic = fit$inference$cvm$observed,
@@ -532,7 +577,7 @@ if (sys.nframe() == 0L) {
     beta_values = parse_csv(cli$beta, c(0, 0.25, 0.5, 1)),
     scenarios = parse_character_csv(cli$scenario, c("t4", "dirichlet")),
     nu = as.numeric(cli$nu %||% 4),
-    t_standardized = parse_bool(cli$t_standardized, FALSE),
+    t_standardized = parse_bool(cli$t_standardized, TRUE),
     dirichlet_concentration_multiplier = as.numeric(
       cli$dirichlet_concentration_multiplier %||% 1
     ),

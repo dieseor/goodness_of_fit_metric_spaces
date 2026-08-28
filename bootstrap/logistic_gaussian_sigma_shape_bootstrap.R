@@ -1,6 +1,5 @@
 # Public bootstrap wrapper for the restricted Logistic-Gaussian family
-#   ilr(X) ~ N_d(mu, sigma^2 A_d),
-# A_d = diag(1, ..., 1, 1/(d+1)).
+#   ilr(X) ~ N_d(mu, sigma^2 I_d).
 #
 # This wrapper is separate from multiplier_bootstrap_logistic_gaussian(), so the
 # unrestricted Logistic-Gaussian code path remains untouched.
