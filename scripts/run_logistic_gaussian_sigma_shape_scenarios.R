@@ -3,9 +3,11 @@
 # Resumable pilot / production runner for the two Logistic-Gaussian scenarios:
 #
 # Scenario t4:
-#   fitted null: ilr(X) ~ N_d(mu, I_d), with only mu estimated;
-#   P_beta = (1-beta) LG(0, I_d) + beta S_{4,d}.
-# By default S_{4,d} is standardized to have covariance I_d.
+#   fitted null: ilr(X) ~ N_d(mu, R_d(rho)), with mu and rho estimated;
+#   [R_d(rho)]_{jk} = rho^{|j-k|}.
+#   P_beta = (1-beta) LG(0, R_d(rho0)) + beta S_{4,d,rho0}.
+# By default rho0 = 0.5 and the t component is standardized to have
+# covariance R_d(rho0), so the departure is not driven by covariance scale.
 #
 # Scenario dirichlet:
 #   fitted null: ilr(X) ~ N_d(mu, sigma^2 I_d), with mu and sigma estimated;
@@ -90,6 +92,30 @@ r_t_logistic_ilr <- function(n, d, nu = 4, standardized = TRUE) {
   logistic_gaussian_ilr_to_simplex(z, ambient_dim = d + 1L)
 }
 
+r_t_logistic_ar1 <- function(n, d, rho, nu = 4, standardized = TRUE) {
+  if (!requireNamespace("mvtnorm", quietly = TRUE)) {
+    stop("Package 'mvtnorm' is required for the t-logistic scenario.")
+  }
+  if (nu <= 2) stop("`nu` must exceed 2.")
+
+  target_covariance <- logistic_gaussian_ar1_covariance(d, rho)
+  scale <- if (isTRUE(standardized)) {
+    ((nu - 2) / nu) * target_covariance
+  } else {
+    target_covariance
+  }
+
+  z <- mvtnorm::rmvt(
+    n = as.integer(n),
+    sigma = scale,
+    df = nu,
+    delta = rep.int(0, d),
+    type = "shifted"
+  )
+
+  logistic_gaussian_ilr_to_simplex(z, ambient_dim = d + 1L)
+}
+
 r_maphosa_dirichlet <- function(n, d, concentration_multiplier = 1) {
   if (!requireNamespace("gtools", quietly = TRUE)) {
     stop(paste(
@@ -103,6 +129,7 @@ r_maphosa_dirichlet <- function(n, d, concentration_multiplier = 1) {
 
 generate_lg_sigma_shape_sample <- function(scenario, n, d, beta, nu = 4,
                                             t_standardized = TRUE,
+                                            t_ar1_rho = 0.5,
                                             dirichlet_concentration_multiplier = 1) {
   scenario <- match.arg(scenario, lg_sigma_shape_scenarios)
   n <- as.integer(n)
@@ -112,19 +139,28 @@ generate_lg_sigma_shape_sample <- function(scenario, n, d, beta, nu = 4,
     stop("Invalid sample-generation settings.")
   }
 
-  x <- rlogistic_gaussian_sigma_shape(
-    n = n,
-    mu_ilr = rep.int(0, d),
-    sigma = 1
-  )
+  x <- if (identical(scenario, "t4")) {
+    rlogistic_gaussian_ar1(
+      n = n,
+      mu_ilr = rep.int(0, d),
+      rho = t_ar1_rho
+    )
+  } else {
+    rlogistic_gaussian_sigma_shape(
+      n = n,
+      mu_ilr = rep.int(0, d),
+      sigma = 1
+    )
+  }
   take_h1 <- stats::runif(n) < beta
   if (!any(take_h1)) return(x)
 
   replacement <- switch(
     scenario,
-    t4 = r_t_logistic_ilr(
+    t4 = r_t_logistic_ar1(
       n = sum(take_h1),
       d = d,
+      rho = t_ar1_rho,
       nu = nu,
       standardized = t_standardized
     ),
@@ -194,7 +230,8 @@ empty_results <- function() {
     design_id = integer(), replication = integer(),
     status = character(), error_message = character(), warning_message = character(),
     seed_data = integer(), seed_bootstrap = integer(), seed_derivative = integer(),
-    mu_hat = character(), sigma_hat = numeric(), score_mean_norm = numeric(),
+    mu_hat = character(), sigma_hat = numeric(), rho_hat = numeric(),
+    score_mean_norm = numeric(),
     ks_statistic = numeric(), cvm_statistic = numeric(),
     ks_pvalue = numeric(), cvm_pvalue = numeric(),
     ks_reject = logical(), cvm_reject = logical(),
@@ -231,7 +268,7 @@ summarize_results <- function(x) {
 conforming <- function(x, derivative_mc_size) {
   expected_vhat_method <- ifelse(
     x$scenario == "t4",
-    "fitted_gaussian_influence_reparameterization",
+    "logistic_gaussian_ar1_analytic_fisher",
     "logistic_gaussian_sigma_shape_analytic_fisher"
   )
   x$status == "ok" &
@@ -273,6 +310,7 @@ run_logistic_gaussian_sigma_shape_scenarios <- function(
     scenarios = c("t4", "dirichlet"),
     nu = 4,
     t_standardized = TRUE,
+    t_ar1_rho = 0.5,
     dirichlet_concentration_multiplier = 1,
     derivative_mc_size = 10000L,
     cvm_block_size = 50L,
@@ -284,7 +322,8 @@ run_logistic_gaussian_sigma_shape_scenarios <- function(
   if (nu <= 2 || any(dimensions < 1L) || any(n_values < 2L) ||
       any(beta_values < 0 | beta_values > 1) || M < 1L || B < 1L ||
       derivative_mc_size < 1L || cvm_block_size < 1L || cores < 1L ||
-      checkpoint_results < 1L || dirichlet_concentration_multiplier <= 0) {
+      checkpoint_results < 1L || !is.finite(t_ar1_rho) ||
+      abs(t_ar1_rho) >= 1 || dirichlet_concentration_multiplier <= 0) {
     stop("Invalid Logistic-Gaussian sigma-shape scenario settings.")
   }
   if (.Platform$OS.type != "unix" && cores > 1L) {
@@ -298,24 +337,30 @@ run_logistic_gaussian_sigma_shape_scenarios <- function(
   }
 
   source(file.path("bootstrap", "logistic_gaussian_sigma_shape_bootstrap.R"), local = environment())
+  source(file.path("bootstrap", "logistic_gaussian_ar1_bootstrap.R"), local = environment())
   design <- lg_sigma_shape_design(dimensions, n_values, beta_values, scenarios, M)
   manifest <- unique(design[c("scenario", "d", "n", "beta", "design_id")])
   manifest <- transform(
     manifest,
     M = as.integer(M), B = as.integer(B), nu = as.numeric(nu),
     t_standardized = isTRUE(t_standardized),
+    t_ar1_rho = ifelse(
+      manifest$scenario == "t4",
+      as.numeric(t_ar1_rho),
+      NA_real_
+    ),
     dirichlet_concentration_multiplier = as.numeric(dirichlet_concentration_multiplier),
     base_seed = as.integer(base_seed),
     derivative_mc_size = as.integer(derivative_mc_size),
     cvm_block_size = as.integer(cvm_block_size),
     null_model = ifelse(
       manifest$scenario == "t4",
-      "LG(mu,I_d)",
+      "LG(mu,R_d(rho))",
       "LG(mu,sigma^2 I_d)"
     ),
     estimated_parameters = ifelse(
       manifest$scenario == "t4",
-      "mu",
+      "mu,rho",
       "mu,sigma"
     ),
     derivative_method = "score_mc",
@@ -397,18 +442,16 @@ run_logistic_gaussian_sigma_shape_scenarios <- function(
         beta = base$beta,
         nu = nu,
         t_standardized = t_standardized,
+        t_ar1_rho = t_ar1_rho,
         dirichlet_concentration_multiplier = dirichlet_concentration_multiplier
       )
 
       warnings <- character()
       fit <- withCallingHandlers(
         if (identical(base$scenario, "t4")) {
-          multiplier_bootstrap_logistic_gaussian(
+          multiplier_bootstrap_logistic_gaussian_ar1(
             data = x,
-            null = list(
-              type = "composite",
-              fixed = list(Sigma_ilr = diag(base$d))
-            ),
+            null = list(type = "composite"),
             statistics = c("ks", "cvm"),
             ks_grid = make_sample_unique_distance_ks_grid(),
             B = B,
@@ -432,7 +475,6 @@ run_logistic_gaussian_sigma_shape_scenarios <- function(
               fast_multiplier_cache_corrections = "auto",
               fast_multiplier_stream_chunk_size = 100L
             ),
-            unknown_param = "mu",
             distance_profile_backend = "r"
           )
         } else {
@@ -477,17 +519,19 @@ run_logistic_gaussian_sigma_shape_scenarios <- function(
 
       theta_hat <- fit$observed$theta_hat
       if (identical(base$scenario, "t4")) {
-        z <- logistic_gaussian_ilr_matrix(x)
-        score <- sweep(z, 2L, theta_hat$mu_ilr, FUN = "-")
-        sigma_hat <- 1
+        score <- logistic_gaussian_ar1_score_matrix(x, theta_hat)
+        sigma_hat <- NA_real_
+        rho_hat <- theta_hat$rho
       } else {
         score <- logistic_gaussian_sigma_shape_score_matrix(x, theta_hat)
         sigma_hat <- theta_hat$sigma
+        rho_hat <- NA_real_
       }
       diagnostics <- fit$diagnostics
       out <- cbind(base, data.frame(
         mu_hat = paste(theta_hat$mu_ilr, collapse = ";"),
         sigma_hat = sigma_hat,
+        rho_hat = rho_hat,
         score_mean_norm = sqrt(sum(colMeans(score)^2)),
         ks_statistic = fit$inference$ks$observed,
         cvm_statistic = fit$inference$cvm$observed,
@@ -520,7 +564,8 @@ run_logistic_gaussian_sigma_shape_scenarios <- function(
       base$status <- "error"
       base$error_message <- conditionMessage(e)
       cbind(base, data.frame(
-        mu_hat = NA_character_, sigma_hat = NA_real_, score_mean_norm = NA_real_,
+        mu_hat = NA_character_, sigma_hat = NA_real_, rho_hat = NA_real_,
+        score_mean_norm = NA_real_,
         ks_statistic = NA_real_, cvm_statistic = NA_real_,
         ks_pvalue = NA_real_, cvm_pvalue = NA_real_,
         ks_reject = NA, cvm_reject = NA,
@@ -578,6 +623,7 @@ if (sys.nframe() == 0L) {
     scenarios = parse_character_csv(cli$scenario, c("t4", "dirichlet")),
     nu = as.numeric(cli$nu %||% 4),
     t_standardized = parse_bool(cli$t_standardized, TRUE),
+    t_ar1_rho = as.numeric(cli$t_ar1_rho %||% 0.5),
     dirichlet_concentration_multiplier = as.numeric(
       cli$dirichlet_concentration_multiplier %||% 1
     ),
