@@ -30,7 +30,7 @@ case "$dimensions" in
 esac
 
 seed=20260830
-output_dir="simulation_results/section6_new_scenarios/pilot_${scenario}_d${dimensions//,/_}_n50_100_200_400_M100_B1000_quadrature"
+output_dir="simulation_results/section6_new_scenarios/pilot_${scenario}_d${dimensions//,/_}_n50_100_200_400_M100_B1000_quadrature_F_integral"
 : "${SLURM_SUBMIT_DIR:?Submit with sbatch from the repository root.}"
 : "${SLURM_CPUS_PER_TASK:?Slurm did not provide a CPU allocation.}"
 if [[ "$SLURM_CPUS_PER_TASK" -ne 16 ]]; then

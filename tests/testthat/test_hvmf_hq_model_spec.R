@@ -142,6 +142,131 @@ test_that("general distance profiles agree with direct radial integration", {
   }
 })
 
+test_that("the H5 model adapter uses adaptive radial integration", {
+  q <- 5L
+  mu <- hvmf_hq_test_mu(q)
+  omega <- c(1, rep.int(0, q))
+  radii <- seq(0.05, 2.5, length.out = 13L)
+  theta <- list(mu = mu, kappa = 5)
+  spec <- make_hvmf_spec(unknown_param = "both")
+
+  direct <- hvmf_distance_profile_hq_integral(
+    omega = omega, mu = mu, kappa = theta$kappa, t_values = radii
+  )
+  profile_small_grid <- spec$profile_eval(
+    omega, radii, theta, control = list(hvmf_profile_n_y = 17L)
+  )
+  profile_large_grid <- spec$profile_eval(
+    omega, radii, theta, control = list(hvmf_profile_n_y = 16385L)
+  )
+
+  expect_equal(profile_small_grid, direct, tolerance = 1e-12)
+  expect_equal(profile_large_grid, direct, tolerance = 1e-12)
+  expect_null(spec$sample_profile_matrix_eval(
+    data = rbind(mu, omega), distance_matrix = matrix(radii[1:4], nrow = 2L),
+    theta = theta, control = list(hvmf_profile_n_y = 17L)
+  ))
+})
+
+test_that("the adaptive profile override is restricted to H5", {
+  q <- 10L
+  mu <- hvmf_hq_test_mu(q)
+  omega <- c(1, rep.int(0, q))
+  radii <- seq(0.05, 2.5, length.out = 9L)
+  theta <- list(mu = mu, kappa = 10)
+  spec <- make_hvmf_spec(unknown_param = "both")
+  expected <- hvmf_distance_profile_hq(
+    omega, mu, theta$kappa, radii, grid_size = 257L
+  )
+  actual <- spec$profile_eval(
+    omega, radii, theta, control = list(hvmf_profile_n_y = 257L)
+  )
+
+  expect_equal(actual, expected, tolerance = 0)
+  expect_true(is.matrix(spec$sample_profile_matrix_eval(
+    data = rbind(mu, omega), distance_matrix = matrix(radii[1:4], nrow = 2L),
+    theta = theta, control = list(hvmf_profile_n_y = 257L)
+  )))
+})
+
+test_that("the direct Hq profile has the general radial-density formula", {
+  for (configuration in list(
+    list(q = 2L, kappa = 2), list(q = 5L, kappa = 5)
+  )) {
+    q <- configuration$q
+    mu <- hvmf_hq_test_mu(q)
+    omega <- c(1, rep.int(0, q))
+    chi <- acosh(-hvmf_minkowski_inner_product(mu, omega))
+    radii <- seq(0.1, 2.5, length.out = 7L)
+    direct <- hvmf_distance_profile_hq_integral(
+      omega, mu, configuration$kappa, radii
+    )
+    radial <- hvmf_radial_cdf(
+      radii, q = q, kappa = configuration$kappa, chi = chi
+    )
+    expect_equal(direct, radial, tolerance = 1e-12)
+    expect_true(all(diff(direct) >= 0))
+    expect_true(all(direct > 0 & direct < 1))
+  }
+})
+
+test_that("the general radial profile density is normalized beyond H2", {
+  for (configuration in list(
+    list(q = 2L, kappa = 2, chi = asinh(1)),
+    list(q = 5L, kappa = 5, chi = asinh(1)),
+    list(q = 5L, kappa = 10, chi = 0.4)
+  )) {
+    integral <- stats::integrate(
+      hvmf_radial_density, lower = 0, upper = Inf,
+      q = configuration$q, kappa = configuration$kappa,
+      chi = configuration$chi, rel.tol = 1e-9, abs.tol = 1e-11
+    )
+    expect_equal(integral$value, 1, tolerance = 2e-8)
+    expect_lt(integral$abs.error, 1e-7)
+  }
+})
+
+test_that("H5 integral profiles support the quadrature fast-multiplier path", {
+  q <- 5L
+  set.seed(31045)
+  x <- rhvmf_polar(8, mu = hvmf_hq_test_mu(q), kappa = 5)
+  result <- multiplier_bootstrap_hvmf(
+    data = x,
+    null = list(type = "composite"),
+    statistics = c("ks", "cvm"),
+    ks_grid = make_sample_unique_distance_ks_grid(),
+    B = 9L,
+    n_cores = 1L,
+    seed = 31046L,
+    bootstrap_method = "fast_multiplier",
+    keep = list(
+      observed_process = FALSE,
+      bootstrap_statistics = FALSE,
+      bootstrap_thetas = FALSE
+    ),
+    control = list(
+      derivative_method = "quadrature",
+      hvmf_profile_n_y = 1025L,
+      hvmf_derivative_n_y = 1025L,
+      fast_multiplier_cvm_block_size = 8L,
+      fast_multiplier_backend = "cpp",
+      fast_multiplier_cpp_kernel = "contiguous_double",
+      fast_multiplier_fuse_ks_cvm = TRUE
+    )
+  )
+
+  expect_identical(result$diagnostics$derivative_method_effective, "quadrature")
+  expect_identical(result$diagnostics$fast_multiplier_backend_effective, "cpp")
+  expect_true(result$diagnostics$fast_multiplier_fuse_ks_cvm_effective)
+  expect_true(all(c(
+    result$inference$ks$p_value,
+    result$inference$cvm$p_value
+  ) >= 0 & c(
+    result$inference$ks$p_value,
+    result$inference$cvm$p_value
+  ) <= 1))
+})
+
 test_that("generic H2 profile agrees with the established exact H2 profile", {
   mu <- c(sqrt(2), 1 / sqrt(2), 1 / sqrt(2))
   omega <- c(1, 0, 0)
@@ -154,6 +279,11 @@ test_that("generic H2 profile agrees with the established exact H2 profile", {
   )
 
   expect_equal(generic, established, tolerance = 6e-4)
+
+  direct <- hvmf_distance_profile_hq_integral(
+    omega, mu, kappa = 3, t_values = radii
+  )
+  expect_equal(direct, established, tolerance = 2e-6)
 })
 
 test_that("H10 fast multiplier agrees with the reestimated observed statistics", {
