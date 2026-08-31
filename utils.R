@@ -1085,6 +1085,35 @@ hvmf_distance_profile_hq <- function(omega, mu, kappa, t_values,
   )
 }
 
+#' Directly integrated HvMF distance profile on H^q
+#'
+#' This evaluates the radial representation of the HvMF distance profile by
+#' adaptive numerical integration.  Unlike `hvmf_distance_profile_hq()`, it
+#' does not form or interpolate a finite radial CDF table.  The representation
+#' is valid for every intrinsic dimension q >= 2: after integrating the
+#' angular component on the geodesic sphere about `omega`, the distance has
+#' radial density `hvmf_radial_density()` with chi = d(mu, omega).
+#'
+#' @param omega,mu Points on H^q.
+#' @param kappa Positive concentration parameter.
+#' @param t_values Nonnegative radii.
+#' @param rel.tol,abs.tol Tolerances passed to `stats::integrate()`.
+#' @return The vector P{d(X, omega) <= t_values}.
+hvmf_distance_profile_hq_integral <- function(omega, mu, kappa, t_values,
+                                              rel.tol = 1e-8,
+                                              abs.tol = 1e-10) {
+  omega <- as.numeric(omega)
+  mu <- as.numeric(mu)
+  q <- length(mu) - 1L
+  normalize_hvmf_hq_data(omega, q = q)
+  normalize_hvmf_hq_data(mu, q = q)
+  chi <- acosh(pmax(-hvmf_minkowski_inner_product(mu, omega), 1))
+  hvmf_radial_cdf(
+    u = t_values, q = q, kappa = kappa, chi = chi,
+    rel.tol = rel.tol, abs.tol = abs.tol
+  )
+}
+
 #' Geodesic distance on H^2 under the Minkowski convention (-,+,+)
 #' @param x Numeric vector of length 3 in H^2
 #' @param y Numeric vector of length 3 in H^2

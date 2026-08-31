@@ -428,6 +428,12 @@ make_hvmf_spec <- function(unknown_param = "both") {
       if (!is.finite(grid_size) || grid_size < 3L) {
         stop("`control$hvmf_profile_n_y` must be an integer of at least three.")
       }
+      if (theta$q == 5L) {
+        return(hvmf_distance_profile_hq_integral(
+          omega = omega, mu = theta$mu, kappa = theta$kappa,
+          t_values = as.numeric(t)
+        ))
+      }
       if (theta$q != 2L) {
         return(hvmf_distance_profile_hq(
           omega = omega, mu = theta$mu, kappa = theta$kappa,
@@ -451,6 +457,13 @@ make_hvmf_spec <- function(unknown_param = "both") {
     extras = list(
       sample_profile_matrix_eval = function(data, distance_matrix, theta, control = list()) {
         theta <- normalize_hvmf_theta(theta, control = control)
+        if (theta$q == 5L) {
+          # Returning NULL delegates to `profile_eval()` above, which uses
+          # adaptive integration for the Section 6 H^5 experiment.  In
+          # particular, its observed KS/CvM statistics do not use the
+          # tabulated radial profile.
+          return(NULL)
+        }
         if (theta$q != 2L) {
           x <- normalize_hvmf_data(data, control)
           output <- matrix(0, nrow = nrow(x), ncol = ncol(distance_matrix))
