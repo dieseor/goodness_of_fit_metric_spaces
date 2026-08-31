@@ -9,8 +9,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=08:00:00
-#SBATCH --mem=6900M
+#SBATCH --time=01:30:00
+#SBATCH --mem=5G
 #SBATCH --partition=batch
 
 set -euo pipefail
@@ -55,6 +55,6 @@ Rscript --vanilla scripts/run_section6_new_scenarios.R \
   "--family=hvmf" "--scenarios=${scenario}" "--output_dir=${output_dir}" \
   --M=100 --B=1000 "--dimensions=${dimensions}" \
   --n_values=50,100,200,400 --beta_values=0,0.5 \
-  --cores="${SLURM_CPUS_PER_TASK}" --checkpoint_results=16 \
+  --cores="${SLURM_CPUS_PER_TASK}" --checkpoint_results=400 \
   "--seed=${seed}" --derivative_method=quadrature --derivative_mc_size=10000 \
   --cvm_block_size=50 --show_progress=true
