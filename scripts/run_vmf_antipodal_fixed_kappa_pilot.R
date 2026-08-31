@@ -36,7 +36,12 @@ pilot_csv <- function(name, default, type = c("integer", "numeric")) {
 
 fixed_kappa_design <- function(dimensions, n_values, beta_values, kappa,
                                kappa_rule = c("fixed", "sqrt_d"),
-                               scenario_type = c("antipodal", "projected_normal_half_concentration")) {
+                               scenario_type = c(
+                                 "antipodal",
+                                 "projected_normal_half_concentration",
+                                 "orthogonal_vmf_mixture",
+                                 "projected_normal_mean_d"
+                               )) {
   kappa_rule <- match.arg(kappa_rule)
   scenario_type <- match.arg(scenario_type)
   design <- expand.grid(
@@ -54,15 +59,37 @@ fixed_kappa_design <- function(dimensions, n_values, beta_values, kappa,
   if (identical(scenario_type, "projected_normal_half_concentration")) {
     design$kappa <- as.numeric(design$d)
     design$projected_normal_mean_norm <- sqrt(design$d / 2)
+    design$alternative_mu_index <- NA_integer_
     scenario <- "vmf_2_projected_normal_half_concentration"
     alternative <- "projected_normal_mixture"
     description <- sprintf(
       "(1-beta) vMF(e1,%.12g) + beta Law(Z/||Z||), Z~N(sqrt(%.12g/2)e1,I)",
       design$kappa, design$d
     )
+  } else if (identical(scenario_type, "projected_normal_mean_d")) {
+    design$kappa <- 2 * as.numeric(design$d)
+    design$projected_normal_mean_norm <- as.numeric(design$d)
+    design$alternative_mu_index <- NA_integer_
+    scenario <- "vmf_2_projected_normal_mean_d"
+    alternative <- "projected_normal_mixture"
+    description <- sprintf(
+      "(1-beta) vMF(e1,2*%d) + beta Law(Z/||Z||), Z~N(%d e1,I)",
+      design$d, design$d
+    )
+  } else if (identical(scenario_type, "orthogonal_vmf_mixture")) {
+    design$kappa <- as.numeric(design$d)
+    design$projected_normal_mean_norm <- NA_real_
+    design$alternative_mu_index <- 2L
+    scenario <- "vmf_1_orthogonal_mixture"
+    alternative <- "orthogonal_vmf_mixture"
+    description <- sprintf(
+      "(1-beta/2) vMF(e1,%d) + (beta/2) vMF(e2,%d)",
+      design$d, design$d
+    )
   } else {
     design$kappa <- if (identical(kappa_rule, "sqrt_d")) sqrt(design$d) else as.numeric(kappa)
     design$projected_normal_mean_norm <- NA_real_
+    design$alternative_mu_index <- NA_integer_
     scenario <- if (identical(kappa_rule, "sqrt_d")) {
       "vmf_1_antipodal_sqrt_d"
     } else {
@@ -81,12 +108,12 @@ fixed_kappa_design <- function(dimensions, n_values, beta_values, kappa,
     alternative = alternative,
     description = description,
     design_id = seq_len(nrow(design))
-  )[, c("scenario", "family", "alternative", "description", "kappa", "projected_normal_mean_norm", "d", "n", "beta", "design_id")]
+  )[, c("scenario", "family", "alternative", "description", "kappa", "projected_normal_mean_norm", "alternative_mu_index", "d", "n", "beta", "design_id")]
 }
 
 generate_fixed_kappa_antipodal <- function(job) {
   mu <- section6_e(as.integer(job$d) + 1L)
-  if (identical(as.character(job$scenario), "vmf_2_projected_normal_half_concentration")) {
+  if (identical(as.character(job$alternative), "projected_normal_mixture")) {
     choose_alt <- stats::runif(as.integer(job$n)) < as.numeric(job$beta)
     x <- rotasym::r_vMF(as.integer(job$n), mu = mu, kappa = as.numeric(job$kappa))
     if (any(choose_alt)) {
@@ -100,7 +127,12 @@ generate_fixed_kappa_antipodal <- function(job) {
   choose_alt <- stats::runif(as.integer(job$n)) < as.numeric(job$beta) / 2
   x <- rotasym::r_vMF(as.integer(job$n), mu = mu, kappa = as.numeric(job$kappa))
   if (any(choose_alt)) {
-    x[choose_alt, ] <- rotasym::r_vMF(sum(choose_alt), mu = -mu, kappa = as.numeric(job$kappa))
+    alternative_mu <- if (identical(as.character(job$alternative), "orthogonal_vmf_mixture")) {
+      section6_e(as.integer(job$d) + 1L, index = 2L)
+    } else {
+      -mu
+    }
+    x[choose_alt, ] <- rotasym::r_vMF(sum(choose_alt), mu = alternative_mu, kappa = as.numeric(job$kappa))
   }
   x
 }
@@ -173,7 +205,12 @@ run_fixed_kappa_pilot <- function(output_dir, kappa = 1, dimensions = c(2L, 5L),
                                   cores = 6L, seed = 20260831L, cvm_block_size = 50L,
                                   checkpoint_results = 12L,
                                   kappa_rule = c("fixed", "sqrt_d"),
-                                  scenario_type = c("antipodal", "projected_normal_half_concentration")) {
+                                  scenario_type = c(
+                                    "antipodal",
+                                    "projected_normal_half_concentration",
+                                    "orthogonal_vmf_mixture",
+                                    "projected_normal_mean_d"
+                                  )) {
   kappa_rule <- match.arg(kappa_rule)
   scenario_type <- match.arg(scenario_type)
   if (length(kappa) != 1L || !is.finite(kappa) || kappa <= 0) stop("`kappa` must be strictly positive.", call. = FALSE)
