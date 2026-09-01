@@ -1,8 +1,8 @@
 #!/usr/bin/env Rscript
 
 # Reproducible validation of the regularised polar HvMF sampler in the four
-# Section 6 null settings. All GOF comparisons use the untruncated, genuine
-# HvMF law. The truncation at p_max = 0.99 is part of the generator only.
+# Section 6 null settings. The radial quantile table is regularised at
+# p_max = 0.999, while the reference CDF below is the untruncated HvMF law.
 
 Sys.setenv(RENV_CONFIG_AUTOLOADER_ENABLED = "FALSE")
 
@@ -23,7 +23,7 @@ if (!is.finite(base_seed)) stop("`base_seed` must be a finite integer.")
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-p_max <- 0.99
+p_max <- 0.999
 distance_tolerance <- 0.015
 n_values <- c(50L, 100L, 200L)
 configurations <- list(

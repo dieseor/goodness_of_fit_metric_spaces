@@ -26,7 +26,7 @@ vmf_mean_resultant_ratio <- function(lambda, q) {
 hvmf_regularised_population_distance <- function(q,
                                                   kappa,
                                                   chi = asinh(1),
-                                                  p_max = 0.99) {
+                                                  p_max = 0.999) {
   table <- hvmf_build_radial_quantile_table(
     q = q,
     kappa = kappa,
@@ -50,6 +50,12 @@ hvmf_regularised_population_distance <- function(q,
 
   max(abs(probability / p_max - true_cdf), 1 - p_max)
 }
+
+test_that("the default HvMF polar cutoff is 0.999", {
+  expect_equal(formals(hvmf_build_radial_quantile_table)$p_max, 0.999)
+  expect_equal(formals(rhvmf_polar)$p_max, 0.999)
+  expect_equal(formals(rhvmf_angular_mixture)$p_max, 0.999)
+})
 
 test_that("general polar sampler returns samples on H^2 and H^10", {
   for (q in c(2L, 10L)) {
@@ -241,8 +247,8 @@ test_that("radial quantile builder expands an insufficient initial bracket", {
   )
 
   expect_gt(attr(table, "upper"), 0.5)
-  expect_equal(tail(table$base, 1L), 0.99)
-  expect_equal(nrow(table), 100L)
+  expect_equal(tail(table$base, 1L), 0.999)
+  expect_equal(nrow(table), 101L)
 })
 
 test_that("conditional vMF first moment is correct in H^10", {
