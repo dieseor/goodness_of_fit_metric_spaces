@@ -42,8 +42,9 @@ fixed_kappa_design <- function(dimensions, n_values, beta_values, kappa,
                                  "orthogonal_vmf_mixture",
                                  "projected_normal_mean_d",
                                  "projected_normal_sqrt_d",
-                                 "projected_normal_sqrt_d_kappa_2d"
-                               )) {
+                                 "projected_normal_sqrt_d_kappa_2d",
+                                 "projected_normal_2sqrt_d_kappa_2d"
+)) {
   kappa_rule <- match.arg(kappa_rule)
   scenario_type <- match.arg(scenario_type)
   design <- expand.grid(
@@ -76,6 +77,16 @@ fixed_kappa_design <- function(dimensions, n_values, beta_values, kappa,
     alternative <- "projected_normal_mixture"
     description <- sprintf(
       "(1-beta) vMF(e1,2*%d) + beta Law(Z/||Z||), Z~N(%d e1,I)",
+      design$d, design$d
+    )
+  } else if (identical(scenario_type, "projected_normal_2sqrt_d_kappa_2d")) {
+    design$kappa <- 2 * as.numeric(design$d)
+    design$projected_normal_mean_norm <- 2 * sqrt(as.numeric(design$d))
+    design$alternative_mu_index <- NA_integer_
+    scenario <- "vmf_2_projected_normal_2sqrt_d_kappa_2d"
+    alternative <- "projected_normal_mixture"
+    description <- sprintf(
+      "(1-beta) vMF(e1,2*%d) + beta Law(Z/||Z||), Z~N(2sqrt(%d)e1,I)",
       design$d, design$d
     )
   } else if (identical(scenario_type, "projected_normal_sqrt_d_kappa_2d")) {
@@ -233,8 +244,9 @@ run_fixed_kappa_pilot <- function(output_dir, kappa = 1, dimensions = c(2L, 5L),
                                     "orthogonal_vmf_mixture",
                                     "projected_normal_mean_d",
                                     "projected_normal_sqrt_d",
-                                 "projected_normal_sqrt_d_kappa_2d"
-                                  )) {
+                                 "projected_normal_sqrt_d_kappa_2d",
+                                 "projected_normal_2sqrt_d_kappa_2d"
+)) {
   kappa_rule <- match.arg(kappa_rule)
   scenario_type <- match.arg(scenario_type)
   if (length(kappa) != 1L || !is.finite(kappa) || kappa <= 0) stop("`kappa` must be strictly positive.", call. = FALSE)
