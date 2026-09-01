@@ -24,6 +24,27 @@ test_that("the new projected-normal vMF pilot has concentration d and mean norm 
   expect_lt(max(abs(rowSums(x^2) - 1)), 1e-12)
 })
 
+test_that("the 2d projected-normal vMF pilot keeps mean norm sqrt(d)", {
+  design <- vmf_env$fixed_kappa_design(
+    dimensions = c(2L, 5L), n_values = 50L, beta_values = 0.5,
+    kappa = 1, scenario_type = "projected_normal_sqrt_d_kappa_2d"
+  )
+
+  expect_equal(design$kappa, c(4, 10))
+  expect_equal(design$projected_normal_mean_norm, sqrt(c(2, 5)))
+  expect_identical(
+    unique(design$scenario),
+    "vmf_2_projected_normal_sqrt_d_kappa_2d"
+  )
+
+  set.seed(1)
+  x <- vmf_env$generate_fixed_kappa_antipodal(
+    design[1L, , drop = FALSE]
+  )
+  expect_equal(ncol(x), 3L)
+  expect_lt(max(abs(rowSums(x^2) - 1)), 1e-12)
+})
+
 test_that("the new HvMF pilots preserve the hyperboloid constraint", {
   catalog <- section6_env$section6_scenario_catalog()
   scenarios <- c(
