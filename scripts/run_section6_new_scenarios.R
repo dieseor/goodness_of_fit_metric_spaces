@@ -186,6 +186,13 @@ section6_scenario_catalog <- function() {
       generator = "hvmf_radial_location_mixture",
       experimental = TRUE
     ),
+    hvmf_1_radial_c_two = list(
+      family = "hvmf",
+      alternative = "radial_hvmf_location_mixture_c_two",
+      description = "(1-beta/2) HvMF((sqrt(2),e1),d) + (beta/2) HvMF(mu1,d), d_H(mu0,mu1)=2/sqrt(d)",
+      generator = "hvmf_radial_location_mixture",
+      experimental = TRUE
+    ),
     hvmf_2_angular_sqrt_d_concentration = list(
       family = "hvmf",
       alternative = "conditional_angular_hvmf_mixture_sqrt_d_concentration",
@@ -372,13 +379,15 @@ generate_section6_sample <- function(design_row) {
 
   if (scenario %in% c(
       "hvmf_1_radial_c_inv_sqrt2",
-      "hvmf_1_radial_c_half"
+      "hvmf_1_radial_c_half",
+      "hvmf_1_radial_c_two"
   )) {
     mu0 <- c(sqrt(2), section6_e(d))
     c_shift <- switch(
       scenario,
       hvmf_1_radial_c_inv_sqrt2 = 1 / sqrt(2),
-      hvmf_1_radial_c_half = 1 / 2
+      hvmf_1_radial_c_half = 1 / 2,
+      hvmf_1_radial_c_two = 2
     )
     mu1 <- section6_hvmf_radial_mu1(d, c_shift)
     choose_alt <- stats::runif(n) < beta / 2
