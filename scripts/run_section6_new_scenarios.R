@@ -49,6 +49,12 @@ section6_e <- function(d, index = 1L) {
   out
 }
 
+section6_hvmf_radial_mu1 <- function(d, c_shift) {
+  rho0 <- asinh(1)
+  rho1 <- rho0 + c_shift / sqrt(d)
+  c(cosh(rho1), sinh(rho1) * section6_e(d))
+}
+
 section6_sigma <- function(d, sign = c("plus", "minus")) {
   sign <- match.arg(sign)
   if (d < 2L) stop("The Section 6 covariance scenarios require d >= 2.")
@@ -164,6 +170,20 @@ section6_scenario_catalog <- function() {
       alternative = "dimension_scaled_hvmf_location_mixture",
       description = "(1-beta/2) HvMF((sqrt(2),e1),d) + (beta/2) HvMF((sqrt(1+2/d),sqrt(2/d)e2),d)",
       generator = "hvmf_dimension_scaled_location_mixture",
+      experimental = TRUE
+    ),
+    hvmf_1_radial_c_inv_sqrt2 = list(
+      family = "hvmf",
+      alternative = "radial_hvmf_location_mixture_c_inv_sqrt2",
+      description = "(1-beta/2) HvMF((sqrt(2),e1),d) + (beta/2) HvMF(mu1,d), d_H(mu0,mu1)=1/sqrt(2d)",
+      generator = "hvmf_radial_location_mixture",
+      experimental = TRUE
+    ),
+    hvmf_1_radial_c_half = list(
+      family = "hvmf",
+      alternative = "radial_hvmf_location_mixture_c_half",
+      description = "(1-beta/2) HvMF((sqrt(2),e1),d) + (beta/2) HvMF(mu1,d), d_H(mu0,mu1)=1/(2sqrt(d))",
+      generator = "hvmf_radial_location_mixture",
       experimental = TRUE
     ),
     hvmf_2_angular_sqrt_d_concentration = list(
@@ -342,6 +362,25 @@ generate_section6_sample <- function(design_row) {
       sqrt(1 + spatial_scale^2),
       spatial_scale * section6_e(d, index = 2L)
     )
+    choose_alt <- stats::runif(n) < beta / 2
+    x <- rhvmf_polar(n, mu = mu0, kappa = d)
+    if (any(choose_alt)) {
+      x[choose_alt, ] <- rhvmf_polar(sum(choose_alt), mu = mu1, kappa = d)
+    }
+    return(x)
+  }
+
+  if (scenario %in% c(
+      "hvmf_1_radial_c_inv_sqrt2",
+      "hvmf_1_radial_c_half"
+  )) {
+    mu0 <- c(sqrt(2), section6_e(d))
+    c_shift <- switch(
+      scenario,
+      hvmf_1_radial_c_inv_sqrt2 = 1 / sqrt(2),
+      hvmf_1_radial_c_half = 1 / 2
+    )
+    mu1 <- section6_hvmf_radial_mu1(d, c_shift)
     choose_alt <- stats::runif(n) < beta / 2
     x <- rhvmf_polar(n, mu = mu0, kappa = d)
     if (any(choose_alt)) {
