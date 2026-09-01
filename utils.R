@@ -442,7 +442,7 @@ hvmf_radial_cdf <- function(u,
 hvmf_build_radial_quantile_table <- function(q,
                                              kappa,
                                              chi,
-                                             p_max = 0.99,
+                                             p_max = 0.999,
                                              probability_step = 0.01,
                                              upper = 3) {
   q <- hvmf_validate_dimension(q)
@@ -604,7 +604,7 @@ hvmf_polar_sample_core <- local({
            delta = 0,
            tangent = NULL,
            check = TRUE,
-           p_max = 0.99,
+           p_max = 0.999,
            probability_step = 0.01,
            upper = 3) {
     n_numeric <- as.numeric(n)
@@ -768,7 +768,7 @@ rhvmf_polar <- function(n,
                         mu,
                         kappa,
                         check = TRUE,
-                        p_max = 0.99,
+                        p_max = 0.999,
                         probability_step = 0.01,
                         upper = 3) {
   hvmf_polar_sample_core(
@@ -795,7 +795,7 @@ rhvmf_angular_mixture <- function(n,
                                   delta,
                                   tangent = NULL,
                                   check = TRUE,
-                                  p_max = 0.99,
+                                  p_max = 0.999,
                                   probability_step = 0.01,
                                   upper = 3) {
   hvmf_polar_sample_core(
