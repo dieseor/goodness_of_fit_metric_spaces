@@ -158,6 +158,20 @@ section6_scenario_catalog <- function() {
       alternative = "conditional_angular_hvmf_mixture",
       description = "(1-beta) HvMF((sqrt(2),e1),1.5d) + beta Q_delta, delta=pi/5",
       generator = "hvmf_angular_mixture"
+    ),
+    hvmf_1_dimension_scaled_location_mixture = list(
+      family = "hvmf",
+      alternative = "dimension_scaled_hvmf_location_mixture",
+      description = "(1-beta/2) HvMF((sqrt(2),e1),d) + (beta/2) HvMF((sqrt(1+2/d),sqrt(2/d)e2),d)",
+      generator = "hvmf_dimension_scaled_location_mixture",
+      experimental = TRUE
+    ),
+    hvmf_2_angular_sqrt_d_concentration = list(
+      family = "hvmf",
+      alternative = "conditional_angular_hvmf_mixture_sqrt_d_concentration",
+      description = "(1-beta) HvMF((sqrt(2),e1),2sqrt(d)) + beta Q_delta, delta=pi/5",
+      generator = "hvmf_angular_sqrt_d_concentration",
+      experimental = TRUE
     )
   )
 }
@@ -315,6 +329,36 @@ generate_section6_sample <- function(design_row) {
     if (any(choose_alt)) {
       x[choose_alt, ] <- rhvmf_angular_mixture(
         sum(choose_alt), mu = mu0, kappa = 1.5 * d,
+        delta = pi / 5, tangent = tangent
+      )
+    }
+    return(x)
+  }
+
+  if (identical(scenario, "hvmf_1_dimension_scaled_location_mixture")) {
+    mu0 <- c(sqrt(2), section6_e(d))
+    spatial_scale <- sqrt(2 / d)
+    mu1 <- c(
+      sqrt(1 + spatial_scale^2),
+      spatial_scale * section6_e(d, index = 2L)
+    )
+    choose_alt <- stats::runif(n) < beta / 2
+    x <- rhvmf_polar(n, mu = mu0, kappa = d)
+    if (any(choose_alt)) {
+      x[choose_alt, ] <- rhvmf_polar(sum(choose_alt), mu = mu1, kappa = d)
+    }
+    return(x)
+  }
+
+  if (identical(scenario, "hvmf_2_angular_sqrt_d_concentration")) {
+    mu0 <- c(sqrt(2), section6_e(d))
+    tangent <- section6_e(d, index = 2L)
+    kappa <- 2 * sqrt(d)
+    choose_alt <- stats::runif(n) < beta
+    x <- rhvmf_polar(n, mu = mu0, kappa = kappa)
+    if (any(choose_alt)) {
+      x[choose_alt, ] <- rhvmf_angular_mixture(
+        sum(choose_alt), mu = mu0, kappa = kappa,
         delta = pi / 5, tangent = tangent
       )
     }
