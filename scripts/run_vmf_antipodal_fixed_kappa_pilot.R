@@ -43,7 +43,8 @@ fixed_kappa_design <- function(dimensions, n_values, beta_values, kappa,
                                  "projected_normal_mean_d",
                                  "projected_normal_sqrt_d",
                                  "projected_normal_sqrt_d_kappa_2d",
-                                 "projected_normal_2sqrt_d_kappa_2d"
+                                 "projected_normal_2sqrt_d_kappa_2d",
+                                 "projected_normal_2sqrt_d_kappa_2d_beta_half"
 )) {
   kappa_rule <- match.arg(kappa_rule)
   scenario_type <- match.arg(scenario_type)
@@ -77,6 +78,16 @@ fixed_kappa_design <- function(dimensions, n_values, beta_values, kappa,
     alternative <- "projected_normal_mixture"
     description <- sprintf(
       "(1-beta) vMF(e1,2*%d) + beta Law(Z/||Z||), Z~N(%d e1,I)",
+      design$d, design$d
+    )
+  } else if (identical(scenario_type, "projected_normal_2sqrt_d_kappa_2d_beta_half")) {
+    design$kappa <- 2 * as.numeric(design$d)
+    design$projected_normal_mean_norm <- 2 * sqrt(as.numeric(design$d))
+    design$alternative_mu_index <- NA_integer_
+    scenario <- "vmf_2_projected_normal_2sqrt_d_kappa_2d_beta_half"
+    alternative <- "projected_normal_mixture_beta_half"
+    description <- sprintf(
+      "(1-beta/2) vMF(e1,2*%d) + (beta/2) Law(Z/||Z||), Z~N(2sqrt(%d)e1,I)",
       design$d, design$d
     )
   } else if (identical(scenario_type, "projected_normal_2sqrt_d_kappa_2d")) {
@@ -146,8 +157,18 @@ fixed_kappa_design <- function(dimensions, n_values, beta_values, kappa,
 
 generate_fixed_kappa_antipodal <- function(job) {
   mu <- section6_e(as.integer(job$d) + 1L)
-  if (identical(as.character(job$alternative), "projected_normal_mixture")) {
-    choose_alt <- stats::runif(as.integer(job$n)) < as.numeric(job$beta)
+  if (as.character(job$alternative) %in% c(
+      "projected_normal_mixture",
+      "projected_normal_mixture_beta_half"
+    )) {
+    mixing_probability <- if (
+      identical(as.character(job$alternative), "projected_normal_mixture_beta_half")
+    ) {
+      as.numeric(job$beta) / 2
+    } else {
+      as.numeric(job$beta)
+    }
+    choose_alt <- stats::runif(as.integer(job$n)) < mixing_probability
     x <- rotasym::r_vMF(as.integer(job$n), mu = mu, kappa = as.numeric(job$kappa))
     if (any(choose_alt)) {
       ambient_dim <- as.integer(job$d) + 1L
@@ -245,7 +266,8 @@ run_fixed_kappa_pilot <- function(output_dir, kappa = 1, dimensions = c(2L, 5L),
                                     "projected_normal_mean_d",
                                     "projected_normal_sqrt_d",
                                  "projected_normal_sqrt_d_kappa_2d",
-                                 "projected_normal_2sqrt_d_kappa_2d"
+                                 "projected_normal_2sqrt_d_kappa_2d",
+                                 "projected_normal_2sqrt_d_kappa_2d_beta_half"
 )) {
   kappa_rule <- match.arg(kappa_rule)
   scenario_type <- match.arg(scenario_type)
