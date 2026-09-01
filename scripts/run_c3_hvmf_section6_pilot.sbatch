@@ -9,8 +9,25 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=01:30:00
-#SBATCH --mem=5G
+# Observed C3 resources for recent directional pilots
+# 16 cores, M=100, B=1000, d=2,5, n=50,100,200,400,
+# derivative_method=quadrature, F_integral for H^5.
+#
+# hvmf_1_dimension_scaled_location_mixture, beta=0.5:
+#   observed walltime: 00:06:19
+#   observed MaxRSS:   1952.83M
+#   observed x 1.25:   00:07:54, 2442M
+#
+# hvmf_2_angular_sqrt_d_concentration, beta=0,0.5:
+#   observed walltime: 00:10:51
+#   observed MaxRSS:   2095.06M
+#   observed x 1.25:   00:13:34, 2619M
+#
+# IMPORTANT: the HvMF 2 timing includes BOTH beta=0 and beta=0.5
+# (1600 internal replications), whereas the HvMF 1 timing is beta=0.5 only
+# (800 internal replications).
+#SBATCH --time=00:14:00
+#SBATCH --mem=2700M
 #SBATCH --partition=batch
 
 set -euo pipefail
