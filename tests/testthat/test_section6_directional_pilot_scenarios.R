@@ -28,6 +28,8 @@ test_that("the new HvMF pilots preserve the hyperboloid constraint", {
   catalog <- section6_env$section6_scenario_catalog()
   scenarios <- c(
     "hvmf_1_dimension_scaled_location_mixture",
+    "hvmf_1_radial_c_inv_sqrt2",
+    "hvmf_1_radial_c_half",
     "hvmf_2_angular_sqrt_d_concentration"
   )
   expect_true(all(vapply(scenarios, function(s) isTRUE(catalog[[s]]$experimental), logical(1))))
@@ -49,4 +51,43 @@ test_that("the new HvMF pilots preserve the hyperboloid constraint", {
   a <- sqrt(2 / d)
   mu1 <- c(sqrt(1 + a^2), a * section6_env$section6_e(d, index = 2L))
   expect_equal(-mu1[[1L]]^2 + sum(mu1[-1L]^2), -1, tolerance = 1e-14)
+})
+
+
+test_that("radial HvMF pilot locations have the requested hyperbolic shifts", {
+  catalog <- section6_env$section6_scenario_catalog()
+  c_values <- c(
+    hvmf_1_radial_c_inv_sqrt2 = 1 / sqrt(2),
+    hvmf_1_radial_c_half = 1 / 2
+  )
+
+  expect_true(all(vapply(
+    names(c_values),
+    function(s) isTRUE(catalog[[s]]$experimental),
+    logical(1)
+  )))
+
+  for (d in c(2L, 5L)) {
+    mu0 <- c(sqrt(2), section6_env$section6_e(d))
+
+    for (scenario in names(c_values)) {
+      c_shift <- unname(c_values[[scenario]])
+      mu1 <- section6_env$section6_hvmf_radial_mu1(d, c_shift)
+
+      expect_equal(
+        -mu1[[1L]]^2 + sum(mu1[-1L]^2),
+        -1,
+        tolerance = 1e-13
+      )
+
+      minkowski <- -mu0[[1L]] * mu1[[1L]] +
+        sum(mu0[-1L] * mu1[-1L])
+
+      expect_equal(
+        acosh(-minkowski),
+        c_shift / sqrt(d),
+        tolerance = 1e-12
+      )
+    }
+  }
 })
