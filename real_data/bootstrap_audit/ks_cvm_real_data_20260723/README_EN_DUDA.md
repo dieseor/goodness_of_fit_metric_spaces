@@ -5,12 +5,17 @@ No modifican los resultados del paper ni establecen todavía una regla de
 selección entre HBE, Farebrother, Imhof y Davies. Cualquier uso en producción
 queda pendiente de revisión matemática y aprobación explícita del autor.
 
-Quedan expresamente **EN DUDA** los scripts de auditoría:
+Los cuatro scripts de auditoría exploratorios siguientes se retiraron del
+repositorio durante la limpieza de 2026-09-12; los resultados guardados bajo
+este directorio se mantienen únicamente como evidencia histórica:
 
 - `scripts/audit_ks_cvm_bootstrap_real_data.R`;
 - `scripts/audit_fitted_parameter_stability.R`;
 - `scripts/audit_joint_ks_cvm_percentile_gaps.R`;
 - `scripts/audit_logistic_gaussian_quadform_real_profiles.R`;
+
+Quedan expresamente **EN DUDA** los scripts de auditoría que permanecen:
+
 - `scripts/refine_logistic_gaussian_quadform_disagreements.R`;
 - `scripts/analyze_hbe_quadform_error_features.R`.
 

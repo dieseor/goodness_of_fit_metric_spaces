@@ -168,24 +168,87 @@ test_that("the H5 model adapter uses adaptive radial integration", {
   ))
 })
 
-test_that("the adaptive profile override is restricted to H5", {
+test_that("integral is the default profile method beyond H5", {
   q <- 10L
   mu <- hvmf_hq_test_mu(q)
   omega <- c(1, rep.int(0, q))
   radii <- seq(0.05, 2.5, length.out = 9L)
   theta <- list(mu = mu, kappa = 10)
   spec <- make_hvmf_spec(unknown_param = "both")
-  expected <- hvmf_distance_profile_hq(
-    omega, mu, theta$kappa, radii, grid_size = 257L
-  )
-  actual <- spec$profile_eval(
-    omega, radii, theta, control = list(hvmf_profile_n_y = 257L)
+
+  direct <- hvmf_distance_profile_hq_integral(
+    omega = omega,
+    mu = mu,
+    kappa = theta$kappa,
+    t_values = radii
   )
 
-  expect_equal(actual, expected, tolerance = 0)
+  default_profile <- spec$profile_eval(
+    omega,
+    radii,
+    theta,
+    control = list(hvmf_profile_n_y = 17L)
+  )
+  explicit_integral <- spec$profile_eval(
+    omega,
+    radii,
+    theta,
+    control = list(
+      hvmf_profile_method = "integral",
+      hvmf_profile_n_y = 17L
+    )
+  )
+  explicit_exact <- spec$profile_eval(
+    omega,
+    radii,
+    theta,
+    control = list(
+      hvmf_profile_method = "exact",
+      hvmf_profile_n_y = 17L
+    )
+  )
+
+  expect_equal(default_profile, direct, tolerance = 1e-12)
+  expect_equal(explicit_integral, direct, tolerance = 1e-12)
+  expect_equal(explicit_exact, direct, tolerance = 1e-12)
+
+  distance_matrix <- matrix(radii[1:4], nrow = 2L)
+  data <- rbind(mu, omega)
+
+  expect_null(spec$sample_profile_matrix_eval(
+    data = data,
+    distance_matrix = distance_matrix,
+    theta = theta,
+    control = list()
+  ))
+
+  # The old non-H5 tabulated route remains available when explicitly requested.
+  expected_tabulated <- hvmf_distance_profile_hq(
+    omega = omega,
+    mu = mu,
+    kappa = theta$kappa,
+    t_values = radii,
+    grid_size = 257L
+  )
+  actual_tabulated <- spec$profile_eval(
+    omega,
+    radii,
+    theta,
+    control = list(
+      hvmf_profile_method = "tabulated",
+      hvmf_profile_n_y = 257L
+    )
+  )
+  expect_equal(actual_tabulated, expected_tabulated, tolerance = 0)
+
   expect_true(is.matrix(spec$sample_profile_matrix_eval(
-    data = rbind(mu, omega), distance_matrix = matrix(radii[1:4], nrow = 2L),
-    theta = theta, control = list(hvmf_profile_n_y = 257L)
+    data = data,
+    distance_matrix = distance_matrix,
+    theta = theta,
+    control = list(
+      hvmf_profile_method = "tabulated",
+      hvmf_profile_n_y = 257L
+    )
   )))
 })
 

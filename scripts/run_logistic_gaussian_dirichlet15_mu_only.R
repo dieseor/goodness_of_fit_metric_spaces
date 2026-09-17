@@ -271,7 +271,7 @@ run_logistic_gaussian_dirichlet15_mu_only <- function(
   manifest <- transform(
     manifest,
     M = as.integer(M), B = as.integer(B),
-    dirichlet_alpha = "2,...,2",
+    dirichlet_alpha = "1.5,...,1.5",
     base_seed = as.integer(base_seed),
     derivative_mc_size = as.integer(derivative_mc_size),
     cvm_block_size = as.integer(cvm_block_size),

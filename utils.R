@@ -2340,6 +2340,163 @@ compute_mle_xi <- function(data) {
 # BAHADUR helpers (MLE, psi, dot_psi and trajectory analysis)
 # -------------------------------------------------------------------------
 
+# ----------------------------------------------------------------------------
+# Shared vMF projected-density utilities
+#
+# These functions define distribution-level quantities used both by direct
+# distance-profile evaluation and by deterministic distance-profile
+# derivatives.  They deliberately live in utils.R so the mathematical
+# implementation is unique.
+# ----------------------------------------------------------------------------
+
+profile_derivative_nonnegative_square <- function(value,
+                                                  scale,
+                                                  label,
+                                                  relative_tolerance = 1e-10) {
+  value <- as.numeric(value)
+  scale <- max(1, abs(as.numeric(scale)))
+  if (!is.finite(value)) {
+    stop(sprintf("The computed %s is not finite.", label))
+  }
+  if (value < -relative_tolerance * scale) {
+    stop(sprintf(
+      "The computed %s = %.17g is substantially negative; the supplied parameters are incompatible.",
+      label,
+      value
+    ))
+  }
+  max(value, 0)
+}
+
+vmf_log_normalizing_constant_intrinsic <- function(q, kappa) {
+  q <- as.integer(q)
+  kappa <- as.numeric(kappa)
+
+  if (length(q) != 1L || !is.finite(q) || q < 1L ||
+      length(kappa) == 0L || any(!is.finite(kappa)) || any(kappa < 0)) {
+    stop("Invalid vMF dimension or concentration.")
+  }
+
+  output <- numeric(length(kappa))
+  zero <- kappa == 0
+
+  if (any(zero)) {
+    output[zero] <-
+      lgamma((q + 1) / 2) -
+      log(2) -
+      ((q + 1) / 2) * log(pi)
+  }
+
+  positive <- !zero
+  if (any(positive)) {
+    nu <- (q - 1) / 2
+    scaled_bessel <- besselI(
+      kappa[positive],
+      nu = nu,
+      expon.scaled = TRUE
+    )
+
+    if (any(!is.finite(scaled_bessel)) || any(scaled_bessel <= 0)) {
+      stop("Could not evaluate the scaled Bessel function for the vMF normalising constant.")
+    }
+
+    output[positive] <-
+      nu * log(kappa[positive]) -
+      ((q + 1) / 2) * log(2 * pi) -
+      log(scaled_bessel) -
+      kappa[positive]
+  }
+
+  output
+}
+
+vmf_projected_density_canonical_state <- function(xi, omega) {
+  xi <- as.numeric(xi)
+  omega <- as.numeric(omega)
+  q <- length(xi) - 1L
+
+  if (q < 2L || length(omega) != length(xi) ||
+      any(!is.finite(c(xi, omega)))) {
+    stop("The vMF projected density requires finite vectors on S^q with q >= 2.")
+  }
+
+  omega_norm <- sqrt(sum(omega^2))
+  if (!is.finite(omega_norm) || omega_norm <= 0) {
+    stop("`omega` must have strictly positive norm.")
+  }
+  omega <- omega / omega_norm
+
+  kappa <- sqrt(sum(xi^2))
+  a <- sum(xi * omega)
+  b_sq <- profile_derivative_nonnegative_square(
+    kappa^2 - a^2,
+    scale = max(kappa^2, a^2),
+    label = "vMF b^2"
+  )
+
+  list(
+    a = a,
+    b = sqrt(b_sq),
+    omega = omega,
+    kappa = kappa,
+    q = q,
+    log_normalizing_constant =
+      vmf_log_normalizing_constant_intrinsic(q, kappa)
+  )
+}
+
+vmf_projected_density_canonical <- function(s,
+                                            xi = NULL,
+                                            omega = NULL,
+                                            state = NULL) {
+  s <- as.numeric(s)
+  if (any(!is.finite(s))) {
+    stop("The vMF projected density requires finite projection values.")
+  }
+
+  if (is.null(state)) {
+    if (is.null(xi) || is.null(omega)) {
+      stop("Supply either `state` or both `xi` and `omega`.")
+    }
+    state <- vmf_projected_density_canonical_state(xi = xi, omega = omega)
+  }
+
+  q <- state$q
+  one_minus_s2 <- pmax(0, 1 - s^2)
+  u <- state$b * sqrt(one_minus_s2)
+
+  log_density <- rep.int(-Inf, length(s))
+  interior_or_q2 <- one_minus_s2 > 0 | q == 2L
+
+  if (any(interior_or_q2)) {
+    power_term <- if (q == 2L) {
+      rep.int(0, sum(interior_or_q2))
+    } else {
+      ((q - 2) / 2) * log(one_minus_s2[interior_or_q2])
+    }
+
+    log_density[interior_or_q2] <-
+      state$log_normalizing_constant -
+      vmf_log_normalizing_constant_intrinsic(
+        q = q - 1L,
+        kappa = u[interior_or_q2]
+      ) +
+      state$a * s[interior_or_q2] +
+      power_term
+  }
+
+  list(
+    density = exp(log_density),
+    a = state$a,
+    b = state$b,
+    u = u,
+    one_minus_s2 = one_minus_s2,
+    omega = state$omega,
+    kappa = state$kappa,
+    q = q
+  )
+}
+
 ## ---------------------------------------------------------------------------
 #' Theoretical distance profile for von Mises-Fisher distribution
 
@@ -2360,25 +2517,44 @@ theoretical_distance_profile_vmf <- function(omega, mu, kappa, t_values, distanc
       theoretical_distance_profile_vmf(omega[i, ], mu, kappa, t_values[i], distance_type)
     }))
   }
-  if (length(mu) == 2 && distance_type == "chordal") {
-    return(theoretical_distance_profile_vmf_s1_chordal(omega, mu, kappa, t_values))
+  if (length(mu) == 2) {
+    if (distance_type == "chordal") {
+      return(theoretical_distance_profile_vmf_s1_chordal(
+        omega, mu, kappa, t_values
+      ))
+    }
+
+    chordal_t <- sqrt(pmax(
+      0,
+      2 * (1 - cos(as.numeric(t_values)))
+    ))
+    return(theoretical_distance_profile_vmf_s1_chordal(
+      omega, mu, kappa, chordal_t
+    ))
   }
-  rho <- sum(mu * omega)  # μ'ω (cosine of angle between μ and ω)
-  q <- length(mu)  # Ambient dimension (for S^{q-1} embedded in R^q)
+  rho <- sum(mu * omega)
+  p <- length(mu)
+  log_normalizing_constant <- rotasym::c_vMF(
+    p = p,
+    kappa = kappa,
+    log = TRUE
+  )
   sapply(t_values, function(t) {
     threshold <- ifelse(distance_type == "chordal", 1 - (t^2)/2, cos(t))
     density_T <- function(s) {
-      log_c_q <- rotasym::c_vMF(p = q, kappa = kappa, log = TRUE)
-      log_exp_term <- kappa * rho * s
-      log_power_term <- ((q - 3)/2) * log(1 - s^2)
-      log_numerator <- log_c_q + log_exp_term + log_power_term
-      kappa_term <- kappa * sqrt((1 - s^2) * (1 - rho^2))
-      log_denominator <- rotasym::c_vMF(p = q - 1, kappa = kappa_term, log = TRUE)
-      result <- exp(log_numerator - log_denominator)
-      return(result)
+      exp(
+        log_normalizing_constant +
+          kappa * rho * s +
+          ((p - 3) / 2) * log(1 - s^2) -
+          rotasym::c_vMF(
+            p = p - 1L,
+            kappa = kappa * sqrt((1 - s^2) * (1 - rho^2)),
+            log = TRUE
+          )
+      )
     }
-    cdf_at_threshold <- integrate(density_T, lower = -1 + 1e-8, upper = threshold, 
-                                   rel.tol = 1e-8, abs.tol = 1e-10)$value
+    cdf_at_threshold <- integrate(density_T, lower = -1 + 1e-8, upper = threshold,
+                                 rel.tol = 1e-8, abs.tol = 1e-10)$value
     return(1 - cdf_at_threshold)
   })
 }

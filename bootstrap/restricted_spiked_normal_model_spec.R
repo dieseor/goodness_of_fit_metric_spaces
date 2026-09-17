@@ -43,6 +43,9 @@ normalize_restricted_spiked_normal_theta <- function(theta,
   }
   theta_vector <- as.numeric(theta$theta %||% theta$mu)
   lambda <- suppressWarnings(as.numeric(theta$lambda))
+  allow_boundary_lambda_zero <-
+    isTRUE(theta$allow_boundary_lambda_zero) ||
+    isTRUE(control$restricted_spiked_allow_boundary_lambda_zero)
   if (!length(theta_vector) || any(!is.finite(theta_vector))) {
     stop("Restricted-spiked normal theta requires a finite non-empty `theta` vector.")
   }
@@ -51,7 +54,8 @@ normalize_restricted_spiked_normal_theta <- function(theta,
       length(theta_vector) != ambient_dim) {
     stop("Restricted-spiked normal theta has incompatible ambient dimension.")
   }
-  if (length(lambda) != 1L || !is.finite(lambda) || lambda <= 0) {
+  if (length(lambda) != 1L || !is.finite(lambda) || lambda < 0 ||
+      (lambda == 0 && !allow_boundary_lambda_zero)) {
     stop("Restricted-spiked normal `lambda` must be a strictly positive finite scalar.")
   }
   radius <- sqrt(sum(theta_vector^2))
@@ -64,6 +68,7 @@ normalize_restricted_spiked_normal_theta <- function(theta,
     theta = theta_vector,
     mu = theta_vector,
     lambda = lambda,
+    allow_boundary_lambda_zero = allow_boundary_lambda_zero,
     u = u,
     radius = radius,
     Sigma = Sigma,
@@ -363,7 +368,10 @@ fit_restricted_spiked_normal_theta <- function(data, weights = NULL, null,
       profile$best$r, radius_tolerance
     ))
   }
-  if (!is.finite(profile$best$lambda) || profile$best$lambda <= 0) {
+  allow_boundary_lambda_zero <-
+    isTRUE(control$restricted_spiked_allow_boundary_lambda_zero)
+  if (!is.finite(profile$best$lambda) || profile$best$lambda < 0 ||
+      (profile$best$lambda == 0 && !allow_boundary_lambda_zero)) {
     stop(sprintf(
       paste0(
         "Restricted-spiked normal MLE stopped: the profiled lambda is numerically ",
@@ -374,7 +382,12 @@ fit_restricted_spiked_normal_theta <- function(data, weights = NULL, null,
   }
   theta_hat <- profile$best$r * profile$best$u
   fitted <- normalize_restricted_spiked_normal_theta(
-    list(theta = theta_hat, lambda = profile$best$lambda),
+    list(
+      theta = theta_hat,
+      lambda = profile$best$lambda,
+      allow_boundary_lambda_zero =
+        allow_boundary_lambda_zero && profile$best$lambda == 0
+    ),
     ambient_dim = ncol(x), control = control
   )
   fitted$loglik <- restricted_spiked_normal_loglik(x, fitted, prob_weights, control)

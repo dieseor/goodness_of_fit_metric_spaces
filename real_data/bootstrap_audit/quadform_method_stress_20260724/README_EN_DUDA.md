@@ -16,8 +16,9 @@ ningún resultado del artículo. Sus objetivos son:
 3. usar Monte Carlo sólo como contraste independiente para casos seleccionados
    con discrepancias macroscópicas; no como referencia de precisión fina.
 
-El script `scripts/audit_quadform_stratified_timing.R` y todos los resultados
-de `stratified_48_cases/` y
+El script exploratorio `scripts/audit_quadform_stratified_timing.R` fue
+retirado del repositorio durante la limpieza de 2026-09-12. Todos los
+resultados de `stratified_48_cases/` y
 `stratified_144_cases_preventive_rules/` también quedan explícitamente
 **EN DUDA**. En particular, la clasificación de este último directorio mide
 eventos operativos (`ifault` de Farebrother y desacuerdos cuando Imhof satisface

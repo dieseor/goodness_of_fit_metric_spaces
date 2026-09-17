@@ -1,0 +1,7 @@
+Read this directory in order:
+1. repeated_mle_overall_summary.csv: convergence, clipping, and close-to-data rates.
+2. short_complete_linkage_density_basins.csv and long_complete_linkage_density_basins.csv: stable fitted-density basins.
+3. *_representative_density_basins.csv: medoid and highest-likelihood fit for each basin with at least five starts.
+4. *_complete_linkage_assignments.csv: every nonclipped fit, its basin, Hellinger distance to the reported fit, and canonicalized parameters.
+The reported fit is the start_id=1 row.  'Near endpoint' means min geodesic distance to a data point or its antipode <= 1e-5 radians; it is intentionally broader than the implementation's literal clipping flag.
+Clusters are complete-linkage Hellinger clusters (threshold .025) on a 512-point equal-area sphere grid, so no cluster is created solely from parameter distance.

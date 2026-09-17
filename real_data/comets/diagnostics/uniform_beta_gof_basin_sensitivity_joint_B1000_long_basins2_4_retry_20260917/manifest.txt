@@ -1,0 +1,6 @@
+B=1000; n_cores=2
+cases=long_basin2,long_basin4
+Each call jointly requests KS and CvM, sharing multipliers, reestimated theta_star, and the full sample-based profile kernel.
+Multipliers are normalized Exp(1); each bootstrap refit has one warm start, maxit=80, reltol=1e-6.
+KS uses make_sample_unique_distance_ks_grid().
+Clipped means the production endpoint-y or parameter clip is active. The sensitivity p-value removes only these rows and uses the same +1 correction on the retained B.

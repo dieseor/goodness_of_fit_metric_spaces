@@ -112,7 +112,7 @@ run_sunspots_cycle23_joint_time_space_gof <- function(
     derivative_mc_seed = 20260713L,
     bootstrap_seed = 20260714L,
     n_sample_centers = 100L,
-    derivative_mc_size = 5000L,
+    derivative_mc_size = 10000L,
     bootstrap_block_size = 25L,
     time_quad_n = 64L,
     allow_boundary_fast = FALSE,

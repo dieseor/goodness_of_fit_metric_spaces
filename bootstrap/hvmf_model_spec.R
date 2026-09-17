@@ -422,6 +422,28 @@ make_hvmf_spec <- function(unknown_param = "both") {
     },
     profile_eval = function(omega, t, theta, control = list()) {
       theta <- normalize_hvmf_theta(theta, control = control)
+      profile_method <- tolower(as.character(
+        control$hvmf_profile_method %||% "integral"
+      ))
+      if (!profile_method %in% c("integral", "exact", "tabulated")) {
+        stop("`control$hvmf_profile_method` must be one of 'integral', 'exact', and 'tabulated'.")
+      }
+
+      if (profile_method %in% c("integral", "exact")) {
+        if (theta$q == 2L) {
+          return(theoretical_distance_profile_hvmf(
+            omega = omega,
+            mu = theta$mu,
+            kappa = theta$kappa,
+            t_values = as.numeric(t)
+          ))
+        }
+        return(hvmf_distance_profile_hq_integral(
+          omega = omega, mu = theta$mu, kappa = theta$kappa,
+          t_values = as.numeric(t)
+        ))
+      }
+
       grid_size <- as.integer(
         control$hvmf_profile_n_y %||% control$hvmf_profile_grid_size %||% 4097L
       )
@@ -457,13 +479,23 @@ make_hvmf_spec <- function(unknown_param = "both") {
     extras = list(
       sample_profile_matrix_eval = function(data, distance_matrix, theta, control = list()) {
         theta <- normalize_hvmf_theta(theta, control = control)
-        if (theta$q == 5L) {
-          # Returning NULL delegates to `profile_eval()` above, which uses
-          # adaptive integration for the Section 6 H^5 experiment.  In
-          # particular, its observed KS/CvM statistics do not use the
-          # tabulated radial profile.
+        profile_method <- tolower(as.character(
+          control$hvmf_profile_method %||% "integral"
+        ))
+        if (!profile_method %in% c("integral", "exact", "tabulated")) {
+          stop("`control$hvmf_profile_method` must be one of 'integral', 'exact', and 'tabulated'.")
+        }
+
+        if (profile_method %in% c("integral", "exact")) {
           return(NULL)
         }
+
+        if (theta$q == 5L) {
+          # Returning NULL delegates to `profile_eval()` above, which uses
+          # adaptive integration for H^5.
+          return(NULL)
+        }
+
         if (theta$q != 2L) {
           x <- normalize_hvmf_data(data, control)
           output <- matrix(0, nrow = nrow(x), ncol = ncol(distance_matrix))
@@ -478,24 +510,17 @@ make_hvmf_spec <- function(unknown_param = "both") {
           }
           return(output)
         }
-        profile_method <- tolower(as.character(control$hvmf_profile_method %||% "tabulated"))
-        n_y <- as.integer(control$hvmf_profile_n_y %||% control$hvmf_profile_grid_size %||% 4097L)
 
-        if (!profile_method %in% c("exact", "tabulated")) {
-          stop("`control$hvmf_profile_method` must be either 'exact' or 'tabulated'.")
-        }
-
-        if (identical(profile_method, "tabulated")) {
-          return(hvmf_cvm_profile_matrix_tabulated(
-            data = data,
-            theta = theta,
-            grid_size = n_y,
-            distance_matrix = distance_matrix,
-            tol = as.numeric(control$hvmf_tol %||% 1e-10)
-          ))
-        }
-
-        NULL
+        n_y <- as.integer(
+          control$hvmf_profile_n_y %||% control$hvmf_profile_grid_size %||% 4097L
+        )
+        hvmf_cvm_profile_matrix_tabulated(
+          data = data,
+          theta = theta,
+          grid_size = n_y,
+          distance_matrix = distance_matrix,
+          tol = as.numeric(control$hvmf_tol %||% 1e-10)
+        )
       },
       distance_type = "geodesic",
       unknown_param = unknown_param,

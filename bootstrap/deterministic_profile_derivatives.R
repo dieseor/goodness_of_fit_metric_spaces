@@ -37,25 +37,6 @@ profile_derivative_interpolate_columns <- function(grid, cumulative, xout) {
   )
 }
 
-profile_derivative_nonnegative_square <- function(value,
-                                                  scale,
-                                                  label,
-                                                  relative_tolerance = 1e-10) {
-  value <- as.numeric(value)
-  scale <- max(1, abs(as.numeric(scale)))
-  if (!is.finite(value)) {
-    stop(sprintf("The computed %s is not finite.", label))
-  }
-  if (value < -relative_tolerance * scale) {
-    stop(sprintf(
-      "The computed %s = %.17g is substantially negative; the supplied parameters are incompatible.",
-      label,
-      value
-    ))
-  }
-  max(value, 0)
-}
-
 # Stable continuous extension of A_{q-1}(u) / u.
 profile_derivative_bessel_ratio_over_argument <- function(u, q) {
   u <- as.numeric(u)
@@ -88,82 +69,6 @@ profile_derivative_bessel_ratio_over_argument <- function(u, q) {
     output[!small] <- ratio / u_regular
   }
   output
-}
-
-vmf_log_normalizing_constant_intrinsic <- function(q, kappa) {
-  q <- as.integer(q)
-  kappa <- as.numeric(kappa)
-  if (length(q) != 1L || !is.finite(q) || q < 1L ||
-      length(kappa) != 1L || !is.finite(kappa) || kappa < 0) {
-    stop("Invalid vMF dimension or concentration.")
-  }
-  if (kappa == 0) {
-    return(lgamma((q + 1) / 2) - log(2) - ((q + 1) / 2) * log(pi))
-  }
-  nu <- (q - 1) / 2
-  scaled_bessel <- besselI(kappa, nu = nu, expon.scaled = TRUE)
-  if (!is.finite(scaled_bessel) || scaled_bessel <= 0) {
-    stop("Could not evaluate the scaled Bessel function for the vMF normalising constant.")
-  }
-  nu * log(kappa) - ((q + 1) / 2) * log(2 * pi) -
-    log(scaled_bessel) - kappa
-}
-
-vmf_projected_density_canonical <- function(s, xi, omega) {
-  s <- as.numeric(s)
-  xi <- as.numeric(xi)
-  omega <- as.numeric(omega)
-  q <- length(xi) - 1L
-  if (q < 2L || length(omega) != length(xi) ||
-      any(!is.finite(c(xi, omega, s)))) {
-    stop("Deterministic vMF derivatives require finite vectors on S^q with q >= 2.")
-  }
-  omega_norm <- sqrt(sum(omega^2))
-  if (!is.finite(omega_norm) || omega_norm <= 0) {
-    stop("`omega` must have strictly positive norm.")
-  }
-  omega <- omega / omega_norm
-  kappa <- sqrt(sum(xi^2))
-  a <- sum(xi * omega)
-  b_sq <- profile_derivative_nonnegative_square(
-    kappa^2 - a^2,
-    scale = max(kappa^2, a^2),
-    label = "vMF b^2"
-  )
-  b <- sqrt(b_sq)
-  one_minus_s2 <- pmax(0, 1 - s^2)
-  u <- b * sqrt(one_minus_s2)
-
-  log_density <- rep.int(-Inf, length(s))
-  interior_or_q2 <- one_minus_s2 > 0 | q == 2L
-  if (any(interior_or_q2)) {
-    power_term <- if (q == 2L) {
-      rep.int(0, sum(interior_or_q2))
-    } else {
-      ((q - 2) / 2) * log(one_minus_s2[interior_or_q2])
-    }
-    log_density[interior_or_q2] <-
-      vmf_log_normalizing_constant_intrinsic(q, kappa) -
-      vapply(
-        u[interior_or_q2],
-        vmf_log_normalizing_constant_intrinsic,
-        numeric(1),
-        q = q - 1L
-      ) +
-      a * s[interior_or_q2] +
-      power_term
-  }
-
-  list(
-    density = exp(log_density),
-    a = a,
-    b = b,
-    u = u,
-    one_minus_s2 = one_minus_s2,
-    omega = omega,
-    kappa = kappa,
-    q = q
-  )
 }
 
 vmf_profile_derivative_table_xi <- function(omega,

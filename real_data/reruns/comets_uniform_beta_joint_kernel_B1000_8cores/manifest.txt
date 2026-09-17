@@ -1,0 +1,5 @@
+Standalone joint-kernel rerun; official paper outputs were not changed.
+Observed fit: current production UB MLE with the paper's control values.
+Bootstrap controls are inherited unchanged from the paper runner; only KS/CvM are now requested jointly.
+KS and CvM are requested together, sharing the full sample-based profile kernel and theta_star per replicate.
+The joint seed for each dataset is the saved paper KS seed (short 20261711; long 20261712).

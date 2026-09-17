@@ -1302,6 +1302,11 @@ run_bootstrap_chunk <- function(weight_chunk,
     theta_star_convergence <- NA_integer_
     if (identical(null$type, "composite")) {
       bootstrap_control <- control
+      if (grepl("^restricted_spiked_normal_", spec$name)) {
+        # A finite-sample weighted MLE may attain its supremum at lambda = 0.
+        # Allow this boundary value only for restricted-spiked bootstrap refits.
+        bootstrap_control$restricted_spiked_allow_boundary_lambda_zero <- TRUE
+      }
       if (!is.null(theta_start) && grepl("^jp_", spec$name)) {
         # JP composite bootstrap refits use a warm-started local re-optimization.
         # Together with the logic in jp_mle_s2_weighted(), this keeps the refit

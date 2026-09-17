@@ -415,23 +415,26 @@ make_vmf_spec <- function(distance_type = c("chordal", "geodesic"),
     profile_eval = function(omega, t, theta, control = list()) {
       theta <- normalize_vmf_theta(theta)
       ambient_dim <- length(theta$mu)
-      profile_method <- tolower(as.character(control$vmf_profile_method %||% "tabulated"))
+      profile_method <- tolower(as.character(control$vmf_profile_method %||% "integral"))
       l_max <- control$vmf_profile_l_max %||% NULL
       tail_tol <- as.numeric(control$vmf_profile_legendre_tail_tol %||% 1e-10)
 
-      if (ambient_dim == 3L) {
-        if (identical(profile_method, "legendre")) {
-          return(distance_profile_vmf_s2_legendre(
-            omega = omega,
-            mu = theta$mu,
-            kappa = theta$kappa,
-            t_values = as.numeric(t),
-            distance_type = distance_type,
-            l_max = l_max,
-            tail_tol = tail_tol
-          ))
-        }
+      # NOTE: The implementation updates introduced for the generic q >= 2 vMF
+      # distance profile apply only to the `integral` route. The specialized S^2
+      # `legendre` and `tabulated` routes retain their existing implementations.
+      if (ambient_dim == 3L && identical(profile_method, "legendre")) {
+        return(distance_profile_vmf_s2_legendre(
+          omega = omega,
+          mu = theta$mu,
+          kappa = theta$kappa,
+          t_values = as.numeric(t),
+          distance_type = distance_type,
+          l_max = l_max,
+          tail_tol = tail_tol
+        ))
+      }
 
+      if (ambient_dim == 3L && !identical(profile_method, "integral")) {
         return(theoretical_distance_profile_vmf_s2_fast(
           omega = omega,
           mu = theta$mu,
@@ -460,7 +463,7 @@ make_vmf_spec <- function(distance_type = c("chordal", "geodesic"),
       profile_matrix_eval = function(omega_grid, t_grid, theta, control = list()) {
         theta <- normalize_vmf_theta(theta)
         ambient_dim <- length(theta$mu)
-        profile_method <- tolower(as.character(control$vmf_profile_method %||% "tabulated"))
+        profile_method <- tolower(as.character(control$vmf_profile_method %||% "integral"))
         n_u <- as.integer(control$vmf_profile_n_u %||% 4097L)
         l_max <- control$vmf_profile_l_max %||% NULL
         tail_tol <- as.numeric(control$vmf_profile_legendre_tail_tol %||% 1e-10)
@@ -492,7 +495,7 @@ make_vmf_spec <- function(distance_type = c("chordal", "geodesic"),
       sample_profile_matrix_eval = function(data, distance_matrix, theta, control = list()) {
         theta <- normalize_vmf_theta(theta)
         ambient_dim <- length(theta$mu)
-        profile_method <- tolower(as.character(control$vmf_profile_method %||% "tabulated"))
+        profile_method <- tolower(as.character(control$vmf_profile_method %||% "integral"))
         n_u <- as.integer(control$vmf_profile_n_u %||% 4097L)
         l_max <- control$vmf_profile_l_max %||% NULL
         tail_tol <- as.numeric(control$vmf_profile_legendre_tail_tol %||% 1e-10)
