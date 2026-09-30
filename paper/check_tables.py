@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare saved numerical results with the current paper tables, read only."""
+"""Compare saved numerical results with the current manuscript tables, read only."""
 import argparse
 import csv
 import json

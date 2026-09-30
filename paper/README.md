@@ -1,6 +1,6 @@
 # Reproducing the paper results
 
-Run these commands from a clone of this repository. The manuscript lives in a separate repository; set `PAPER_TEX` to its `the manuscript source` when comparing numbers. `paper/manuscript_inventory.tsv` indexes the 7 active tables and 28 active image references in the manuscript snapshot with SHA-256 `627029f39220747dbe53a2713446cfadd06ad8679b486666550cf22640a7a67a`.
+Run these commands from a clone of this repository. The manuscript lives in a separate repository; set `PAPER_TEX` to its main `.tex` file when comparing numbers. `paper/manuscript_inventory.tsv` indexes the 7 active tables and 28 active image references in the manuscript snapshot with SHA-256 `627029f39220747dbe53a2713446cfadd06ad8679b486666550cf22640a7a67a`.
 
 ```sh
 Rscript -e 'renv::restore()'
@@ -36,7 +36,7 @@ The figure command reads only the small saved inputs in `paper/artifacts/` and w
 | `fig:logistic-gaussian-simplex-d3` (5 PDFs) | `artifacts/simplex/`, closed subsets of datasets from the R package `compositions` | `scripts/run_sediments_simplex_contours.R` | All 5 rendered PDFs matched pixel for pixel. |
 | `fig:convergence_process_vmf_simple_mu_100` and `fig:convergence_process_vmf_comp_mu_100` (12 PNGs) | `artifacts/vmf_convergence/`, six saved fixed-grid Monte Carlo results | `scripts/plot_paper_vmf_convergence_from_rds.R` | All 12 PNGs matched byte for byte using the bandwidth adjustments in `rebuild_figures.sh`. |
 
-The comparison was against the image files in `img` on 2026-09-30. PDF matching means matching rasterized pages at 100 dpi; PDF metadata may differ. Figure 1 needs its final plotting settings or source data confirmed before it can be claimed reproducible from this small input.
+The comparison was against the manuscript image files on 2026-09-30. PDF matching means matching rasterized pages at 100 dpi; PDF metadata may differ. Figure 1 needs its final plotting settings or source data confirmed before it can be claimed reproducible from this small input.
 
 ## Source data and scope
 

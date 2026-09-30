@@ -51,10 +51,7 @@ source(file.path(
   "plot_risoe_may_jun_jul_77m_start4_r_density_contours.R"
 ))
 
-paper_output_dir <- file.path(
-  "/Users/Diego/Documents/LaTEX Github/tex_GOF_metric_spaces",
-  "paper", "img"
-)
+paper_output_dir <- Sys.getenv("PAPER_IMG_DIR", file.path("output", "paper_figures"))
 
 # These are the manual bandwidths used in
 # plot_risoe_nov_dec_jan_start4_r_density_contours_manual_bw.R.

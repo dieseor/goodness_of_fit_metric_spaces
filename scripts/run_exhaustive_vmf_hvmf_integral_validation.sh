@@ -44,7 +44,7 @@ if ! Rscript -e 'testthat::test_file("tests/testthat/test_deterministic_profile_
   exit 1
 fi
 
-echo "[2/2] Barrido emparejado paper: integral, refinamiento y score_mc"
+echo "[2/2] Barrido emparejado del paper: integral, refinamiento y score_mc"
 echo "      15 procesos; B=1999; limite total del piloto=15 minutos"
 
 if ! Rscript scripts/run_paper_vmf_hvmf_integral_precision_pilot.R \

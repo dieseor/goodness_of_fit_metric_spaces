@@ -55,7 +55,7 @@ for dataset in short long; do
   done
 done
 
-# 3. Comets: beta-mixture model (exclude Jones--Pewsey and exclude uniform+beta here because it is not in the paper paper table)
+# 3. Comets: beta-mixture model (exclude Jones--Pewsey and exclude uniform+beta here because it is not in the paper table)
 run_cmd Rscript scripts/run_comets_rotational_mixtures_short_long.R \
   "--output_root=real_data/comets/mixture/beta_mixture2_short_long_B5000/fast" \
   "--datasets=short,long" \

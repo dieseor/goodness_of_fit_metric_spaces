@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 # Long, paired calibration/precision pilot for the vMF and HvMF scenarios
-# appearing in the active paper Section 6 table.  It is deliberately separate
+# appearing in the active Section 6 table of the paper.  It is deliberately separate
 # from the production runner and never writes under simulation_results/final*.
 #
 # Every comparison within a task uses the same simulated sample, the same MLE,
@@ -474,7 +474,7 @@ run_paper_vmf_hvmf_integral_precision_pilot <- function(
 
   manifest <- c(
     sprintf("created_at: %s", format(Sys.time(), "%Y-%m-%dT%H:%M:%OS%z")),
-    "purpose: paired paper vMF/HvMF null calibration and integral-grid precision pilot",
+    "purpose: paired vMF/HvMF null calibration and integral-grid precision pilot",
     "paper_table_design: Section 6 vMF/HvMF, d=2,10; n=50,100,200,400; beta=0",
     "production_result_directories_modified: FALSE",
     "tex_modified: FALSE",
@@ -574,7 +574,7 @@ run_paper_vmf_hvmf_integral_precision_pilot <- function(
     flush.console()
     invisible(TRUE)
   }
-  cat(sprintf("%s paper vMF/HvMF integral precision pilot: %d tasks pending, B=%d, cores=%d\n",
+  cat(sprintf("%s vMF/HvMF integral precision pilot: %d tasks pending, B=%d, cores=%d\n",
               format(started, tz = "Europe/Madrid"), nrow(pending), B, cores), file = log_path, append = TRUE)
   pilot_write_status(status_path, total, completed, results, started, length(active), cap_reached)
   report_progress(force = TRUE)

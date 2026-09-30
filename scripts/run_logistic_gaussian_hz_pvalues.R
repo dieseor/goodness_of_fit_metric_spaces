@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 # Monte Carlo p-values for the Henze--Zirkler (HZ) version of the BHEP test
-# on the 29 ilr datasets used in paper Table 4. Datasets are processed
+# on the 29 ilr datasets used in Table 4 of the paper. Datasets are processed
 # sequentially. Within each dataset, the null replications are distributed
 # over `--cores` forked processes (10 by default on macOS/Linux).
 #

@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 # Reproducible Monte Carlo BHEP p-values for the 29 compositional datasets in
-# the manuscript source. It reuses the fitted ilr matrices saved by the
+# the paper. It reuses the fitted ilr matrices saved by the
 # paper-table run, and deliberately does not rerun the KS/CvM bootstrap.
 #
 # mnt::test.BHEP() returns a statistic, a Monte Carlo critical value, and a

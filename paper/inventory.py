@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Index figure and table references in the paper source without changing it."""
+"""Index figure and table references in the manuscript source without changing it."""
 import argparse
 import csv
 import hashlib

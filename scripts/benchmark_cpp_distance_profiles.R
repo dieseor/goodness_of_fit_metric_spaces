@@ -142,7 +142,7 @@ make_weighted_run <- function(n) {
   }
 }
 
-source_file <- resolve_distance_profile_backend_path("cpp", "distance_profile_backend.cpp")
+source_file <- resolve_distance_profile_backend_path("src", "distance_profile_backend.cpp")
 compile_environment <- new.env(parent = globalenv())
 compile_cache <- tempfile("distance-profile-cold-compile-")
 dir.create(compile_cache)

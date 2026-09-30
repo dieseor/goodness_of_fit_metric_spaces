@@ -9,9 +9,7 @@ source(file.path(
   "real_data", "wind", "plot_risoe_125m_nov_dec_b5000_r_cylinder_density_contours.R"
 ))
 
-paper_output_dir <- file.path(
-  "/Users/Diego/Documents/LaTEX Github/tex_GOF_metric_spaces", "paper", "img"
-)
+paper_output_dir <- Sys.getenv("PAPER_IMG_DIR", file.path("output", "paper_figures"))
 paper_days <- c(4L, 8L, 12L, 16L, 20L, 24L, 28L)
 
 build_paper_case <- function(selected, height_m, months, dataset_id) {

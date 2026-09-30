@@ -8,19 +8,15 @@
 # `distance_profile_cpp_call()`.
 if (!exists("distance_profile_cpp_call", mode = "function") ||
     !exists("with_distance_profile_cpp_cache_lock", mode = "function")) {
-  distance_profile_backend_candidates <- c(
-    "distance_profile_backend.R",
-    file.path("..", "distance_profile_backend.R"),
-    file.path("..", "..", "distance_profile_backend.R")
-  )
-  distance_profile_backend_path <- distance_profile_backend_candidates[
-    file.exists(distance_profile_backend_candidates)
+  distance_profile_backend_root <- c(".", "..", "../..")[
+    file.exists(file.path(c(".", "..", "../.."), "R", "distance_profile_backend.R"))
   ][1L]
-  if (is.na(distance_profile_backend_path)) {
-    stop("Could not locate `distance_profile_backend.R` for profile lookup.")
+  if (is.na(distance_profile_backend_root)) {
+    stop("Could not locate `R/distance_profile_backend.R` for profile lookup.")
   }
-  source(distance_profile_backend_path)
-  rm(distance_profile_backend_candidates, distance_profile_backend_path)
+  source(file.path(distance_profile_backend_root, "R", "aaa-backend-state.R"))
+  source(file.path(distance_profile_backend_root, "R", "distance_profile_backend.R"))
+  rm(distance_profile_backend_root)
 }
 
 profile_lookup_build <- function(model,

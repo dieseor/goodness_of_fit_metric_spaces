@@ -5,7 +5,10 @@ suppressPackageStartupMessages({
   library(ggplot2)
 })
 
-output_file <- "/Users/Diego/Library/CloudStorage/Dropbox/Apps/Overleaf/Goodness-of-fit for distributions on metric spaces/img/clam_east_west_ilr.png"
+output_file <- file.path(
+  Sys.getenv("PAPER_IMG_DIR", file.path("output", "paper_figures")),
+  "clam_east_west_ilr.png"
+)
 dir.create(dirname(output_file), recursive = TRUE, showWarnings = FALSE)
 
 data(ClamEast, package = "compositions")

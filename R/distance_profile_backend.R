@@ -1,4 +1,9 @@
-# Internal functions adapted from distance_profile_backend.R.
+# Optional compiled kernels for distance-profile evaluation.
+#
+# When dpgof is installed the kernels come from the package namespace. Research
+# scripts that source R/ directly compile src/distance_profile_backend.cpp
+# lazily with Rcpp::sourceCpp(). Nothing is compiled when the default R
+# backend is used.
 
 resolve_distance_profile_backend_path <- function(...) {
   candidates <- c(
@@ -75,9 +80,84 @@ with_distance_profile_backend <- function(backend, expr) {
   eval.parent(substitute(expr))
 }
 ensure_distance_profile_cpp_loaded <- function() {
+  if (isTRUE(.distance_profile_cpp_state$loaded)) {
+    return(invisible(.distance_profile_cpp_state$exports))
+  }
+  home <- topenv(environment(ensure_distance_profile_cpp_loaded))
+  .distance_profile_cpp_state$exports <- if (isNamespace(home)) {
+    home
+  } else {
+    source_distance_profile_cpp()
+  }
   .distance_profile_cpp_state$loaded <- TRUE
-  .distance_profile_cpp_state$exports <- asNamespace("dpgof")
   invisible(.distance_profile_cpp_state$exports)
+}
+
+# Rcpp::sourceCpp() uses a cache directory shared by independent R sessions.
+# Serialise compilation/loading: without a lock, two sessions can observe the
+# cache while its shared object is being replaced.
+source_distance_profile_cpp <- function() {
+  if (!requireNamespace("Rcpp", quietly = TRUE)) {
+    stop("The C++ distance-profile backend requires the Rcpp package.")
+  }
+  source_file <- resolve_distance_profile_backend_path(
+    "src",
+    "distance_profile_backend.cpp"
+  )
+  cache_dir <- file.path(
+    tools::R_user_dir("goodness_of_fit_metric_spaces", which = "cache"),
+    "sourceCpp"
+  )
+  suppressWarnings(
+    dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+  )
+  cache_probe <- if (dir.exists(cache_dir)) {
+    tempfile("write-probe-", tmpdir = cache_dir)
+  } else {
+    NA_character_
+  }
+  cache_writable <- !is.na(cache_probe) &&
+    suppressWarnings(file.create(cache_probe))
+  if (isTRUE(cache_writable)) {
+    unlink(cache_probe)
+  } else {
+    cache_dir <- file.path(
+      tempdir(),
+      "goodness_of_fit_metric_spaces",
+      "sourceCpp"
+    )
+    dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+  }
+
+  exports <- new.env(parent = globalenv())
+  source_cpp <- function(rebuild) {
+    Rcpp::sourceCpp(
+      file = source_file,
+      env = exports,
+      cacheDir = cache_dir,
+      rebuild = rebuild,
+      showOutput = FALSE,
+      verbose = FALSE
+    )
+  }
+  with_distance_profile_cpp_cache_lock(cache_dir, {
+    first_attempt <- tryCatch(
+      source_cpp(rebuild = FALSE),
+      error = function(error) error
+    )
+    if (inherits(first_attempt, "error")) {
+      tryCatch(
+        source_cpp(rebuild = TRUE),
+        error = function(error) {
+          stop(sprintf(
+            "Failed to compile or load the C++ distance-profile backend: %s",
+            conditionMessage(error)
+          ), call. = FALSE)
+        }
+      )
+    }
+  })
+  exports
 }
 
 distance_profile_cpp_is_loaded <- function() {

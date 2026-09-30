@@ -388,7 +388,7 @@ run_screening_two_windows <- function(
 
   selected_df <- select_noon_all_months(load_risoe_concurrent(input_nc, fixed_tz = "UTC"), fixed_tz = "UTC")
 
-  cat("paper wind-data rule: years 1996-2004, noon-nearest on days 4,8,12,16,20,24,28, no imputation.\n")
+  cat("Paper wind-data rule: years 1996-2004, noon-nearest on days 4,8,12,16,20,24,28, no imputation.\n")
   cat(sprintf("Running %d cases at 77 m with B=%d and cores=%d.\n\n", length(configs), B, n_cores))
 
   for (i in seq_along(configs)) {
