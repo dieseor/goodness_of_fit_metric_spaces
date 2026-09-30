@@ -1,0 +1,7 @@
+scenario,d,n,beta,ks,cvm,completed,source
+1,2,800,0,5.3,5.2,1000,simulation_results/restricted_spiked_normal_B1000/diagonal_100_d2_d5_n800_M1000_B1000_beta0_Nderiv10000_cachetrue/summary.csv
+1,5,800,0,6.1,5.3,1000,simulation_results/restricted_spiked_normal_B1000/diagonal_100_d2_d5_n800_M1000_B1000_beta0_Nderiv10000_cachetrue/summary.csv
+1,2,800,0.5,100,100,1000,simulation_results/restricted_spiked_normal_B1000/diagonal_100_d2_d5_n800_M1000_B1000_beta0p5_Nderiv10000_cachetrue/summary.csv
+1,5,800,0.5,100,100,1000,simulation_results/restricted_spiked_normal_B1000/diagonal_100_d2_d5_n800_M1000_B1000_beta0p5_Nderiv10000_cachetrue/summary.csv
+1,2,800,1,100,100,1000,simulation_results/restricted_spiked_normal_B1000/diagonal_100_d2_d5_n800_M1000_B1000_beta1_Nderiv10000_cachetrue/summary.csv
+1,5,800,1,100,100,1000,simulation_results/restricted_spiked_normal_B1000/diagonal_100_d2_d5_n800_M1000_B1000_beta1_Nderiv10000_cachetrue/summary.csv

@@ -152,7 +152,7 @@ plot_density_panel <- function(object, estimator, fill_max, show_legend,
     ) +
     ggplot2::geom_contour(
       ggplot2::aes(z = hdr_content),
-      breaks = c(0.25, 0.50, 0.75, 0.90),
+      breaks = c(0.25, 0.50, 0.75),
       colour = "#17324D",
       linewidth = 0.32,
       alpha = 0.9
@@ -235,19 +235,25 @@ plot_density_panel <- function(object, estimator, fill_max, show_legend,
   }
 }
 
-run_extended_density_panels <- function(output_dir = paper_output_dir) {
+run_extended_density_panels <- function(output_dir = paper_output_dir,
+                                        cases_dir = NULL) {
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-  all_data <- load_risoe_concurrent(
-    file.path(repo_root, "real_data", "wind", "risoe_m_all.nc"),
-    fixed_tz = "UTC"
-  )
-  selected <- select_noon_all_months(all_data, fixed_tz = "UTC")
-
-  cases <- list(
-    nov_dec_jan_77m_start4 = build_nov_dec_jan_case(selected, 77L),
-    may_jun_jul_77m_start4 = build_target_case(selected)
-  )
+  if (is.null(cases_dir)) {
+    all_data <- load_risoe_concurrent(
+      file.path(repo_root, "real_data", "wind", "risoe_m_all.nc"),
+      fixed_tz = "UTC"
+    )
+    selected <- select_noon_all_months(all_data, fixed_tz = "UTC")
+    cases <- list(
+      nov_dec_jan_77m_start4 = build_nov_dec_jan_case(selected, 77L),
+      may_jun_jul_77m_start4 = build_target_case(selected)
+    )
+  } else {
+    cases <- lapply(c("nov_dec_jan_77m_start4", "may_jun_jul_77m_start4"),
+                    function(name) utils::read.csv(file.path(cases_dir, paste0(name, ".csv"))))
+    names(cases) <- c("nov_dec_jan_77m_start4", "may_jun_jul_77m_start4")
+  }
 
   observed_n <- vapply(cases, nrow, integer(1))
   if (any(observed_n <= 0L)) {
@@ -374,6 +380,14 @@ run_extended_density_panels <- function(output_dir = paper_output_dir) {
 }
 
 if (sys.nframe() == 0L) {
-  result <- run_extended_density_panels()
+  args <- commandArgs(trailingOnly = TRUE)
+  get_arg <- function(key, default = NULL) {
+    value <- args[startsWith(args, paste0("--", key, "="))]
+    if (length(value)) sub(paste0("^--", key, "="), "", value[[1L]]) else default
+  }
+  result <- run_extended_density_panels(
+    output_dir = get_arg("output_dir", paper_output_dir),
+    cases_dir = get_arg("cases_dir")
+  )
   print(result, row.names = FALSE, digits = 6)
 }

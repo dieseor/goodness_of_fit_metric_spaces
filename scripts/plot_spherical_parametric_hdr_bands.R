@@ -180,12 +180,8 @@ run_sunspot_parametric_hdr_bands <- function(
     file.path(source_dir, "cycle23_joint_spatial_window_metadata.csv"),
     stringsAsFactors = FALSE
   )
-  definitions <- utils::read.csv(
-    file.path(source_dir, "cycle23_joint_spatial_window_definitions.csv"),
-    stringsAsFactors = FALSE
-  )
-  if (nrow(metadata) != 1L || nrow(definitions) != 5L) {
-    stop("The active sunspot plotting metadata or window definitions are malformed.")
+  if (nrow(metadata) != 1L) {
+    stop("The active sunspot plotting metadata are malformed.")
   }
   loaded <- sunspots_joint_load_window_plot_inputs(
     input_csv = metadata$input_csv[[1L]],
@@ -202,10 +198,13 @@ run_sunspot_parametric_hdr_bands <- function(
     as.matrix(retained[, c("x1", "x2", "x3")]),
     arg_name = "`retained`", min_ncol = 3L
   )
-  windows <- sunspots_joint_spatial_rank_windows(retained$s)
-  if (!identical(as.integer(windows$summary$n), as.integer(definitions$n))) {
-    stop("Reconstructed sunspot windows do not match the active paper windows.")
-  }
+  windows <- sunspots_joint_spatial_rank_windows(
+    retained$s,
+    lower_levels = seq(0, 0.8, by = 0.2),
+    upper_levels = seq(0.2, 1, by = 0.2),
+    center_levels = seq(0.1, 0.9, by = 0.2)
+  )
+  definitions <- windows$summary
 
   camera <- sunspots_joint_sphere_camera(theta = view_theta, phi = view_phi)
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
@@ -270,6 +269,9 @@ run_sunspot_parametric_hdr_bands <- function(
     )
   }
   names(pdf_paths) <- names(png_paths) <- sprintf("window_%02d", seq_len(5L))
+  utils::write.csv(
+    definitions, file.path(output_dir, "window_definitions.csv"), row.names = FALSE
+  )
   utils::write.csv(
     do.call(rbind, threshold_rows),
     file.path(output_dir, "hdr_band_thresholds.csv"), row.names = FALSE

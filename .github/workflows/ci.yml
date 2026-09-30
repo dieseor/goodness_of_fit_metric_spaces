@@ -26,12 +26,21 @@ jobs:
       - name: Restore renv library
         uses: r-lib/actions/setup-renv@v2
 
-      - name: Run lightweight tests (source scripts in tests/)
+      - name: Build and check the package
         run: |
-          Rscript -e 'if (dir.exists("tests")) { scripts <- list.files("tests", pattern = "^test_.*\\.R$", full.names = TRUE); if(length(scripts) > 0) for(s in scripts) { cat("Running", s, "\n"); try(source(s)) } }'
+          R CMD build .
+          R CMD check --no-manual dpgof_*.tar.gz
+
+      - name: Check installed R and C++ paths
+        run: |
+          R CMD INSTALL dpgof_*.tar.gz
+          Rscript --vanilla paper/check_package.R
 
       - name: Test optional C++ distance-profile backend
         run: Rscript -e 'testthat::test_file("tests/testthat/test_cpp_distance_profile_backend.R", stop_on_failure = TRUE)'
+
+      - name: Test the retained cardioid functions
+        run: Rscript -e 'testthat::test_file("tests/testthat/test_cardioid_model_spec.R", stop_on_failure = TRUE)'
 
       - name: Check renv status
         run: Rscript -e 'renv::status()'

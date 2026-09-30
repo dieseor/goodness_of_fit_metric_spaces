@@ -202,7 +202,10 @@ build_s1_panels_from_curve_data <- function(curve_data,
                                             circle_grid,
                                             ray_extension,
                                             right_x_label,
-                                            right_y_label) {
+                                            right_y_label,
+                                            circle_radius = 1,
+                                            ray_linewidth = 0.6,
+                                            ray_linetype = "solid") {
   ray_data <- data.frame(
     theta = circle_grid$theta,
     x = circle_grid$x,
@@ -213,9 +216,15 @@ build_s1_panels_from_curve_data <- function(curve_data,
     stringsAsFactors = FALSE
   )
   circle_outline <- data.frame(
-    x = cos(seq(0, 2 * pi, length.out = 600)),
-    y = sin(seq(0, 2 * pi, length.out = 600))
+    x = circle_radius * cos(seq(0, 2 * pi, length.out = 600)),
+    y = circle_radius * sin(seq(0, 2 * pi, length.out = 600))
   )
+  curve_data$x_circle <- curve_data$x_circle -
+    (1 - circle_radius) * (1 - curve_data$radial_progress) * cos(curve_data$theta)
+  curve_data$y_circle <- curve_data$y_circle -
+    (1 - circle_radius) * (1 - curve_data$radial_progress) * sin(curve_data$theta)
+  circle_grid$x <- circle_radius * circle_grid$x
+  circle_grid$y <- circle_radius * circle_grid$y
 
   left_panel <- ggplot2::ggplot() +
     ggplot2::geom_path(
@@ -227,7 +236,8 @@ build_s1_panels_from_curve_data <- function(curve_data,
     ggplot2::geom_segment(
       data = ray_data,
       ggplot2::aes(x = 0, y = 0, xend = xend, yend = yend, color = color),
-      linewidth = 0.6,
+      linewidth = ray_linewidth,
+      linetype = ray_linetype,
       show.legend = FALSE
     ) +
     ggplot2::geom_path(
@@ -577,10 +587,16 @@ visualize_limit_gaussian_s1_vmf <- function(mu = c(1, 0),
 #' @param color_scheme Either "yellow_blue" or "rainbow". The legacy alias
 #'   "symmetric" is accepted and mapped to "yellow_blue"
 #' @param save_plot Optional file path stem for saving the regenerated panels
+#' @param circle_radius Radius of the reference circle in the geometric panel
+#' @param ray_linewidth Width of the rays from the origin
+#' @param ray_linetype Line type of the rays from the origin
 #' @return List containing the regenerated plot objects and updated plot data
 replot_limit_gaussian_s1_vmf_from_result <- function(result,
                                                      color_scheme = c("yellow_blue", "rainbow", "symmetric"),
-                                                     save_plot = NULL) {
+                                                     save_plot = NULL,
+                                                     circle_radius = 1,
+                                                     ray_linewidth = 0.6,
+                                                     ray_linetype = "solid") {
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     stop("Please install ggplot2 to generate the S1 visualization.")
   }
@@ -611,7 +627,10 @@ replot_limit_gaussian_s1_vmf_from_result <- function(result,
     circle_grid = circle_grid,
     ray_extension = result$ray_extension,
     right_x_label = result$right_x_label,
-    right_y_label = result$right_y_label
+    right_y_label = result$right_y_label,
+    circle_radius = circle_radius,
+    ray_linewidth = ray_linewidth,
+    ray_linetype = ray_linetype
   )
 
   replotted_result <- result

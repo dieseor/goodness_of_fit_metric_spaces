@@ -1,0 +1,2 @@
+"source","input_csv","start_date","end_date_exclusive","dequantization_seed","bandwidth_seed","hemisphere_regression","hdr_levels","n_lon","n_lat","plot_geometry","plot_backend","back_alpha","bandwidth_starts","bandwidth_multiplier","from_joint_output_dir"
+"existing_joint_output","real_data/sunspots/output/sunspots_cycle23_s2_all.csv","1996-08-06","2008-11-28",20260712,20260806,"shared","0.5,0.8,0.95",240,121,"orthographic_sphere_contours","base_graphics_projection",0.18,"0.07,0.1,0.15,0.25,0.5,1,2",1,"paper/artifacts/sunspots"

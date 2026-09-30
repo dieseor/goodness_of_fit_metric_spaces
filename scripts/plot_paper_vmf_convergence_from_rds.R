@@ -55,10 +55,20 @@ if (length(rds_paths) != expected_selected) {
   stop(sprintf("Expected %d RDS files for h0=%s; found %d.", expected_selected, h0, length(rds_paths)))
 }
 
-make_density_plot <- function(result) {
+kde_axis_size <- 19 * 1.5 * 1.2
+kde_legend_size <- 19 * 2
+qq_scale <- 8 / 12  # Both PNG types have the same final width in the paper.
+
+make_density_plot <- function(result, show_legend, is_composite) {
   n_values <- as.integer(result$n_values)
   empirical_colors <- scales::hue_pal()(length(n_values))
   labels <- c(paste0("n=", n_values), "G")
+  limit_label <- if (is_composite) {
+    quote("‖" * widetilde("𝔾")[0] * "‖"[infinity])
+  } else {
+    quote("‖" * "𝔾"[0] * "‖"[infinity])
+  }
+  legend_labels <- as.expression(c(lapply(n_values, function(n) bquote(n == .(n))), list(limit_label)))
   colors <- setNames(c(empirical_colors, "#000000"), labels)
   linetypes <- setNames(c(rep("solid", length(n_values)), "dashed"), labels)
 
@@ -98,20 +108,25 @@ make_density_plot <- function(result) {
       show.legend = TRUE,
       key_glyph = draw_key_path
     ) +
-    scale_color_manual(values = colors, breaks = labels, drop = FALSE) +
+    scale_color_manual(values = colors, breaks = labels, labels = legend_labels, drop = FALSE) +
     scale_linetype_manual(values = linetypes, breaks = labels, drop = FALSE) +
     labs(x = "Supremum of the process", y = "Density", color = "Process", linetype = "Process") +
     theme_minimal() +
     theme(
-      axis.text = element_text(size = 19),
-      axis.title = element_text(size = 19),
-      legend.position = c(0.98, 0.98),
+      axis.text = element_text(size = kde_axis_size),
+      axis.title = element_text(size = kde_axis_size),
+      legend.position = if (show_legend) c(0.98, 0.98) else "none",
       legend.justification = c("right", "top"),
-      legend.text = element_text(size = 19),
-      legend.title = element_text(size = 19)
+      legend.text = element_text(size = kde_legend_size, family = "STIX Two Math",
+                                 margin = margin(t = 4, b = 4)),
+      legend.title = element_text(size = kde_legend_size, margin = margin(b = 8)),
+      legend.key.width = grid::unit(0.85, "in"),
+      legend.key.height = grid::unit(0.6, "in")
     ) +
     guides(
-      color = guide_legend(override.aes = list(linetype = "solid", fill = NA, alpha = 1, linewidth = 1.5)),
+      color = guide_legend(override.aes = list(linetype = c("solid", "solid", "solid", "21"),
+                                               fill = NA, alpha = 1,
+                                               linewidth = c(2.5, 2.5, 2.5, 2))),
       linetype = "none"
     )
 }
@@ -119,9 +134,22 @@ make_density_plot <- function(result) {
 for (path in rds_paths) {
   result <- readRDS(path)
   prefix <- tools::file_path_sans_ext(basename(path))
-  ggsave(file.path(output_dir, paste0(prefix, ".png")), make_density_plot(result),
+  show_legend <- grepl("kappa0.5_", prefix, fixed = TRUE)
+  is_composite <- startsWith(prefix, "comp_")
+  ggsave(file.path(output_dir, paste0(prefix, ".png")), make_density_plot(result, show_legend, is_composite),
          width = 12, height = 8, dpi = 300)
-  ggsave(file.path(output_dir, paste0("qq_", prefix, ".png")), result$qq_plot,
+  qq_plot <- result$qq_plot + labs(color = expression(n)) + theme(
+    axis.text = element_text(size = kde_axis_size * qq_scale),
+    axis.title = element_text(size = kde_axis_size * qq_scale),
+    legend.position = if (show_legend) c(0.02, 0.98) else "none",
+    legend.justification = c("left", "top"),
+    legend.text = element_text(size = kde_legend_size * qq_scale, family = "STIX Two Math",
+                               margin = margin(t = 4 * qq_scale, b = 4 * qq_scale)),
+    legend.title = element_text(size = kde_legend_size * qq_scale, family = "STIX Two Math",
+                                margin = margin(b = 8 * qq_scale)),
+    legend.key.height = grid::unit(0.6 * qq_scale, "in")
+  ) + guides(color = guide_legend(override.aes = list(size = 3)))
+  ggsave(file.path(output_dir, paste0("qq_", prefix, ".png")), qq_plot,
          width = 8, height = 6, dpi = 300)
 }
 

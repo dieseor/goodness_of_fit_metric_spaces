@@ -43,11 +43,12 @@ renv/cache/
 # Ignore compiled artifacts and packages
 *.so
 *.dll
+src/*.o
 */packrat/
 
-# Ignore temporary files
-simulation_results/**/progress_status.txt
-simulation_results/**/recovery_report.txt
+# Small, reviewed inputs needed to recreate article figures and tables
+!paper/artifacts/**/*.rds
+!paper/artifacts/**/*.csv
 
 # Ignore large debug files
 debug_*.csv

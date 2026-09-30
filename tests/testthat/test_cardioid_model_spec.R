@@ -6,6 +6,23 @@ on.exit(setwd(oldwd), add = TRUE)
 source(file.path("bootstrap", "multiplier_bootstrap.R"))
 source(file.path("bootstrap", "cardioid_model_spec.R"))
 
+# Independent unweighted reference for the two estimator comparisons below.
+reference_cardioid_mle <- function(X, k, mu0, rho0, control) {
+  bounds <- cardioid_rho_bounds(k)
+  objective <- function(par) {
+    mu <- par[-1L] / sqrt(sum(par[-1L]^2))
+    -sum(d_sph_car(X, mu, par[[1L]], k, log = TRUE))
+  }
+  fit <- optim(
+    c(rho0, mu0), objective, method = "L-BFGS-B",
+    lower = c(bounds[["lower"]], rep(-Inf, length(mu0))),
+    upper = c(bounds[["upper"]], rep(Inf, length(mu0))),
+    control = control
+  )
+  list(rho = fit$par[[1L]], mu = fit$par[-1L] / sqrt(sum(fit$par[-1L]^2)),
+       ll = -fit$value)
+}
+
 test_that("cardioid geodesic profile matches projected CDF complement", {
   spec <- make_cardioid_spec(k = 2, distance_type = "geodesic")
   theta <- list(mu = c(0, 0, 1), rho = 0.35, k = 2)
@@ -106,7 +123,7 @@ test_that("weighted cardioid MLE matches the unweighted MLE for equal weights", 
     theta_start = common_start,
     control = list(cardioid_optim_control = list(maxit = 1000))
   )
-  fit_unweighted <- mle_sph_car(
+  fit_unweighted <- reference_cardioid_mle(
     X = X,
     k = 1,
     mu0 = common_start$mu,
@@ -137,7 +154,7 @@ test_that("integer-weight cardioid MLE matches the replicated-sample MLE", {
     theta_start = common_start,
     control = list(cardioid_optim_control = list(maxit = 1000))
   )
-  fit_replicated <- mle_sph_car(
+  fit_replicated <- reference_cardioid_mle(
     X = expanded_X,
     k = 1,
     mu0 = common_start$mu,

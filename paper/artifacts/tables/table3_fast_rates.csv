@@ -1,0 +1,17 @@
+scenario,d,n,beta,ks_rejection_percent,cvm_rejection_percent,median_elapsed_seconds,source
+S1,2,100,0,5.8,5.6,1.38,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S1,5,100,0,5.5,4.7,1.612,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S2,2,100,0,5.7,5.0,0.758999999999998,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S2,5,100,0,4.3,1.7,1.024999999999995,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S3,2,100,0,4.0,4.5,0.7129999999999994,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S3,5,100,0,5.5,6.0,0.971000000000002,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S4,2,100,0,5.1,6.7,1.377,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S4,5,100,0,3.2,5.1,1.621,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S5,2,100,0,5.0,5.5,1.139,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S5,5,100,0,6.5,6.5,3.107,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S6,2,100,0,5.6,4.6,1.1885,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S6,5,100,0,5.8,1.5,1.575,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S7,2,100,0,5.9,4.4,1.666,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S7,5,100,0,6.1,2.6,2.468,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S8,2,100,0,5.8,5.0,1.6524999999999999,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv
+S8,5,100,0,6.6,2.2,2.464,simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/*.csv

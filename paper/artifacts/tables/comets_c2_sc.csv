@@ -1,0 +1,5 @@
+"model","period","n","B","derivative_mc_size","n_cores","ks_pvalue","cvm_pvalue","ks_reject","cvm_reject","backend","kernel","fused","shared"
+"C2","short",784,1000,10000,3,0.000999000999000999,0.000999000999000999,TRUE,TRUE,"cpp","contiguous_double",TRUE,TRUE
+"C2","long",610,1000,10000,3,0.0819180819180819,0.164835164835165,FALSE,FALSE,"cpp","contiguous_double",TRUE,TRUE
+"SC","short",784,1000,10000,3,0.000999000999000999,0.000999000999000999,TRUE,TRUE,"cpp","contiguous_double",TRUE,TRUE
+"SC","long",610,1000,10000,3,0.0679320679320679,0.0969030969030969,FALSE,FALSE,"cpp","contiguous_double",TRUE,TRUE

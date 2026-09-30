@@ -64,8 +64,8 @@ project_logistic_gaussian_contour <- function(fit,
   )
 }
 
-build_simplex_contour_plot <- function(dataset_name) {
-  data_prep <- prepare_composition_dataset(dataset_name)
+build_simplex_contour_plot <- function(dataset_name, data_prep = NULL) {
+  if (is.null(data_prep)) data_prep <- prepare_composition_dataset(dataset_name)
   if (!identical(data_prep$status %||% "ok", "ok")) {
     stop(sprintf("Dataset %s could not be prepared.", dataset_name), call. = FALSE)
   }
@@ -79,7 +79,7 @@ build_simplex_contour_plot <- function(dataset_name) {
   fit <- fit_logistic_gaussian_plugin(data_prep$X_closed)
 
   observed <- project_simplex_to_ternary(data_prep$X_closed)
-  contour_probs <- c(0.50, 0.80, 0.95)
+  contour_probs <- c(0.25, 0.50, 0.75)
   contour_data <- do.call(
     rbind,
     lapply(contour_probs, function(probability) {
@@ -91,7 +91,7 @@ build_simplex_contour_plot <- function(dataset_name) {
   )
   contour_data$level <- factor(
     contour_data$level,
-    levels = c("50%", "80%", "95%")
+    levels = c("25%", "50%", "75%")
   )
 
   simplex_boundary <- data.frame(
@@ -134,13 +134,13 @@ build_simplex_contour_plot <- function(dataset_name) {
       data = vertex_labels,
       ggplot2::aes(x = x, y = y, label = label, hjust = hjust, vjust = vjust),
       colour = "grey20",
-      size = 4.8
+      size = 9.6
     ) +
     ggplot2::scale_colour_manual(
       values = c(
-        "50%" = "#d95f02",
-        "80%" = "#1b9e77",
-        "95%" = "#7570b3"
+        "25%" = "#d95f02",
+        "50%" = "#1b9e77",
+        "75%" = "#7570b3"
       )
     ) +
     ggplot2::coord_equal(
@@ -152,14 +152,16 @@ build_simplex_contour_plot <- function(dataset_name) {
     ggplot2::guides(
       colour = ggplot2::guide_legend(
         title = NULL,
-        override.aes = list(linewidth = 1.3)
+        override.aes = list(linewidth = 2.6)
       )
     ) +
     ggplot2::theme_void(base_size = 12) +
     ggplot2::theme(
-      legend.position = c(0.84, 0.84),
+      legend.position = if (identical(dataset_name, "ArcticLake")) c(0.80, 0.98) else "none",
       legend.justification = c(0, 1),
-      legend.text = ggplot2::element_text(size = 15),
+      legend.text = ggplot2::element_text(size = 30, colour = "black"),
+      legend.key.width = grid::unit(2, "lines"),
+      legend.key.height = grid::unit(2.3, "lines"),
       legend.background = ggplot2::element_rect(
         fill = scales::alpha("white", 0.86),
         colour = NA
@@ -167,7 +169,7 @@ build_simplex_contour_plot <- function(dataset_name) {
       legend.margin = ggplot2::margin(2, 2, 2, 2),
       plot.background = ggplot2::element_rect(fill = "white", colour = NA),
       panel.background = ggplot2::element_rect(fill = "white", colour = NA),
-      plot.margin = ggplot2::margin(10, 28, 10, 10)
+      plot.margin = ggplot2::margin(24, 40, 28, 28)
     )
 
   list(
@@ -203,7 +205,19 @@ run_simplex_contours <- function(args = commandArgs(trailingOnly = TRUE)) {
 
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-  plot_result <- build_simplex_contour_plot(dataset_name = dataset_name)
+  data_prep <- NULL
+  if (!is.null(parsed_args$input_csv)) {
+    observed <- utils::read.csv(parsed_args$input_csv, check.names = FALSE)
+    x <- as.matrix(observed)
+    storage.mode(x) <- "double"
+    if (ncol(x) != 3L || any(!is.finite(x)) || any(x <= 0) ||
+        any(abs(rowSums(x) - 1) > 1e-8)) {
+      stop("--input_csv must contain three positive composition columns summing to one.")
+    }
+    data_prep <- list(status = "ok", D = 3L, has_zeros = FALSE,
+                      X_closed = x, component_names = colnames(x))
+  }
+  plot_result <- build_simplex_contour_plot(dataset_name = dataset_name, data_prep = data_prep)
   pdf_file <- file.path(output_dir, sprintf("%s_simplex_logistic_gaussian_contours.pdf", dataset_slug))
   png_file <- file.path(output_dir, sprintf("%s_simplex_logistic_gaussian_contours.png", dataset_slug))
 

@@ -1,0 +1,24 @@
+^\.github$
+^\.vscode$
+^\.Rproj\.user$
+^goodness_of_fit_metric_spaces\.Rproj$
+^renv$
+^renv\.lock$
+^output$
+^simulation_results$
+^simulation_results 2$
+^real_data$
+^wind$
+^scripts$
+^tests$
+^benchmarks$
+^convergence_empirical_process$
+^distance_profiles$
+^bahadur$
+^bootstrap$
+^cpp$
+^local_diagnostics$
+^logs$
+^paper$
+^tmp_.*$
+^LICENSE\.md$

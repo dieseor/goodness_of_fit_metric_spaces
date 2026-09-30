@@ -24,7 +24,7 @@ repo_root <- normalizePath(file.path(dirname(script_path()), "..", ".."), mustWo
 source(file.path(repo_root, "real_data", "wind", "preprocess_risoe_modern_hvmf.R"))
 source(file.path(repo_root, "utils.R"))
 
-required_packages <- c("ggplot2", "ncdf4")
+required_packages <- "ggplot2"
 missing_packages <- required_packages[
   !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
 ]

@@ -1,0 +1,16 @@
+Package: dpgof
+Title: Distance Profile Goodness-of-Fit Tests
+Version: 0.1.0
+Authors@R: c(
+    person("Diego", "Serrano", role = c("aut", "cre"), email = "dieserra@est-econ.uc3m.es"),
+    person("Eduardo", "García-Portugués", role = "ctb"))
+Description: Multiplier bootstrap goodness-of-fit tests based on distance
+    profiles for Euclidean, directional, hyperbolic, and compositional data.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.4.0)
+Imports: Rcpp, stats, utils, graphics, grDevices, parallel, methods,
+    movMF, sphunif, pracma, rotasym, mvtnorm, gbutils, ggplot2
+Suggests: testthat, OpenMx
+LinkingTo: Rcpp
+NeedsCompilation: yes
