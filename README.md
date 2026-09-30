@@ -10,7 +10,7 @@ You need R 4.4 or newer.
 
 ```r
 install.packages("remotes")
-remotes::install_github("dieseor/dpgof")
+remotes::install_github("dieseor/goodness_of_fit_metric_spaces")
 ```
 
 The package versions we used are in `renv.lock`.
