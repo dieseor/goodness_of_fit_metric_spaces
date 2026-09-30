@@ -19,7 +19,7 @@ def uncomment(line):
 def candidate(path):
     name = Path(path).name
     if name.startswith("limit_gaussian_s1"):
-        return "convergence_empirical_process/gaussian_process_s1_visualization.R"
+        return "scripts/gaussian_process_s1_visualization.R"
     if "vmf" in name and "grid10x10" in name:
         return "scripts/plot_paper_vmf_convergence_from_rds.R"
     if name.startswith("cycle23_joint_spatial_window"):

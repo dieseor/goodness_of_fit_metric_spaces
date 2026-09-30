@@ -30,7 +30,7 @@ The figure command reads only the small saved inputs in `paper/artifacts/` and w
 
 | Manuscript figures | Saved input | Rendering code | Verification against the manuscript snapshot |
 | --- | --- | --- | --- |
-| `fig:s1_limit_process_visualization` (2 PNGs) | `artifacts/s1/figure1_plot_input.rds`, reduced from the saved simulation result, and copies of both current manuscript PNGs | `convergence_empirical_process/gaussian_process_s1_visualization.R` | Trials using radius 0.55 and amplitude factors 2 and 2.5 did not reproduce the current PNGs. This figure is not in `rebuild_figures.sh`; the exact manuscript images are preserved. |
+| `fig:s1_limit_process_visualization` (2 PNGs) | `artifacts/s1/figure1_plot_input.rds`, reduced from the saved simulation result, and copies of both current manuscript PNGs | `scripts/gaussian_process_s1_visualization.R` | Trials using radius 0.55 and amplitude factors 2 and 2.5 did not reproduce the current PNGs. This figure is not in `rebuild_figures.sh`; the exact manuscript images are preserved. |
 | `fig:sunspots_cycle23_spatial_windows` (5 PDFs) | `artifacts/sunspots/` | `scripts/plot_spherical_parametric_hdr_bands.R` | All 5 rendered PDFs matched pixel for pixel. |
 | `fig:risoe-wind-densities` (4 PDFs) | `artifacts/wind/`, cleaned 77 m subsamples from DTU `Risoe_m_all.nc` | `real_data/wind/plot_risoe_extended_r_density_panels.R` | All 4 rendered PDFs matched pixel for pixel. The large original NetCDF is not required to redraw them. |
 | `fig:logistic-gaussian-simplex-d3` (5 PDFs) | `artifacts/simplex/`, closed subsets of datasets from the R package `compositions` | `scripts/run_sediments_simplex_contours.R` | All 5 rendered PDFs matched pixel for pixel. |

@@ -4,7 +4,7 @@ library(rotasym)
 # files that use 'source("utils.R")' resolve correctly.
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
-source(file.path("convergence_empirical_process", "gaussian_process_vmf.R"))
+source(file.path("scripts", "gaussian_process_vmf.R"))
 source(file.path("utils.R"))
 
 test_that("Edge case handling for distance profiles - chordal/geodesic", {

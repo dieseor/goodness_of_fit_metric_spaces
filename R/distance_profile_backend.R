@@ -5,6 +5,11 @@
 # lazily with Rcpp::sourceCpp(). Nothing is compiled when the default R
 # backend is used.
 
+.distance_profile_cpp_state <- new.env(parent = emptyenv())
+.distance_profile_cpp_state$loaded <- FALSE
+.distance_profile_cpp_state$exports <- new.env(parent = emptyenv())
+.distance_profile_cpp_state$active_backend <- "r"
+
 resolve_distance_profile_backend_path <- function(...) {
   candidates <- c(
     file.path(...),

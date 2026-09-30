@@ -19,7 +19,7 @@ suppressPackageStartupMessages({
   library(rotasym)
 })
 invisible(capture.output(source("utils.R")))
-invisible(capture.output(source("convergence_empirical_process/gaussian_process_vmf.R")))
+invisible(capture.output(source("scripts/gaussian_process_vmf.R")))
 
 set.seed(42)
 

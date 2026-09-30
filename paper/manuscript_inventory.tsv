@@ -1,6 +1,6 @@
 mode	kind	label	tex_line	asset	asset_exists	producer_candidate
-main	figure	fig:s1_limit_process_visualization	784	img/limit_gaussian_s1_exact_kappa2_angles16_t200_rainbow_right.png	true	convergence_empirical_process/gaussian_process_s1_visualization.R
-main	figure	fig:s1_limit_process_visualization	789	img/limit_gaussian_s1_exact_kappa2_angles16_t200_rainbow_left.png	true	convergence_empirical_process/gaussian_process_s1_visualization.R
+main	figure	fig:s1_limit_process_visualization	784	img/limit_gaussian_s1_exact_kappa2_angles16_t200_rainbow_right.png	true	scripts/gaussian_process_s1_visualization.R
+main	figure	fig:s1_limit_process_visualization	789	img/limit_gaussian_s1_exact_kappa2_angles16_t200_rainbow_left.png	true	scripts/gaussian_process_s1_visualization.R
 main	table	tab:simulation_scenarios	2141			
 main	table	tab:empirical_null_calibration	2223			
 main	table	tab:bootstrap_procedure_comparison	2261			

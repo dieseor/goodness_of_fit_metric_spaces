@@ -12,7 +12,6 @@
 ^scripts$
 ^tests$
 ^benchmarks$
-^convergence_empirical_process$
 ^distance_profiles$
 ^bahadur$
 ^bootstrap$

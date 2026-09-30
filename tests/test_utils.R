@@ -278,7 +278,7 @@ if (identical(environment(), globalenv())) {
   A_q_kappa <- besselI(kappa, nu = (q + 1) / 2, expon.scaled = TRUE) / besselI(kappa, nu = (q - 1) / 2, expon.scaled = TRUE)
   scalar_coef <- 1 - A_q_kappa^2 - ((q + 1) * A_q_kappa / kappa)
   var_X <- (A_q_kappa / kappa) * diag(q + 1) + scalar_coef * outer(mu, mu)
-  source(file.path("convergence_empirical_process", "gaussian_process_vmf.R"))
+  source(file.path("scripts", "gaussian_process_vmf.R"))
   cov_mat <- cov_vmf(omega_grid, t_grid, mu, kappa, distance_type = "chordal", n_mc_samples = 500, n_cores = 1, mc_samples = mc_samples, seed = 123, upper_triangle = FALSE)
   # pick entry (1,2)
   entry_idx <- 2

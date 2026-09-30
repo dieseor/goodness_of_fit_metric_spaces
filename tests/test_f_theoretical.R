@@ -3,7 +3,7 @@
 library(rotasym)
 
 source(file.path("utils.R"))
-source(file.path("convergence_empirical_process", "gaussian_process_vmf.R"))
+source(file.path("scripts", "gaussian_process_vmf.R"))
 
 omega_grid <- generate_canonical_lattice(10)
 t_grid <- seq(0 + 1e-8, 2 - 1e-8, length.out = 10)

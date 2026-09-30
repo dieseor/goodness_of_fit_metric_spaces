@@ -4,7 +4,6 @@ utils_roots <- c(".", "..", "../..")
 utils_root <- utils_roots[file.exists(file.path(utils_roots, "R", "utils-geometry.R"))][1L]
 if (is.na(utils_root)) stop("Could not locate the package R/ directory.")
 if (!exists("ensure_distance_profile_cpp_loaded", mode = "function")) {
-  source(file.path(utils_root, "R", "aaa-backend-state.R"), local = environment())
   source(file.path(utils_root, "R", "distance_profile_backend.R"), local = environment())
 }
 suppressPackageStartupMessages({

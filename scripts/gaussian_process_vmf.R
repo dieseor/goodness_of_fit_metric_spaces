@@ -594,7 +594,7 @@ simulate_empirical_process_vmf <- function(omega_grid, t_grid, n, mu, kappa,
   
     clusterExport(cl, c("check_dot_products", "omega_grid", "t_grid", "n", "mu", "kappa"
   , "distance_type",
-                      "F_theoretical_matrix", "n_omega", "n_t", "q", "h0", "unknown_param", "theoretical_distance_profile_vmf", "compute_theoretical_sample_profile_vmf", "compute_sample_ks_sup_vmf", "compute_mle_xi", "empirical_ks_mode", "sample_profile_method", "sample_profile_n_u"),
+                      "F_theoretical_matrix", "n_omega", "n_t", "q", "h0", "unknown_param", "theoretical_distance_profile_vmf", "compute_theoretical_sample_profile_vmf", "validate_vmf_sample_profile_method", "compute_sample_ks_sup_vmf", "compute_mle_xi", "empirical_ks_mode", "sample_profile_method", "sample_profile_n_u"),
                 envir = environment())
   # Export compute_mle_xi from utils so workers can call it for composite nulls
   clusterExport(cl, c("compute_mle_xi"), envir = environment())

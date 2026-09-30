@@ -5,7 +5,7 @@
 
 library(rotasym)
 source(file.path("utils.R"))
-source(file.path("convergence_empirical_process", "gaussian_process_vmf.R"))
+source(file.path("scripts", "gaussian_process_vmf.R"))
 
 cat("=== BENCHMARK: Vectorization Improvement ===\n\n")
 

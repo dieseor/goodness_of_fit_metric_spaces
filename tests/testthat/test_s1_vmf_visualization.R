@@ -4,8 +4,8 @@ oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
 source(file.path("utils.R"))
-source(file.path("convergence_empirical_process", "gaussian_process_vmf.R"))
-source(file.path("convergence_empirical_process", "gaussian_process_s1_visualization.R"))
+source(file.path("scripts", "gaussian_process_vmf.R"))
+source(file.path("scripts", "gaussian_process_s1_visualization.R"))
 
 test_that("generate_circle_grid returns deterministic unit vectors in angular order", {
   grid <- generate_circle_grid(6)

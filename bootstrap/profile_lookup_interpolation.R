@@ -14,7 +14,6 @@ if (!exists("distance_profile_cpp_call", mode = "function") ||
   if (is.na(distance_profile_backend_root)) {
     stop("Could not locate `R/distance_profile_backend.R` for profile lookup.")
   }
-  source(file.path(distance_profile_backend_root, "R", "aaa-backend-state.R"))
   source(file.path(distance_profile_backend_root, "R", "distance_profile_backend.R"))
   rm(distance_profile_backend_root)
 }

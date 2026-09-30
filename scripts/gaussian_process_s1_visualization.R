@@ -11,8 +11,8 @@ utils_path_s1 <- if (file.exists("utils.R")) {
 }
 source(utils_path_s1)
 
-vmf_gp_path_s1 <- if (file.exists(file.path("convergence_empirical_process", "gaussian_process_vmf.R"))) {
-  file.path("convergence_empirical_process", "gaussian_process_vmf.R")
+vmf_gp_path_s1 <- if (file.exists(file.path("scripts", "gaussian_process_vmf.R"))) {
+  file.path("scripts", "gaussian_process_vmf.R")
 } else if (file.exists("gaussian_process_vmf.R")) {
   "gaussian_process_vmf.R"
 } else {
