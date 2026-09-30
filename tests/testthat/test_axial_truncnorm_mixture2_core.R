@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "model_specs.R"))
+source(file.path("utils.R"))
 
 test_that("Axial truncated-normal component is numerically normalized in representative regimes", {
   parameter_grid <- list(

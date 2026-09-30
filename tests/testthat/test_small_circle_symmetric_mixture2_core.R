@@ -7,17 +7,17 @@ utils_path <- if (file.exists("utils.R")) {
 }
 source(utils_path)
 
-model_specs_path <- if (file.exists(file.path("bootstrap", "model_specs.R"))) {
-  file.path("bootstrap", "model_specs.R")
+model_specs_path <- if (file.exists(file.path("utils.R"))) {
+  file.path("utils.R")
 } else {
-  file.path("..", "..", "bootstrap", "model_specs.R")
+  file.path("..", "..", "utils.R")
 }
 source(model_specs_path)
 
-small_circle_symmetric_mixture2_model_spec_path <- if (file.exists(file.path("bootstrap", "small_circle_symmetric_mixture2_model_spec.R"))) {
-  file.path("bootstrap", "small_circle_symmetric_mixture2_model_spec.R")
+small_circle_symmetric_mixture2_model_spec_path <- if (file.exists(file.path("utils.R"))) {
+  file.path("utils.R")
 } else {
-  file.path("..", "..", "bootstrap", "small_circle_symmetric_mixture2_model_spec.R")
+  file.path("..", "..", "utils.R")
 }
 source(small_circle_symmetric_mixture2_model_spec_path)
 

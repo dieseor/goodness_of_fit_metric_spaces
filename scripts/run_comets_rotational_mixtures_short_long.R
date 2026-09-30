@@ -14,8 +14,8 @@ resolve_rotmix_comets_path <- function(...) {
   stop(sprintf("Could not resolve path: %s", file.path(...)))
 }
 
-model_specs_script_path_rotmix_comets <- resolve_rotmix_comets_path("bootstrap", "model_specs.R")
-multiplier_bootstrap_script_path_rotmix_comets <- resolve_rotmix_comets_path("bootstrap", "multiplier_bootstrap.R")
+model_specs_script_path_rotmix_comets <- resolve_rotmix_comets_path("utils.R")
+multiplier_bootstrap_script_path_rotmix_comets <- resolve_rotmix_comets_path("utils.R")
 utils_script_path_rotmix_comets <- resolve_rotmix_comets_path("utils.R")
 comets_utils_script_path_rotmix_comets <- resolve_rotmix_comets_path(
   "real_data",

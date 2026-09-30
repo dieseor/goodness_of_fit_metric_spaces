@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "calibration_study.R"))
+source(file.path("scripts", "calibration_study.R"))
 
 make_test_mvnormal_ks_grid <- function(mu, Sigma) {
   theta <- normalize_mvnormal_theta(list(mu = mu, Sigma = Sigma))

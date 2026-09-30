@@ -14,9 +14,9 @@ resolve_comets_small_circle_path <- function(...) {
   stop(sprintf("Could not resolve path: %s", file.path(...)))
 }
 
-model_specs_script_path_sc_circle <- resolve_comets_small_circle_path("bootstrap", "model_specs.R")
-small_circle_model_spec_script_path <- resolve_comets_small_circle_path("bootstrap", "small_circle_model_spec.R")
-multiplier_bootstrap_script_path_sc_circle <- resolve_comets_small_circle_path("bootstrap", "multiplier_bootstrap.R")
+model_specs_script_path_sc_circle <- resolve_comets_small_circle_path("utils.R")
+small_circle_model_spec_script_path <- resolve_comets_small_circle_path("utils.R")
+multiplier_bootstrap_script_path_sc_circle <- resolve_comets_small_circle_path("utils.R")
 utils_script_path_sc_circle <- resolve_comets_small_circle_path("utils.R")
 comets_utils_script_path_sc_circle <- resolve_comets_small_circle_path(
   "real_data",

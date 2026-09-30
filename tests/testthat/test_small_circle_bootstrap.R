@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "calibration_study.R"))
+source(file.path("scripts", "calibration_study.R"))
 
 test_that("Small Circle bootstrap supports simple and composite nulls", {
   set.seed(20260601)

@@ -8,8 +8,8 @@ source(file.path(
   "sunspots",
   "sunspots_cycle23_joint_time_space.R"
 ))
-source(file.path("bootstrap", "model_specs.R"))
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
+source(file.path("utils.R"))
+source(file.path("utils.R"))
 source(file.path(
   "real_data",
   "sunspots",

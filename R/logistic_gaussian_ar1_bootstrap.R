@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/logistic_gaussian_ar1_bootstrap.R.
 
 multiplier_bootstrap_logistic_gaussian_ar1 <- function(
     data,

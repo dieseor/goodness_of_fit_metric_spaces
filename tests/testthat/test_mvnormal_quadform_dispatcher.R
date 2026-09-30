@@ -4,7 +4,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "model_specs.R"))
+source(file.path("utils.R"))
 
 with_mock_quadform_backend <- function(mock, code) {
   backend_environment <- environment(mvnormal_quadform_run_farebrother)

@@ -9,7 +9,7 @@
 
 Sys.setenv(RENV_CONFIG_AUTOLOADER_ENABLED = "FALSE")
 
-source("bootstrap/multiplier_bootstrap.R")
+source("utils.R")
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
 

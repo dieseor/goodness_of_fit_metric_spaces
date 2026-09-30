@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/vmf_model_spec.R.
 
 normalize_vmf_data <- function(data, control = list()) {
   if (is.vector(data)) {

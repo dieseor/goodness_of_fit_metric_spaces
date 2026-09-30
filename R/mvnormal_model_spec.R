@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/mvnormal_model_spec.R.
 
 normalize_mvnormal_data <- function(data, control = list()) {
   if (is.vector(data)) {

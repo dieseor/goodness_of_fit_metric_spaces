@@ -5,7 +5,7 @@ on.exit(setwd(oldwd), add = TRUE)
 
 # testthat::test_dir("tests/testthat")
 
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
+source(file.path("utils.R"))
 
 test_that("multiplier helpers normalize weights correctly", {
   normalized <- normalize_multiplier_weights(c(1, 2, 3))

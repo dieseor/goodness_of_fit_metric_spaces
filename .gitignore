@@ -57,3 +57,21 @@ debug_*.csv
 # Ignore big dataset
 wind/risoe_m_all.nc
 real_data/wind/risoe_m_all.nc
+
+# Local research outputs kept out of the public repository
+/real_data/bootstrap_audit/
+/real_data/hvmf_realdata_screening/
+/real_data/comets/jp/
+/real_data/comets/spherical_cauchy/
+/real_data/comets/watson/
+/real_data/comets/projected_axis_diagnostics/
+/real_data/comets/diagnostics/
+/real_data/comets/cardioid/
+/real_data/comets/mixture/
+/real_data/comets/small_circle/
+/real_data/logistic_gaussian/screening/
+/real_data/wind/results/
+/real_data/wind/processed/
+/real_data/wind/month_diagnostics/**
+!/real_data/wind/month_diagnostics/nov_dec_77m_ks_cvm_b5000/
+!/real_data/wind/month_diagnostics/nov_dec_77m_ks_cvm_b5000/fast_sampleks_strict_step4/

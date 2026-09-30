@@ -2,7 +2,7 @@ library(testthat)
 
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
+source(file.path("utils.R"))
 
 test_that("Watson simple bootstrap agrees with Small Circle nu = 0", {
   set.seed(420)

@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/normal_sigma_Id_model_spec.R.
 
 normalize_normal_sigma_Id_data <- function(data, control = list()) {
   normalize_mvnormal_data(data, control)

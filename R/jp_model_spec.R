@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/jp_model_spec.R.
 
 normalize_jp_data <- function(data, control = list()) {
   if (is.vector(data)) {

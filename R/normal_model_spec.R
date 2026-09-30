@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/normal_model_spec.R.
 
 normalize_normal_data <- function(data, control = list()) {
   if (is.matrix(data) || is.data.frame(data)) {

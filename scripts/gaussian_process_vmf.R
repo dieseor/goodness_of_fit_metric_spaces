@@ -15,12 +15,12 @@ utils_path <- if (file.exists("utils.R")) {
 }
 source(utils_path)
 
-profile_derivatives_path <- if (file.exists(file.path("bootstrap", "deterministic_profile_derivatives.R"))) {
-  file.path("bootstrap", "deterministic_profile_derivatives.R")
-} else if (file.exists(file.path("..", "bootstrap", "deterministic_profile_derivatives.R"))) {
-  file.path("..", "bootstrap", "deterministic_profile_derivatives.R")
+profile_derivatives_path <- if (file.exists(file.path("utils.R"))) {
+  file.path("utils.R")
+} else if (file.exists(file.path("..", "utils.R"))) {
+  file.path("..", "utils.R")
 } else {
-  stop("Could not find bootstrap/deterministic_profile_derivatives.R.")
+  stop("Could not find utils.R.")
 }
 source(profile_derivatives_path)
 

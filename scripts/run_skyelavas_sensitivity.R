@@ -22,8 +22,7 @@ utils_path <- resolve_skyelavas_sensitivity_path(
   "utils_logistic_gaussian_screening.R"
 )
 bootstrap_path <- resolve_skyelavas_sensitivity_path(
-  "bootstrap",
-  "multiplier_bootstrap.R"
+  "utils.R"
 )
 
 source(utils_path)

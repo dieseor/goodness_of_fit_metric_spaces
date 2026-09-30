@@ -8,11 +8,10 @@ source(file.path(
   "sunspots",
   "sunspots_cycle23_joint_time_space.R"
 ))
-source(file.path("bootstrap", "model_specs.R"))
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
+source(file.path("utils.R"))
+source(file.path("utils.R"))
 source(file.path(
-  "bootstrap",
-  "sunspots_joint_time_space_model_spec.R"
+  "utils.R"
 ))
 
 sorted_cpp_fixture <- function(n = 16L, seed = 20260805L) {

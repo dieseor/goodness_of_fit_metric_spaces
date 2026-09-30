@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/beta_mixture2_model_spec.R.
 
 prepare_beta_mixture2_fast_multiplier <- function(spec,
                                                   data,

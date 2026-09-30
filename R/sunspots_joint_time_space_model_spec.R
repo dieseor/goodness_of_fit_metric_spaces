@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/sunspots_joint_time_space_model_spec.R.
 
 resolve_sunspots_joint_spec_path <- function(...) {
   candidates <- c(

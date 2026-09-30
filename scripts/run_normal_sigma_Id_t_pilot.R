@@ -159,7 +159,7 @@ run_normal_sigma_Id_t_pilot <- function(output_dir, M = 100L, B = 499L,
     stop("Invalid normal-sigma-Id t pilot settings.")
   }
   if (.Platform$OS.type != "unix" && cores > 1L) stop("Outer parallelism requires a Unix platform.")
-  source(file.path("bootstrap", "normal_sigma_Id_bootstrap.R"), local = environment())
+  source(file.path("utils.R"), local = environment())
   design <- normal_sigma_Id_t_design(dimensions, n_values, beta_values, M)
   manifest <- unique(design[c("d", "n", "beta", "design_id")])
   manifest <- transform(

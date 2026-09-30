@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "logistic_gaussian_sigma_shape_bootstrap.R"))
+source(file.path("utils.R"))
 source(file.path("scripts", "run_logistic_gaussian_sigma_shape_scenarios.R"))
 
 test_that("restricted Logistic-Gaussian covariance shape is identity", {

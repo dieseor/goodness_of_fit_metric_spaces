@@ -1,6 +1,6 @@
 normal_sigma_Id_bootstrap_path <- c(
-  file.path("bootstrap", "normal_sigma_Id_bootstrap.R"),
-  file.path("..", "..", "bootstrap", "normal_sigma_Id_bootstrap.R")
+  file.path("utils.R"),
+  file.path("..", "..", "utils.R")
 )
 normal_sigma_Id_bootstrap_path <- normal_sigma_Id_bootstrap_path[
   file.exists(normal_sigma_Id_bootstrap_path)

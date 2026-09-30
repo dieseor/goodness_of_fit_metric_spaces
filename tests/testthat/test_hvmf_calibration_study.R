@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "calibration_study.R"))
+source(file.path("scripts", "calibration_study.R"))
 
 test_that("HvMF calibration simulates polar H^2 samples in memory", {
   scenario <- make_hvmf_composite_calibration_scenario(5)

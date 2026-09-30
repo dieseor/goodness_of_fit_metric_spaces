@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/watson_model_spec.R.
 
 resolve_watson_model_spec_path <- function(...) {
   candidates <- c(file.path(...), file.path("..", ...), file.path("..", "..", ...))

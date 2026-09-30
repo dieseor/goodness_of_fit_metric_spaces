@@ -11,10 +11,6 @@
 ^wind$
 ^scripts$
 ^tests$
-^benchmarks$
-^distance_profiles$
-^bahadur$
-^bootstrap$
 ^local_diagnostics$
 ^logs$
 ^paper$

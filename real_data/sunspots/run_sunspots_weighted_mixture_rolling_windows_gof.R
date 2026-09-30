@@ -11,9 +11,9 @@ resolve_sunspots_weighted_rolling_path <- function(...) {
 }
 
 utils_path_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("utils.R")
-model_specs_path_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("bootstrap", "model_specs.R")
-bootstrap_path_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("bootstrap", "multiplier_bootstrap.R")
-spec_path_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("bootstrap", "small_circle_weighted_mixture2_model_spec.R")
+model_specs_path_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("utils.R")
+bootstrap_path_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("utils.R")
+spec_path_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("utils.R")
 prep_path_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("real_data", "sunspots", "sunspots.R")
 fmgp_rdata_dir_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("real_data", "sunspots", "fmgp_rdata")
 path_helpers_sunspots_weighted_rolling <- resolve_sunspots_weighted_rolling_path("scripts", "path_helpers.R")

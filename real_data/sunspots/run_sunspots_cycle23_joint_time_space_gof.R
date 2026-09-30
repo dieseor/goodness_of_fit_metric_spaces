@@ -15,10 +15,10 @@ sunspots_joint_module_path <- resolve_sunspots_joint_runner_path(
   "real_data", "sunspots", "sunspots_cycle23_joint_time_space.R"
 )
 sunspots_joint_model_spec_path <- resolve_sunspots_joint_runner_path(
-  "bootstrap", "sunspots_joint_time_space_model_spec.R"
+  "utils.R"
 )
 multiplier_bootstrap_engine_path <- resolve_sunspots_joint_runner_path(
-  "bootstrap", "multiplier_bootstrap.R"
+  "utils.R"
 )
 source(sunspots_joint_module_path)
 source(sunspots_joint_model_spec_path)

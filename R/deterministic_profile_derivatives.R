@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/deterministic_profile_derivatives.R.
 
 profile_derivative_cumtrapz <- function(grid, integrands) {
   grid <- as.numeric(grid)

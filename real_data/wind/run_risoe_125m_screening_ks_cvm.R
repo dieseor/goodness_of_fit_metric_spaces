@@ -1,7 +1,7 @@
 source(file.path("real_data", "wind", "preprocess_risoe_modern_hvmf.R"))
-source(file.path("bootstrap", "model_specs.R"))
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
-source(file.path("bootstrap", "calibration_study.R"))
+source(file.path("utils.R"))
+source(file.path("utils.R"))
+source(file.path("scripts", "calibration_study.R"))
 source(file.path("scripts", "path_helpers.R"))
 
 select_noon_all_months <- function(df, fixed_tz = "UTC") {

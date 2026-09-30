@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
+source(file.path("utils.R"))
 
 hvmf_hq_test_mu <- function(q) c(sqrt(2), 1, rep.int(0, q - 1L))
 

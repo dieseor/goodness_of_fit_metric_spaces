@@ -265,7 +265,7 @@ run_logistic_gaussian_dirichlet15_mu_only <- function(
     ))
   }
 
-  source(file.path("bootstrap", "multiplier_bootstrap.R"), local = environment())
+  source(file.path("utils.R"), local = environment())
   design <- lg_dirichlet15_mu_design(dimensions, n_values, beta_values, scenarios, M)
   manifest <- unique(design[c("scenario", "d", "n", "beta", "design_id")])
   manifest <- transform(

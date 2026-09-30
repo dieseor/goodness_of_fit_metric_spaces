@@ -3,8 +3,8 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source("bootstrap/multiplier_bootstrap.R", local = globalenv())
-source("bootstrap/vmf_fixed_kappa_model_spec.R", local = globalenv())
+source("utils.R", local = globalenv())
+source("utils.R", local = globalenv())
 
 test_that("fixed-kappa vMF MLE fits only the resultant direction", {
   set.seed(1401)

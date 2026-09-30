@@ -3,8 +3,8 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
-source(file.path("bootstrap", "profile_lookup_interpolation.R"))
+source(file.path("utils.R"))
+source(file.path("utils.R"))
 
 test_that("C++ cache lock releases an obsolete compilation lock", {
   cache_dir <- tempfile("distance-profile-cache-lock-")

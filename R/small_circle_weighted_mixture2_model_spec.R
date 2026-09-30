@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/small_circle_weighted_mixture2_model_spec.R.
 
 resolve_small_circle_weighted_mixture2_model_spec_path <- function(...) {
   candidates <- c(

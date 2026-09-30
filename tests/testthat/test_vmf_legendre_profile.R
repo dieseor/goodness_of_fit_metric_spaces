@@ -7,10 +7,10 @@ utils_path <- if (file.exists("utils.R")) {
 }
 suppressWarnings(source(utils_path, local = FALSE))
 
-model_specs_path <- if (file.exists(file.path("bootstrap", "model_specs.R"))) {
-  file.path("bootstrap", "model_specs.R")
+model_specs_path <- if (file.exists(file.path("utils.R"))) {
+  file.path("utils.R")
 } else {
-  file.path("..", "..", "bootstrap", "model_specs.R")
+  file.path("..", "..", "utils.R")
 }
 suppressWarnings(source(model_specs_path, local = FALSE))
 

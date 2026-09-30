@@ -18,8 +18,8 @@ resolve_repo_path <- function(...) {
 }
 
 source(resolve_repo_path("real_data", "wind", "preprocess_risoe_modern_hvmf.R"))
-source(resolve_repo_path("bootstrap", "model_specs.R"))
-source(resolve_repo_path("bootstrap", "multiplier_bootstrap.R"))
+source(resolve_repo_path("utils.R"))
+source(resolve_repo_path("utils.R"))
 
 if (!requireNamespace("ggplot2", quietly = TRUE)) {
   stop("Package 'ggplot2' is required. Install it with install.packages('ggplot2').")

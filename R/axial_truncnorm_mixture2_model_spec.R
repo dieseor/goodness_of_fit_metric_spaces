@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/axial_truncnorm_mixture2_model_spec.R.
 
 normalize_axial_truncnorm_mixture2_data <- function(data, control = list()) {
   if (is.matrix(data) || is.data.frame(data)) {

@@ -3,8 +3,8 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
-source(file.path("bootstrap", "cardioid_model_spec.R"))
+source(file.path("utils.R"))
+source(file.path("utils.R"))
 
 # Independent unweighted reference for the two estimator comparisons below.
 reference_cardioid_mle <- function(X, k, mu0, rho0, control) {

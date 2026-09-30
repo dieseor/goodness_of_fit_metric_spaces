@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
+source(file.path("utils.R"))
 
 gaussian_test_reference_F <- function(omega, mu, Sigma, t) {
   eig <- eigen(Sigma, symmetric = TRUE)

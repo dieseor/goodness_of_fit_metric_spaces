@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/restricted_spiked_normal_bootstrap.R.
 
 multiplier_bootstrap_restricted_spiked_normal <- function(data,
                                                           null,

@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/mvnormal_quadform.R.
 
 mvnormal_quadform_control <- function(control, name, default, aliases = character()) {
   keys <- c(paste0("mvnormal_quadform_", name), aliases)

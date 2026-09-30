@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
+source(file.path("utils.R"))
 
 hyperboloid_point <- function(chi, theta) {
   c(cosh(chi), sinh(chi) * cos(theta), sinh(chi) * sin(theta))

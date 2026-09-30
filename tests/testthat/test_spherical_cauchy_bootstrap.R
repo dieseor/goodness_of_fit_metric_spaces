@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "calibration_study.R"))
+source(file.path("scripts", "calibration_study.R"))
 
 test_that("spherical Cauchy bootstrap supports simple and composite nulls", {
   mu <- c(0, 0, 1)

@@ -336,8 +336,8 @@ run_logistic_gaussian_sigma_shape_scenarios <- function(
     ))
   }
 
-  source(file.path("bootstrap", "logistic_gaussian_sigma_shape_bootstrap.R"), local = environment())
-  source(file.path("bootstrap", "logistic_gaussian_ar1_bootstrap.R"), local = environment())
+  source(file.path("utils.R"), local = environment())
+  source(file.path("utils.R"), local = environment())
   design <- lg_sigma_shape_design(dimensions, n_values, beta_values, scenarios, M)
   manifest <- unique(design[c("scenario", "d", "n", "beta", "design_id")])
   manifest <- transform(

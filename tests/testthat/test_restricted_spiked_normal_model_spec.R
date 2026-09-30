@@ -3,9 +3,9 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "model_specs.R"))
-source(file.path("bootstrap", "restricted_spiked_normal_openmx.R"))
-source(file.path("bootstrap", "restricted_spiked_normal_bootstrap.R"))
+source(file.path("utils.R"))
+source(file.path("scripts", "restricted_spiked_normal_openmx.R"))
+source(file.path("utils.R"))
 
 test_that("restricted-spiked covariance has the prescribed spectrum", {
   theta <- c(1, -2, 0.5, 0.75, -1.25)

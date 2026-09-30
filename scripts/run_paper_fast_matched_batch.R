@@ -10,11 +10,11 @@ Sys.setenv(
   VECLIB_MAXIMUM_THREADS = "1"
 )
 
-source("bootstrap/multiplier_bootstrap.R")
-source("bootstrap/restricted_spiked_normal_bootstrap.R")
-source("bootstrap/normal_sigma_Id_bootstrap.R")
-source("bootstrap/logistic_gaussian_ar1_bootstrap.R")
-source("bootstrap/vmf_fixed_kappa_model_spec.R")
+source("utils.R")
+source("utils.R")
+source("utils.R")
+source("utils.R")
+source("utils.R")
 ensure_distance_profile_cpp_loaded()
 
 args <- commandArgs(trailingOnly = TRUE)

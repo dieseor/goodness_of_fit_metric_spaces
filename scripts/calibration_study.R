@@ -22,8 +22,7 @@ resolve_calibration_path <- function(...) {
 }
 
 multiplier_bootstrap_path_calibration <- resolve_calibration_path(
-  "bootstrap",
-  "multiplier_bootstrap.R"
+  "utils.R"
 )
 required_bootstrap_functions <- c(
   "multiplier_bootstrap_normal",
@@ -1610,7 +1609,7 @@ split_task_grid <- function(task_grid, n_chunks) {
 initialize_calibration_cluster <- function(n_workers) {
   n_workers <- max(1L, as.integer(n_workers))
   calibration_path_worker <- normalizePath(
-    resolve_calibration_path("bootstrap", "calibration_study.R"),
+    resolve_calibration_path("scripts", "calibration_study.R"),
     winslash = "/",
     mustWork = TRUE
   )

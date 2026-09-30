@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/vmf_fixed_kappa_model_spec.R.
 
 vmf_fixed_kappa_validate <- function(kappa) {
   kappa <- as.numeric(kappa)

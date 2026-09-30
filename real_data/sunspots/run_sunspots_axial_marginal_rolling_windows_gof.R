@@ -11,8 +11,8 @@ resolve_sunspots_axial_path <- function(...) {
 }
 
 utils_path_sunspots_axial <- resolve_sunspots_axial_path("utils.R")
-model_specs_path_sunspots_axial <- resolve_sunspots_axial_path("bootstrap", "model_specs.R")
-bootstrap_path_sunspots_axial <- resolve_sunspots_axial_path("bootstrap", "multiplier_bootstrap.R")
+model_specs_path_sunspots_axial <- resolve_sunspots_axial_path("utils.R")
+bootstrap_path_sunspots_axial <- resolve_sunspots_axial_path("utils.R")
 
 source(utils_path_sunspots_axial)
 source(model_specs_path_sunspots_axial)

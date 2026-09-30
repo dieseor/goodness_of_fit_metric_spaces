@@ -17,8 +17,8 @@ resolve_cycle24_weighted_worst_ks_path <- function(...) {
 }
 
 utils_path_cycle24_weighted_worst_ks <- resolve_cycle24_weighted_worst_ks_path("utils.R")
-bootstrap_path_cycle24_weighted_worst_ks <- resolve_cycle24_weighted_worst_ks_path("bootstrap", "multiplier_bootstrap.R")
-spec_path_cycle24_weighted_worst_ks <- resolve_cycle24_weighted_worst_ks_path("bootstrap", "small_circle_weighted_mixture2_model_spec.R")
+bootstrap_path_cycle24_weighted_worst_ks <- resolve_cycle24_weighted_worst_ks_path("utils.R")
+spec_path_cycle24_weighted_worst_ks <- resolve_cycle24_weighted_worst_ks_path("utils.R")
 
 source(utils_path_cycle24_weighted_worst_ks)
 source(spec_path_cycle24_weighted_worst_ks)

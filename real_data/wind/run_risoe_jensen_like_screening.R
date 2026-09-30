@@ -1,6 +1,6 @@
 source(file.path("real_data", "wind", "preprocess_risoe_modern_hvmf.R"))
 source(file.path("real_data", "wind", "run_hvmf_real_data_cvm.R"))
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
+source(file.path("utils.R"))
 
 jensen_like_day_patterns <- function() {
   list(

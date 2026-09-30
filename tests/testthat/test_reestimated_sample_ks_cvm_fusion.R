@@ -3,8 +3,8 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "restricted_spiked_normal_bootstrap.R"))
-source(file.path("bootstrap", "normal_sigma_Id_bootstrap.R"))
+source(file.path("utils.R"))
+source(file.path("utils.R"))
 
 compare_reestimated_sample_fusion <- function(runner, x, extra = list(),
                                                null = list(type = "composite")) {

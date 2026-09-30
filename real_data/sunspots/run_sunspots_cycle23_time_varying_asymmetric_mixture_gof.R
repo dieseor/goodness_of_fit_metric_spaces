@@ -16,8 +16,8 @@ resolve_sunspots_time_gof_path <- function(...) {
 time_model_path_sunspots_gof <- resolve_sunspots_time_gof_path(
   "real_data", "sunspots", "run_sunspots_cycle23_time_varying_asymmetric_mixture.R"
 )
-model_specs_path_sunspots_gof <- resolve_sunspots_time_gof_path("bootstrap", "model_specs.R")
-bootstrap_path_sunspots_gof <- resolve_sunspots_time_gof_path("bootstrap", "multiplier_bootstrap.R")
+model_specs_path_sunspots_gof <- resolve_sunspots_time_gof_path("utils.R")
+bootstrap_path_sunspots_gof <- resolve_sunspots_time_gof_path("utils.R")
 source(time_model_path_sunspots_gof)
 source(model_specs_path_sunspots_gof)
 source(bootstrap_path_sunspots_gof)

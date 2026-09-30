@@ -3,7 +3,7 @@
 # Joint KS/CvM rerun for the C2 and small-circle fits in the paper.
 # Run from the repository root. Historical results and fits are preserved.
 Sys.setenv(RENV_CONFIG_AUTOLOADER_ENABLED = "FALSE")
-source("bootstrap/multiplier_bootstrap.R")
+source("utils.R")
 source("real_data/comets/utils_comets_data.R")
 
 paper_comets_joint_control <- function(derivative_seed) {

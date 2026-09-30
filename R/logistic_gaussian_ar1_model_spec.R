@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/logistic_gaussian_ar1_model_spec.R.
 
 logistic_gaussian_ar1_covariance <- function(ilr_dim, rho) {
   d <- as.integer(ilr_dim)

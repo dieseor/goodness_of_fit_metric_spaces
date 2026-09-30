@@ -17,9 +17,9 @@ resolve_sunspots_gof_path <- function(...) {
 }
 
 utils_path_sunspots_gof <- resolve_sunspots_gof_path("utils.R")
-model_specs_path_sunspots_gof <- resolve_sunspots_gof_path("bootstrap", "model_specs.R")
-bootstrap_path_sunspots_gof <- resolve_sunspots_gof_path("bootstrap", "multiplier_bootstrap.R")
-spec_path_sunspots_gof <- resolve_sunspots_gof_path("bootstrap", "small_circle_symmetric_mixture2_model_spec.R")
+model_specs_path_sunspots_gof <- resolve_sunspots_gof_path("utils.R")
+bootstrap_path_sunspots_gof <- resolve_sunspots_gof_path("utils.R")
+spec_path_sunspots_gof <- resolve_sunspots_gof_path("utils.R")
 prep_path_sunspots_gof <- resolve_sunspots_gof_path("real_data", "sunspots", "sunspots.R")
 
 source(utils_path_sunspots_gof)

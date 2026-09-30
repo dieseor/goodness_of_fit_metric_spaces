@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/logistic_gaussian_model_spec.R.
 
 logistic_gaussian_ilr_basis <- function(ambient_dim) {
   ambient_dim <- as.integer(ambient_dim)

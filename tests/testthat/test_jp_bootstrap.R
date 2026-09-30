@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "calibration_study.R"))
+source(file.path("scripts", "calibration_study.R"))
 
 jp_bootstrap_test_control <- list(
   jp_mle_maxit = 250L,

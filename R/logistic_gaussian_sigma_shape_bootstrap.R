@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/logistic_gaussian_sigma_shape_bootstrap.R.
 
 multiplier_bootstrap_logistic_gaussian_sigma_shape <- function(
     data,

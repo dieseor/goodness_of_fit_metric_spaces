@@ -6,10 +6,10 @@ utils_path <- if (file.exists("utils.R")) {
   file.path("..", "..", "utils.R")
 }
 source(utils_path)
-model_specs_path <- if (file.exists(file.path("bootstrap", "model_specs.R"))) {
-  file.path("bootstrap", "model_specs.R")
+model_specs_path <- if (file.exists(file.path("utils.R"))) {
+  file.path("utils.R")
 } else {
-  file.path("..", "..", "bootstrap", "model_specs.R")
+  file.path("..", "..", "utils.R")
 }
 source(model_specs_path)
 

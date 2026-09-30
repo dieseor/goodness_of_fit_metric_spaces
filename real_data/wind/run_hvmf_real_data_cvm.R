@@ -14,7 +14,7 @@ resolve_hvmf_real_data_path <- function(...) {
   file.path(...)
 }
 
-bootstrap_script_path <- resolve_hvmf_real_data_path("bootstrap", "multiplier_bootstrap.R")
+bootstrap_script_path <- resolve_hvmf_real_data_path("utils.R")
 if (!exists("multiplier_bootstrap_hvmf", mode = "function")) {
   source(bootstrap_script_path)
 }

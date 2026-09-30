@@ -609,8 +609,8 @@ compute_profile_matrix_from_distances <- function(distance_matrix, t_grid) {
 ensure_logistic_gaussian_model_spec_available <- function() {
   if (!exists("make_logistic_gaussian_spec", mode = "function")) {
     candidate_paths <- c(
-      file.path("bootstrap", "model_specs.R"),
-      file.path("..", "bootstrap", "model_specs.R"),
+      file.path("utils.R"),
+      file.path("..", "utils.R"),
       file.path("model_specs.R")
     )
 
@@ -624,7 +624,7 @@ ensure_logistic_gaussian_model_spec_available <- function() {
     }
 
     if (!isTRUE(sourced) || !exists("make_logistic_gaussian_spec", mode = "function")) {
-      stop("Could not find make_logistic_gaussian_spec(). Source bootstrap/model_specs.R before running the logistic Gaussian analysis.")
+      stop("Could not find make_logistic_gaussian_spec(). Source utils.R before running the logistic Gaussian analysis.")
     }
   }
 
@@ -635,8 +635,8 @@ ensure_logistic_gaussian_bootstrap_available <- function() {
   ensure_logistic_gaussian_model_spec_available()
   if (!exists("multiplier_bootstrap_logistic_gaussian", mode = "function")) {
     candidate_paths <- c(
-      file.path("bootstrap", "multiplier_bootstrap.R"),
-      file.path("..", "bootstrap", "multiplier_bootstrap.R"),
+      file.path("utils.R"),
+      file.path("..", "utils.R"),
       file.path("multiplier_bootstrap.R")
     )
 
@@ -650,7 +650,7 @@ ensure_logistic_gaussian_bootstrap_available <- function() {
     }
 
     if (!isTRUE(sourced) || !exists("multiplier_bootstrap_logistic_gaussian", mode = "function")) {
-      stop("Could not find multiplier_bootstrap_logistic_gaussian(). Source bootstrap/multiplier_bootstrap.R before running the logistic Gaussian analysis.")
+      stop("Could not find multiplier_bootstrap_logistic_gaussian(). Source utils.R before running the logistic Gaussian analysis.")
     }
   }
 

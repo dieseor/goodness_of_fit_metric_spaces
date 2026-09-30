@@ -1,9 +1,0 @@
-created_at: 2026-09-15 18:59:03 CEST
-n_multistart: 240
-n_local_perturb: 50
-n_bootstrap: 200
-n_cores: 3
-production objective: mean projected log-density, BFGS, 12 starts, maxit=350, reltol=1e-9
-surface AIC/BIC: full S2 log-density with k=5
-bootstrap refits: Exp(1) row-normalized weights; observed-fit warm start only; maxit=80; reltol=1e-6
-production endpoint clamp: eps=1e-12; stable singularity profiles replace the target contribution analytically

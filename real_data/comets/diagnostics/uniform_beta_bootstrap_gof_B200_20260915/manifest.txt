@@ -1,7 +1,0 @@
-B: 200
-n_cores: 3
-multipliers: Exp(1), normalized by replicate row mean
-method: production reestimated multiplier bootstrap
-fit: saved paper theta; warm start only; maxit=80; reltol=1e-6
-KS grid: sample points and unique distances
-seeds: paper case seed + 1000 for KS and +2000 for CvM

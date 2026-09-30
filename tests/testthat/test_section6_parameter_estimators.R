@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
+source(file.path("utils.R"))
 
 test_that("multivariate-Normal MLE equals the defining sample moments in every audited dimension", {
   for (d in c(2L, 5L, 10L)) {

@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/cardioid_model_spec.R.
 
 resolve_cardioid_model_spec_path <- function(...) {
   candidates <- c(

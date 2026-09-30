@@ -4,8 +4,8 @@ oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
 source(file.path("real_data", "sunspots", "sunspots_cycle23_joint_time_space.R"))
-source(file.path("bootstrap", "model_specs.R"))
-source(file.path("bootstrap", "multiplier_bootstrap.R"))
+source(file.path("utils.R"))
+source(file.path("utils.R"))
 source(file.path("real_data", "sunspots", "run_sunspots_cycle23_time_varying_asymmetric_mixture_gof.R"))
 
 joint_generic_fixture <- function(hemisphere_regression = "asymmetric",

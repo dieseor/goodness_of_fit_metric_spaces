@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/logistic_gaussian_sigma_shape_model_spec.R.
 
 logistic_gaussian_identity_shape <- function(ilr_dim) {
   d <- as.integer(ilr_dim)

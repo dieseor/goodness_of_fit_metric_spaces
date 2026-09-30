@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/model_specs.R.
 
 resolve_bootstrap_path <- function(...) {
   candidates <- c(

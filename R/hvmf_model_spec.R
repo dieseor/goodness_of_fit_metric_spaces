@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/hvmf_model_spec.R.
 
 normalize_hvmf_data <- function(data, control = list()) {
   tol <- as.numeric(control$hvmf_tol %||% 1e-10)

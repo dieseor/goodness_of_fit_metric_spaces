@@ -307,7 +307,7 @@ run_restricted_spiked_covariance_alternatives <- function(
     stop("Outer restricted-spiked parallelism requires a Unix platform.")
   }
 
-  source(file.path("bootstrap", "restricted_spiked_normal_bootstrap.R"),
+  source(file.path("utils.R"),
          local = environment())
   design <- make_restricted_spiked_design(
     mean_config, dimensions, n_values, beta_values, M

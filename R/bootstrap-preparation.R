@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/multiplier_bootstrap.R.
 
 resolve_multiplier_bootstrap_path <- function(...) {
   candidates <- c(

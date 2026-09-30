@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/restricted_spiked_normal_model_spec.R.
 
 restricted_spiked_normal_radius_tolerance <- function(x) {
   x <- as.matrix(x)

@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/normal_sigma_Id_bootstrap.R.
 
 multiplier_bootstrap_normal_sigma_Id <- function(data, null,
                                                   statistics = c("ks", "cvm"),

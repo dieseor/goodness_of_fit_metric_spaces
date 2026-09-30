@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/logitnormal_mixture2_model_spec.R.
 
 normalize_logitnormal_mixture2_data <- function(data, control = list()) {
   x <- jp_normalize_unit_matrix(data, arg_name = "`data`", min_ncol = 3L)

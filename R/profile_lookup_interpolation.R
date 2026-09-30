@@ -1,4 +1,3 @@
-# Internal functions adapted from bootstrap/profile_lookup_interpolation.R.
 
 profile_lookup_build <- function(model,
                                  q,

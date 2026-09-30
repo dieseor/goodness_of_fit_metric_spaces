@@ -15,12 +15,10 @@ resolve_comets_cardioid_path <- function(...) {
 }
 
 cardioid_model_spec_script_path <- resolve_comets_cardioid_path(
-  "bootstrap",
-  "cardioid_model_spec.R"
+  "utils.R"
 )
 multiplier_bootstrap_script_path <- resolve_comets_cardioid_path(
-  "bootstrap",
-  "multiplier_bootstrap.R"
+  "utils.R"
 )
 utils_script_path_cardioid <- resolve_comets_cardioid_path("utils.R")
 

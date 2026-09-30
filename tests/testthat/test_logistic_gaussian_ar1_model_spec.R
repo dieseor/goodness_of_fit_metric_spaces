@@ -3,7 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("bootstrap", "logistic_gaussian_ar1_bootstrap.R"))
+source(file.path("utils.R"))
 source(file.path("scripts", "run_logistic_gaussian_sigma_shape_scenarios.R"))
 
 test_that("AR(1) covariance has the intended structure", {
