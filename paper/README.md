@@ -19,10 +19,10 @@ The figure command reads only the small saved inputs in `paper/artifacts/` and w
 | `tab:simulation_scenarios` | Scenario definitions in the manuscript; effective per-campaign settings, result paths and hashes are in `artifacts/tables/simulation_audit.json`. The simulation runners vary by model; `scripts/run_section6_new_scenarios.R` is the main catalogue. |
 | `tab:empirical_null_calibration` | 468 cells in `simulation_audit.json` plus 12 scenario 1, `n=800` cells in `scenario1_n800.csv`. The audit records campaign manifests, raw-result paths, bootstrap methods and 43 file hashes. |
 | `tab:bootstrap_procedure_comparison` | `table3_fast_rates.csv` and `table3_slow_summary.csv`. The fast summary is rebuilt by `paper/summarize_table3_fast.py` from `simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/`; the slow summary uses `simulation_results/paper_fast_vs_reestimated_n100_beta0/slow_batches/`. Each of the 16 groups has 1,000 distinct, seed-matched replications. All 80 displayed values, including both timing rows and speed-ups, match the manuscript. The raw batches remain local research outputs; the processed summaries are included here. |
-| `tab:sunspots_cycle23_temporal_models` | `sunspots_gof.csv` from the 2026-09-08 `B=1000`, `Nderiv=10000` run; runner `real_data/sunspots/run_sunspots_cycle23_joint_time_space_gof.R`. |
-| `tab:comets-gof` | `comets_c2_sc.csv` from `scripts/run_paper_comets_joint_score_mc.R`; `comets_ub.csv` from `scripts/run_comets_uniform_beta_joint_kernel.R`. |
-| `tab:risoe-wind-gof` | `wind_gof.csv` from the main real-data rerun. The exact generating runner for this saved CSV has not been identified; the figure runner and processed samples are provided separately. |
-| `tab:logistic-gaussian-real-data` | `compositions_ks_cvm.csv` from the main real-data rerun. The BHEP column comes from the separate ilr normality analysis and is not recomputed by `check_tables.py`. |
+| `tab:sunspots_cycle23_temporal_models` | `sunspots_gof.csv`, step 1 of `paper/run_real_data.sh`. |
+| `tab:comets-gof` | `comets_c2_sc.csv` and `comets_ub.csv`, steps 2-4, 7 and 8 of `paper/run_real_data.sh`. |
+| `tab:risoe-wind-gof` | `wind_gof.csv`, step 5 of `paper/run_real_data.sh`. |
+| `tab:logistic-gaussian-real-data` | `compositions_ks_cvm.csv`, step 6 of `paper/run_real_data.sh`. The BHEP column comes from `scripts/run_logistic_gaussian_hz_pvalues.R` and is not recomputed by `check_tables.py`. |
 
 `python3 paper/check_tables.py "$PAPER_TEX"` compares 480 simulation cells, all 80 values in the bootstrap comparison table, and the stored GOF values in the four real-data tables with the current manuscript. It does not rerun the statistical experiments.
 
