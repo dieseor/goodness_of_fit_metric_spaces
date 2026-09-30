@@ -34,7 +34,7 @@ jobs:
       - name: Check installed R and C++ paths
         run: |
           R CMD INSTALL dpgof_*.tar.gz
-          Rscript --vanilla paper/check_package.R
+          Rscript paper/check_package.R
 
       - name: Test optional C++ distance-profile backend
         run: Rscript -e 'testthat::test_file("tests/testthat/test_cpp_distance_profile_backend.R", stop_on_failure = TRUE)'
