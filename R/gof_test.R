@@ -46,5 +46,18 @@ gof_test <- function(data,
     args$unknown_param <- "both"
   }
   args[names(extra)] <- extra
-  do.call(wrapper, args)
+  result <- do.call(wrapper, args)
+
+  used <- result$diagnostics$effective_bootstrap_method %||% args$bootstrap_method %||% "reestimated"
+  used <- if (identical(used, "fast_multiplier")) "fast" else "reestimated"
+  fallback <- bootstrap == "fast" && used == "reestimated"
+  reason <- result$diagnostics$fallback_reason %||% NA_character_
+  result$bootstrap <- list(requested = bootstrap, used = used, fallback = fallback,
+                           fallback_reason = if (fallback) reason else NA_character_)
+  if (fallback) {
+    warning("The fast bootstrap could not be used",
+            if (!is.na(reason)) paste0(" (", reason, ")"),
+            "; the re-estimated bootstrap was used instead.", call. = FALSE)
+  }
+  result
 }

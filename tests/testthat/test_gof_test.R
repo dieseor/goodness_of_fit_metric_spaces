@@ -41,3 +41,24 @@ test_that("gof_test rejects unknown null families", {
   expect_error(gof_test(x, h0 = "not_a_model"), "must be one of")
   expect_error(gof_test(x), "must be one of")
 })
+
+test_that("gof_test reports which bootstrap was used", {
+  fast <- gof_test(x, h0 = "normal", B = 19, seed = 5)
+  expect_identical(fast$bootstrap$used, "fast")
+  expect_false(fast$bootstrap$fallback)
+
+  slow <- gof_test(x, h0 = "normal", bootstrap = "reestimated", B = 19, seed = 5)
+  expect_identical(slow$bootstrap$used, "reestimated")
+  expect_false(slow$bootstrap$fallback)
+
+  set.seed(6)
+  y <- r_sph_car(30, c(0, 0, 1), 0.4, 2)
+  expect_warning(
+    forced <- gof_test(y, h0 = "cardioid", k = 2, B = 9, seed = 7,
+                       control = list(cardioid_fast_boundary_eps = 1)),
+    "re-estimated bootstrap was used"
+  )
+  expect_identical(forced$bootstrap$used, "reestimated")
+  expect_true(forced$bootstrap$fallback)
+  expect_identical(forced$bootstrap$fallback_reason, "cardioid_rho_zero_nonidentification")
+})

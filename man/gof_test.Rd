@@ -17,7 +17,7 @@ gof_test(data, h0, theta = NULL, bootstrap = c("fast", "reestimated"), B = 1000,
   \item{n_cores}{Number of cores.}
   \item{\dots}{Further arguments for the model, passed to the corresponding \code{multiplier_bootstrap_*} function (for example \code{k} for the cardioid or \code{distance_type}).}
 }
-\value{The result of the corresponding \code{multiplier_bootstrap_*} function. The p-values are in \code{$inference$ks$p_value} and \code{$inference$cvm$p_value}.}
+\value{The result of the corresponding \code{multiplier_bootstrap_*} function. The p-values are in \code{$inference$ks$p_value} and \code{$inference$cvm$p_value}. The element \code{$bootstrap} gives the bootstrap requested and used; if the fast bootstrap is not valid for the fitted model (for example at a boundary of the parameter space), the re-estimated one is used, \code{$bootstrap$fallback} is \code{TRUE} and a warning is given.}
 \examples{
 set.seed(1)
 x <- rnorm(50)
