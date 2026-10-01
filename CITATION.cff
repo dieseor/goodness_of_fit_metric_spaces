@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the paper below."
+title: "dpgof: distance profile goodness-of-fit tests"
+type: software
+authors:
+  - family-names: Serrano
+    given-names: Diego
+license: MIT
+repository-code: "https://github.com/dieseor/goodness_of_fit_metric_spaces"
+version: 0.1.0
+preferred-citation:
+  type: article
+  title: "Goodness-of-fit for distributions on metric spaces"
+  authors:
+    - family-names: Serrano
+      given-names: Diego
+    - family-names: García-Portugués
+      given-names: Eduardo
+    - family-names: Van Keilegom
+      given-names: Ingrid
+  year: 2026
+  url: "https://arxiv.org/abs/2609.38158"
+  identifiers:
+    - type: other
+      value: "arXiv:2609.38158"
+      description: arXiv preprint

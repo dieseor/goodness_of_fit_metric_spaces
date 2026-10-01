@@ -21,7 +21,9 @@ jobs:
       - name: Install system libraries required by renv packages
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libgsl-dev libnetcdf-dev libglu1-mesa-dev
+          sudo apt-get install --yes libgsl-dev libnetcdf-dev libglu1-mesa-dev \
+            libfontconfig1-dev libfreetype6-dev libharfbuzz-dev libfribidi-dev \
+            libpng-dev libjpeg-dev libtiff-dev
 
       - name: Restore renv library
         uses: r-lib/actions/setup-renv@v2
@@ -36,11 +38,25 @@ jobs:
           R CMD INSTALL dpgof_*.tar.gz
           Rscript paper/check_package.R
 
-      - name: Test optional C++ distance-profile backend
-        run: Rscript -e 'testthat::test_file("tests/testthat/test_cpp_distance_profile_backend.R", stop_on_failure = TRUE)'
-
-      - name: Test the retained cardioid functions
-        run: Rscript -e 'testthat::test_file("tests/testthat/test_cardioid_model_spec.R", stop_on_failure = TRUE)'
+      - name: Run the tests used for the paper
+        run: |
+          for test in \
+            test_cpp_distance_profile_backend \
+            test_fast_multiplier_cpp_kernel \
+            test_multiplier_bootstrap \
+            test_restricted_spiked_normal_model_spec \
+            test_normal_sigma_Id_model_spec \
+            test_logistic_gaussian_sigma_shape_model_spec \
+            test_vmf_fixed_kappa_model_spec \
+            test_hvmf_hq_model_spec \
+            test_section6_new_scenarios \
+            test_sunspots_joint_time_space \
+            test_cardioid_model_spec \
+            test_small_circle_bootstrap \
+            ; do
+            echo "== $test"
+            Rscript -e "testthat::test_file('tests/testthat/${test}.R', stop_on_failure = TRUE)"
+          done
 
       - name: Check renv status
         run: Rscript -e 'renv::status()'

@@ -10,7 +10,7 @@ You need R 4.1 or newer (required by ggplot2). We have run the code with R 4.2.1
 
 ```r
 install.packages("remotes")
-remotes::install_github("dieseor/dpgof")
+remotes::install_github("dieseor/goodness_of_fit_metric_spaces")
 ```
 
 The package versions used to obtain the results of the paper are in `renv.lock`.
@@ -45,3 +45,7 @@ Both give similar p-values, but the fast bootstrap is much quicker: on this exam
 ## Reproducing the paper
 
 [paper/README.md](paper/README.md) lists the tables and figures of the paper together with the scripts and saved inputs that produce them.
+
+## Citation
+
+If you use this code, please cite the paper. The citation details are in `CITATION.cff`.

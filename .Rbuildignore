@@ -16,3 +16,4 @@
 ^paper$
 ^tmp_.*$
 ^LICENSE\.md$
+^CITATION\.cff$

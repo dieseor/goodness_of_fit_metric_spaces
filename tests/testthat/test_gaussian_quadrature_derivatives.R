@@ -378,7 +378,7 @@ test_that("Gaussian quadrature handles q 1, 2 and 10 and boundary probabilities"
   }
 })
 
-test_that("auto selects quadrature while explicit and legacy score_mc remain", {
+test_that("mvnormal auto and default derivative selection use score_mc", {
   set.seed(8127)
   x <- mvtnorm::rmvnorm(10L, c(0, 0), diag(2L))
   common <- list(
@@ -398,7 +398,7 @@ test_that("auto selects quadrature while explicit and legacy score_mc remain", {
     common, list(control = list(derivative_method = "auto"))
   ))
   expect_identical(automatic$diagnostics$derivative_method_requested, "auto")
-  expect_identical(automatic$diagnostics$derivative_method_effective, "quadrature")
+  expect_identical(automatic$diagnostics$derivative_method_effective, "score_mc")
   expect_identical(
     automatic$diagnostics$derivative_method_selection_source, "explicit_auto"
   )
@@ -411,19 +411,16 @@ test_that("auto selects quadrature while explicit and legacy score_mc remain", {
     ))
   ))
   expect_identical(explicit_mc$diagnostics$derivative_method_effective, "score_mc")
-  legacy <- expect_warning(
-    do.call(multiplier_bootstrap_mvnormal, c(
-      common,
-      list(control = list(
-        derivative_mc_size = 100L,
-        derivative_mc_seed = 8129L
-      ))
-    )),
-    "legacy.*Selecting `score_mc`"
-  )
+  legacy <- do.call(multiplier_bootstrap_mvnormal, c(
+    common,
+    list(control = list(
+      derivative_mc_size = 100L,
+      derivative_mc_seed = 8129L
+    ))
+  ))
   expect_identical(legacy$diagnostics$derivative_method_effective, "score_mc")
   expect_identical(
     legacy$diagnostics$derivative_method_selection_source,
-    "legacy_mc_controls"
+    "model_default"
   )
 })

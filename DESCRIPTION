@@ -1,12 +1,12 @@
 Package: dpgof
 Title: Distance Profile Goodness-of-Fit Tests
 Version: 0.1.0
-Authors@R: c(
-    person("Diego", "Serrano", role = c("aut", "cre"), email = "dieserra@est-econ.uc3m.es"),
-    person("Eduardo", "García-Portugués", role = "ctb"))
+Authors@R: person("Diego", "Serrano", role = c("aut", "cre"), email = "dieserra@est-econ.uc3m.es")
 Description: Multiplier bootstrap goodness-of-fit tests based on distance
     profiles for Euclidean, directional, hyperbolic, and compositional data.
 License: MIT + file LICENSE
+URL: https://github.com/dieseor/goodness_of_fit_metric_spaces
+BugReports: https://github.com/dieseor/goodness_of_fit_metric_spaces/issues
 Encoding: UTF-8
 Depends: R (>= 4.1.0)
 Imports: Rcpp, stats, utils, graphics, grDevices, parallel, methods,
