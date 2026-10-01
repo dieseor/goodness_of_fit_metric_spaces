@@ -24,23 +24,14 @@ library(dpgof)
 set.seed(1)
 x <- rnorm(100)
 
-# Fast bootstrap
-fast <- multiplier_bootstrap_normal(x, null = list(type = "composite"),
-                                    unknown_param = "both",
-                                    bootstrap_method = "fast_multiplier",
-                                    keep = list(observed_process = FALSE))
+fast <- gof_test(x, h0 = "normal")                           # fast bootstrap
+slow <- gof_test(x, h0 = "normal", bootstrap = "reestimated")  # re-estimates the parameters in each replicate
+
 fast$inference$ks$p_value
 fast$inference$cvm$p_value
-
-# Bootstrap that re-estimates the parameters in each replicate
-slow <- multiplier_bootstrap_normal(x, null = list(type = "composite"),
-                                    unknown_param = "both",
-                                    bootstrap_method = "reestimated")
-slow$inference$ks$p_value
-slow$inference$cvm$p_value
 ```
 
-Both give similar p-values, but the fast bootstrap is much quicker: on this example it takes well under a second, against about half a minute for the re-estimated one. Other models work the same way through the `multiplier_bootstrap_*` functions (`multiplier_bootstrap_vmf()`, `multiplier_bootstrap_logistic_gaussian()`, ...).
+In the simulations of the paper, the fast bootstrap was on average 438 times faster than the re-estimated one, with almost the same rejection rates. Other null distributions are chosen with `h0`, for example `"vmf"`, `"hvmf"` or `"logistic_gaussian"` (see `?gof_test`).
 
 ## Reproducing the paper
 

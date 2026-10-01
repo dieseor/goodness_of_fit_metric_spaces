@@ -41,6 +41,7 @@ jobs:
       - name: Run the tests used for the paper
         run: |
           for test in \
+            test_gof_test \
             test_cpp_distance_profile_backend \
             test_fast_multiplier_cpp_kernel \
             test_multiplier_bootstrap \

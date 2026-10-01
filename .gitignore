@@ -80,8 +80,7 @@ real_data/wind/risoe_m_all.nc
 !/real_data/wind/month_diagnostics/nov_dec_77m_ks_cvm_b5000/fast_sampleks_strict_step4/
 
 # Research outputs and editor settings kept out of the repository
-simulation_results/*
-!simulation_results/paper_fast_vs_reestimated_n100_beta0/
+simulation_results/
 real_data/wind/risoe_m_concurent.nc
 .vscode/
 
