@@ -6,7 +6,7 @@ The tests are built from distance profiles and calibrated with a multiplier boot
 
 ## Install
 
-You need R 4.2 or newer.
+You need R 4.1 or newer (required by ggplot2). We have run the code with R 4.2.1 and 4.4.2.
 
 ```r
 install.packages("remotes")

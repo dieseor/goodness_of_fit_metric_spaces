@@ -11,10 +11,6 @@ Sys.setenv(
 )
 
 source("utils.R")
-source("utils.R")
-source("utils.R")
-source("utils.R")
-source("utils.R")
 ensure_distance_profile_cpp_loaded()
 
 args <- commandArgs(trailingOnly = TRUE)

@@ -11,10 +11,6 @@ Sys.setenv(
 )
 
 source("utils.R")
-source("utils.R")
-source("utils.R")
-source("utils.R")
-source("utils.R")
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 4L) {
