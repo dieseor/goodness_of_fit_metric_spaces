@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Real-data GOF tables of the paper (sunspots, comets, wind, compositions),
 # with the settings and seeds of the runs used in the paper. Those runs were
-# made in three steps: this script up to step 6 (2026-08-31), the sunspot run
-# with Nderiv = 10000 (2026-09-08) and steps 7-8 (2026-09-08 and 2026-09-16).
+# made in several steps: this script up to step 6 (2026-08-31), the sunspot run
+# with Nderiv = 10000 (2026-09-08), steps 7-8 (2026-09-08 and 2026-09-16) and
+# step 9 (2026-08-03, with 10 cores; the result does not depend on the cores).
 # The wind step uses the samples in paper/artifacts/wind/, selected from
 # risoe_m_all.nc of the DTU Risø archive.
 set -euo pipefail
@@ -300,5 +301,9 @@ run comets_joint Rscript --vanilla scripts/run_paper_comets_joint_score_mc.R \
 run comets_uniform_beta_joint Rscript --vanilla scripts/run_comets_uniform_beta_joint_kernel.R \
   --B=1000 --n_cores=2 \
   --output_root="$OUT/comets/uniform_beta_joint"
+
+# 9. Compositions: BHEP (Henze--Zirkler) column of the compositional table.
+run compositions_bhep Rscript --vanilla scripts/run_logistic_gaussian_hz_pvalues.R \
+  --cores=3 --output_dir="$OUT/compositions_bhep"
 
 printf '\nDone. Results in: %s\n' "$OUT"

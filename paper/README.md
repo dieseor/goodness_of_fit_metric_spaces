@@ -54,7 +54,7 @@ python3 paper/summarize_table3.py slow paper/artifacts/table3/slow_batches slow.
 bash paper/run_real_data.sh
 ```
 
-runs the goodness-of-fit tests of the four real-data tables with the seeds of the paper. The BHEP column of the compositional table comes from `scripts/run_logistic_gaussian_hz_pvalues.R`.
+runs the goodness-of-fit tests of the four real-data tables with the seeds of the paper, including the BHEP column of the compositional table (`scripts/run_logistic_gaussian_hz_pvalues.R`, which takes a few seconds).
 
 The figures of the real-data section are drawn by `rebuild_figures.sh` from the saved samples: sunspots with `scripts/plot_spherical_parametric_hdr_bands.R`, wind with `real_data/wind/plot_risoe_extended_r_density_panels.R` and the simplex contours with `scripts/run_sediments_simplex_contours.R`. The wind samples were selected from the open DTU Risø archive cited in the paper.
 
