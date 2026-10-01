@@ -29,7 +29,7 @@ run() {
 }
 
 # 1. Sunspots: cycle 23, joint time-space model.
-run sunspots Rscript --vanilla real_data/sunspots/run_sunspots_cycle23_joint_time_space_gof.R \
+run sunspots Rscript real_data/sunspots/run_sunspots_cycle23_joint_time_space_gof.R \
   --input_csv=real_data/sunspots/output/sunspots_cycle23_s2_all.csv \
   --statistics=ks,cvm \
   --hemisphere_regression=shared \
@@ -292,18 +292,18 @@ for (j in seq_along(indices)) {
 '
 
 # 7. Comets: joint C2 and SC tests with Nderiv = 10000, using the fits above.
-run comets_joint Rscript --vanilla scripts/run_paper_comets_joint_score_mc.R \
+run comets_joint Rscript scripts/run_paper_comets_joint_score_mc.R \
   --B=1000 --n_cores=3 \
   --reference_dir="$OUT" \
   --output_dir="$OUT/comets/joint"
 
 # 8. Comets: uniform-beta mixture with the joint kernel.
-run comets_uniform_beta_joint Rscript --vanilla scripts/run_comets_uniform_beta_joint_kernel.R \
+run comets_uniform_beta_joint Rscript scripts/run_comets_uniform_beta_joint_kernel.R \
   --B=1000 --n_cores=2 \
   --output_root="$OUT/comets/uniform_beta_joint"
 
 # 9. Compositions: BHEP (Henze--Zirkler) column of the compositional table.
-run compositions_bhep Rscript --vanilla scripts/run_logistic_gaussian_hz_pvalues.R \
+run compositions_bhep Rscript scripts/run_logistic_gaussian_hz_pvalues.R \
   --cores=3 --output_dir="$OUT/compositions_bhep"
 
 printf '\nDone. Results in: %s\n' "$OUT"
