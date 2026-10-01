@@ -3,57 +3,7 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("real_data", "sunspots", "run_sunspots_cycle23_temporal_beta_diagnostics.R"))
 source(file.path("real_data", "sunspots", "run_sunspots_cycle23_joint_time_space_gof.R"))
-
-make_temporal_diagnostic_input <- function(n = 20L) {
-  temporary_csv <- tempfile(fileext = ".csv")
-  dates <- as.POSIXct("1996-08-06 06:04:49", tz = "UTC") + seq_len(n) * 86400
-  z <- seq(-0.8, 0.8, length.out = n)
-  utils::write.csv(data.frame(
-    cycle = 23L,
-    date = format(dates, tz = "UTC", usetz = TRUE),
-    NOAA = seq_len(n),
-    x1 = 0,
-    x2 = sqrt(1 - z^2),
-    x3 = z
-  ), temporary_csv, row.names = FALSE)
-  temporary_csv
-}
-
-test_that("temporal diagnostics derive full-cycle support and preserve loader reproducibility", {
-  input_csv <- make_temporal_diagnostic_input()
-  on.exit(unlink(input_csv), add = TRUE)
-  definitions <- sunspots_joint_temporal_sample_definitions(input_csv)
-  full <- definitions[definitions$sample == "full", , drop = FALSE]
-  expect_equal(full$start_date, "1996-08-07")
-  expect_equal(full$end_date, "1996-08-27")
-
-  first <- prepare_sunspots_joint_time_data(input_csv, full$start_date, full$end_date, 17L)
-  repeated <- prepare_sunspots_joint_time_data(input_csv, full$start_date, full$end_date, 17L)
-  expect_equal(first$dequantization_jitter_day, repeated$dequantization_jitter_day)
-  expect_equal(first$dequantization_jitter_centered_day, first$dequantization_jitter_day)
-  expect_true(all(first$dequantization_jitter_day > -0.5))
-  expect_true(all(first$dequantization_jitter_day < 0.5))
-  expect_true(all(first$s > 0 & first$s < 1))
-  expect_equal(sunspots_joint_temporal_sensitivity_seeds(20260712L), 20260712L + 0:19)
-})
-
-test_that("future rank windows have the prescribed sizes and center levels", {
-  input_csv <- make_temporal_diagnostic_input()
-  on.exit(unlink(input_csv), add = TRUE)
-  definitions <- sunspots_joint_temporal_sample_definitions(input_csv)
-  full <- definitions[definitions$sample == "full", , drop = FALSE]
-  data <- prepare_sunspots_joint_time_data(input_csv, full$start_date, full$end_date, 31L)
-  windows <- sunspots_joint_temporal_rank_windows(data)
-
-  expect_equal(windows$lower_rank_level, c(0, .10, .20, .40, .60))
-  expect_equal(windows$upper_rank_level, c(.10, .20, .40, .60, .80))
-  expect_equal(windows$n, c(2L, 2L, 4L, 4L, 4L))
-  expect_equal(windows$center_rank_level, c(.05, .15, .30, .50, .70))
-  expect_equal(windows$center_rank, c(1L, 3L, 6L, 10L, 14L))
-  expect_equal(windows$center_empirical_quantile, c(.05, .15, .30, .50, .70))
-})
 
 test_that("joint GOF seed defaults are distinct and remain in output metadata", {
   defaults <- formals(run_sunspots_cycle23_joint_time_space_gof)

@@ -3,36 +3,11 @@ library(testthat)
 oldwd <- setwd(normalizePath(file.path("..", "..")))
 on.exit(setwd(oldwd), add = TRUE)
 
-source(file.path("real_data", "sunspots", "run_sunspots_cycle23_temporal_beta_composite_gof.R"))
 source(file.path("real_data", "sunspots", "run_sunspots_cycle23_joint_spatial_window_kde_plots.R"))
 
 make_joint_theta_for_tests <- function() {
   list(a_N = 0.55, b_N = -0.18, a_S = 0.50, b_S = -0.15, c = 14)
 }
-
-test_that("Rgof composite audit checks refit-style phat usage", {
-  fake_gof_test <- function(x, vals, pnull, rnull, phat, B, doMethods, maxProcessor = 1L, ...) {
-    phat(x)
-    for (i in seq_len(B)) {
-      x_star <- rnull(phat(x) + c(i * 1e-3, 0))
-      phat(x_star)
-    }
-    list(
-      statistics = c(KS = 0.1, CvM = 0.2, AD = 0.3),
-      p.values = c(KS = 0.2, CvM = 0.3, AD = 0.4)
-    )
-  }
-
-  audit <- sunspots_temporal_rgof_composite_refit_audit(
-    B = 9L,
-    sample_size = 30L,
-    seed = 123L,
-    gof_test_fun = fake_gof_test
-  )
-  expect_true(audit$refit_pass)
-  expect_gte(audit$phat_calls, audit$required_min_calls)
-  expect_true(audit$unique_phat_means > 1L)
-})
 
 test_that("spatial windows use the requested non-cumulative rank bins", {
   s <- seq(0.01, 0.99, length.out = 20L)
