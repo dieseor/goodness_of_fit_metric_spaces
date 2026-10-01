@@ -48,4 +48,4 @@ Both give similar p-values, but the fast bootstrap is much quicker: on this exam
 
 ## Citation
 
-If you use this code, please cite the paper. The citation details are in `CITATION.cff`.
+If you use this code, please cite the paper: D. Serrano, E. García-Portugués and I. Van Keilegom (2026), *Goodness-of-fit for distributions on metric spaces*, [arXiv:2609.38158](https://arxiv.org/abs/2609.38158).

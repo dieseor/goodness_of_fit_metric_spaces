@@ -84,3 +84,6 @@ simulation_results/*
 !simulation_results/paper_fast_vs_reestimated_n100_beta0/
 real_data/wind/risoe_m_concurent.nc
 .vscode/
+
+# Kept locally for now
+CITATION.cff
