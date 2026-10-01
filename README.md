@@ -44,7 +44,16 @@ Both give similar p-values, but the fast bootstrap is much quicker: on this exam
 
 ## Reproducing the paper
 
-[paper/README.md](paper/README.md) lists the tables and figures of the paper together with the scripts and saved inputs that produce them.
+To reproduce the experiments from the paper, install the package versions we used and run the scripts in `paper/` from the root of the repository:
+
+```sh
+Rscript -e 'renv::restore()'
+R CMD INSTALL .
+
+bash paper/run_simulations.sh            # simulation study (long, we ran it on a cluster)
+bash paper/run_real_data.sh              # real data
+sh paper/rebuild_figures.sh paper/rendered   # figures
+```
 
 ## Citation
 
