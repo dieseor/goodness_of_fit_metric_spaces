@@ -8,7 +8,7 @@ Description: Multiplier bootstrap goodness-of-fit tests based on distance
     profiles for Euclidean, directional, hyperbolic, and compositional data.
 License: MIT + file LICENSE
 Encoding: UTF-8
-Depends: R (>= 4.4.0)
+Depends: R (>= 4.2.0)
 Imports: Rcpp, stats, utils, graphics, grDevices, parallel, methods,
     movMF, sphunif, pracma, rotasym, mvtnorm, gbutils, ggplot2
 Suggests: testthat, OpenMx

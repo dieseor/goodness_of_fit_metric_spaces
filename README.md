@@ -1,19 +1,19 @@
 # dpgof
 
-This repository contains the code needed to reproduce the results of the paper *Goodness-of-fit for distributions on metric spaces*.
+This repository contains the code needed to reproduce the results of the paper [*Goodness-of-fit for distributions on metric spaces*](https://arxiv.org/abs/2609.38158).
 
 The tests are built from distance profiles and calibrated with a multiplier bootstrap. There are models for Euclidean, directional, hyperbolic and compositional data.
 
 ## Install
 
-You need R 4.4 or newer.
+You need R 4.2 or newer.
 
 ```r
 install.packages("remotes")
 remotes::install_github("dieseor/dpgof")
 ```
 
-The package versions we used are in `renv.lock`.
+The package versions used to obtain the results of the paper are in `renv.lock`.
 
 ## Example
 
