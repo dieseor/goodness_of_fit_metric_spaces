@@ -54,11 +54,108 @@ def rows(name):
         return list(csv.DictReader(stream))
 
 
-def check_rounded(table, values, digits=4):
-    missing = [f"{float(value):.{digits}f}" for value in values
-               if f"{float(value):.{digits}f}" not in table]
-    if missing:
-        raise AssertionError(f"Values missing from table: {missing}")
+def table_rows(table):
+    """Split a tabular block into rows of stripped cells, ignoring comments and rules."""
+    body = "\n".join(re.split(r"(?<!\\)%", line, maxsplit=1)[0] for line in table.splitlines())
+    rows = []
+    for row in re.split(r"\\\\", body):
+        row = re.sub(r"\\(toprule|midrule|bottomrule|hline)\b|\\cmidrule(\([^)]*\))?\{[^}]*\}", "", row)
+        if "&" in row:
+            rows.append([cell.strip().split("\n")[-1].strip() for cell in row.split("&")])
+    return rows
+
+
+def label(cell):
+    """Plain text of a row label such as \\texttt{WhiteCells\\_microscopic} or $\\mathrm{C}_2$."""
+    text = re.sub(r"\\(texttt|mathrm|textbf|mathbf)\{([^}]*)\}", r"\2", cell)
+    text = text.replace("\\_", "_")
+    text = re.sub(r"_\{?(\d)\}?", r"\1", text)
+    return re.sub(r"[${}\\\s]", "", text).replace("--", "_").lower()
+
+
+def header_index(rows, names):
+    for i, row in enumerate(rows):
+        if all(name in row for name in names):
+            return i
+    raise AssertionError(f"Header with {names} not found")
+
+
+def compare(where, table_value, saved, digits):
+    expected = f"{float(saved):.{digits}f}"
+    found = number(table_value)
+    if found is None or f"{found:.{digits}f}" != expected:
+        raise AssertionError(f"{where}: table has {table_value!r}, saved result is {expected}")
+
+
+def check_real_data(tables):
+    """Compare every saved value with its own row and column of the real-data tables."""
+    checked = 0
+
+    # Sunspots: a single row of estimates followed by the KS and CM p-values.
+    t = table_rows(tables["sunspots"])
+    h = header_index(t, ["KS", "CM"])
+    data = [row for row in t[h + 1:] if len(row) == len(t[h])]
+    assert len(data) == 1, data
+    saved = {row["statistic_type"].split("_")[0]: row for row in rows("sunspots_gof.csv")}
+    estimates = ["temporal_weight1", "temporal_alpha1", "temporal_beta1", "temporal_alpha2", "temporal_beta2",
+                 "a_N", "b_N", "c"]
+    for position, column in enumerate(estimates):
+        compare(f"sunspots {column}", data[0][position], saved["ks"][column], 2)
+        checked += 1
+    for column, statistic in (("KS", "ks"), ("CM", "cvm")):
+        compare(f"sunspots {column}", data[0][t[h].index(column)], saved[statistic]["p_value"], 4)
+        checked += 1
+
+    # Comets: models in rows, long and short period in column blocks.
+    t = table_rows(tables["comets"])
+    h = header_index(t, ["AIC", "BIC", "KS", "CM"])
+    periods = ("long", "short") if " ".join(t[h - 1]).find("Long") < " ".join(t[h - 1]).find("Short") else ("short", "long")
+    ks_cols = [i for i, cell in enumerate(t[h]) if cell == "KS"]
+    cm_cols = [i for i, cell in enumerate(t[h]) if cell == "CM"]
+    saved = {(row["model"].lower(), row["period"]): (row["ks_pvalue"], row["cvm_pvalue"]) for row in rows("comets_c2_sc.csv")}
+    saved.update({("ub", row["dataset"].split("_")[0]): (row["gof_ks_p_value"], row["gof_cvm_p_value"])
+                  for row in rows("comets_ub.csv")})
+    body = [row for row in t[h + 1:] if len(row) == len(t[h])]
+    assert sorted(label(row[0]) for row in body) == ["c2", "sc", "ub"], [row[0] for row in body]
+    for row in body:
+        for period, ks_col, cm_col in zip(periods, ks_cols, cm_cols):
+            ks, cm = saved[(label(row[0]), period)]
+            compare(f"comets {row[0]} {period} KS", row[ks_col], ks, 4)
+            compare(f"comets {row[0]} {period} CM", row[cm_col], cm, 4)
+            checked += 2
+
+    # Wind: one row per window.
+    t = table_rows(tables["wind"])
+    h = header_index(t, ["Months", "KS", "CM"])
+    saved = {row["window_id"]: row for row in rows("wind_gof.csv")}
+    body = [row for row in t[h + 1:] if len(row) == len(t[h])]
+    assert sorted(label(row[0]) for row in body) == sorted(saved), [row[0] for row in body]
+    for row in body:
+        s = saved[label(row[0])]
+        compare(f"wind {row[0]} n", row[1], s["n_valid"], 0)
+        mu = [float(x) for x in re.findall(r"-?\d+\.\d+", row[2])]
+        assert [f"{x:.2f}" for x in mu] == [f"{float(s[k]):.2f}" for k in ("mu1_hat", "mu2_hat", "mu3_hat")], (row[0], mu)
+        compare(f"wind {row[0]} kappa", row[3], s["kappa_hat"], 1)
+        compare(f"wind {row[0]} KS", row[t[h].index("KS")], s["p_value_KS"], 4)
+        compare(f"wind {row[0]} CM", row[t[h].index("CM")], s["p_value_CvM"], 4)
+        checked += 7
+
+    # Compositions: one row per dataset, with the BHEP column.
+    t = table_rows(tables["compositions"])
+    h = header_index(t, ["Dataset", "KS", "CM", "BHEP"])
+    saved = {row["dataset"].lower(): row for row in rows("compositions_ks_cvm.csv")}
+    bhep = {row["dataset"].lower(): row["p_value"] for row in rows("hz_pvalues.csv")}
+    body = [row for row in t[h + 1:] if len(row) == len(t[h])]
+    assert sorted(label(row[0]) for row in body) == sorted(saved) == sorted(bhep), [row[0] for row in body]
+    for row in body:
+        s = saved[label(row[0])]
+        compare(f"compositions {row[0]} n", row[1], s["n"], 0)
+        compare(f"compositions {row[0]} d", row[2], s["ilr_dimension"], 0)
+        compare(f"compositions {row[0]} KS", row[t[h].index("KS")], s["ks_pvalue"], 4)
+        compare(f"compositions {row[0]} CM", row[t[h].index("CM")], s["cvm_pvalue"], 4)
+        compare(f"compositions {row[0]} BHEP", row[t[h].index("BHEP")], bhep[label(row[0])], 4)
+        checked += 5
+    return checked
 
 
 def main(tex_path):
@@ -99,17 +196,8 @@ def main(tex_path):
             assert round(slow_time, 1) == timing_rows[6 + dimension_index][scenario_index]
             assert round(slow_time / fast_time) == timing_rows[8 + dimension_index][scenario_index]
 
-    check_rounded(tables["sunspots"], [row["p_value"] for row in rows("sunspots_gof.csv")])
-    check_rounded(tables["comets"], [row[stat] for name in ("comets_c2_sc.csv", "comets_ub.csv")
-                                         for row in rows(name)
-                                         for stat in (("ks_pvalue", "cvm_pvalue") if name == "comets_c2_sc.csv"
-                                                      else ("gof_ks_p_value", "gof_cvm_p_value"))])
-    check_rounded(tables["wind"], [row[stat] for row in rows("wind_gof.csv")
-                                       for stat in ("p_value_KS", "p_value_CvM")])
-    check_rounded(tables["compositions"], [row[stat] for row in rows("compositions_ks_cvm.csv")
-                                               for stat in ("ks_pvalue", "cvm_pvalue")])
-    check_rounded(tables["compositions"], [row["p_value"] for row in rows("hz_pvalues.csv")])
-    print("Matched 480 simulation cells, all 80 Table 3 values, and saved GOF p-values in four real-data tables, including the BHEP column.")
+    cells = check_real_data(tables)
+    print(f"Matched 480 simulation cells, all 80 Table 3 values and {cells} cells of the four real-data tables.")
 
 
 if __name__ == "__main__":
