@@ -2007,6 +2007,37 @@
       "Maintainer": "Thomas Lin Pedersen <thomas.pedersen@posit.co>",
       "Repository": "CRAN"
     },
+    "gtools": {
+      "Package": "gtools",
+      "Version": "3.9.5",
+      "Source": "Repository",
+      "Title": "Various R Programming Tools",
+      "Description": "Functions to assist in R programming, including: - assist in developing, updating, and maintaining R and R packages ('ask', 'checkRVersion', 'getDependencies', 'keywords', 'scat'), - calculate the logit and inverse logit transformations ('logit', 'inv.logit'), - test if a value is missing, empty or contains only NA and NULL values ('invalid'), - manipulate R's .Last function ('addLast'), - define macros ('defmacro'), - detect odd and even integers ('odd', 'even'), - convert strings containing non-ASCII characters (like single quotes) to plain ASCII ('ASCIIfy'), - perform a binary search ('binsearch'), - sort strings containing both numeric and character components ('mixedsort'), - create a factor variable from the quantiles of a continuous variable ('quantcut'), - enumerate permutations and combinations ('combinations', 'permutation'), - calculate and convert between fold-change and log-ratio ('foldchange', 'logratio2foldchange', 'foldchange2logratio'), - calculate probabilities and generate random numbers from Dirichlet distributions ('rdirichlet', 'ddirichlet'), - apply a function over adjacent subsets of a vector ('running'), - modify the TCP_NODELAY ('de-Nagle') flag for socket objects, - efficient 'rbind' of data frames, even if the column names don't match ('smartbind'), - generate significance stars from p-values ('stars.pval'), - convert characters to/from ASCII codes ('asc', 'chr'), - convert character vector to ASCII representation ('ASCIIfy'), - apply title capitalization rules to a character vector ('capwords').",
+      "Authors@R": "c(person(\"Gregory R.\", \"Warnes\", role = \"aut\"), person(\"Ben\", \"Bolker\", role = c(\"aut\", \"cre\"), email = \"bolker@mcmaster.ca\", comment=c(ORCID=\"0000-0002-2127-0443\")), person(\"Thomas\", \"Lumley\", role = \"aut\"), person(\"Arni\", \"Magnusson\", role = \"aut\"), person(\"Bill\", \"Venables\", role = \"aut\"), person(\"Genei\", \"Ryodan\", role = \"aut\"), person(\"Steffen\", \"Moeller\", role = \"aut\"), person(\"Ian\", \"Wilson\", role = \"ctb\"), person(\"Mark\", \"Davis\", role = \"ctb\"), person(\"Nitin\", \"Jain\", role=\"ctb\"), person(\"Scott\", \"Chamberlain\", role = \"ctb\"))",
+      "License": "GPL-2",
+      "Depends": [
+        "methods",
+        "stats",
+        "utils"
+      ],
+      "URL": "https://github.com/r-gregmisc/gtools",
+      "BugReports": "https://github.com/r-gregmisc/gtools/issues",
+      "Language": "en-US",
+      "Suggests": [
+        "car",
+        "gplots",
+        "knitr",
+        "rstudioapi",
+        "SGP",
+        "taxize"
+      ],
+      "RoxygenNote": "7.2.3",
+      "Encoding": "UTF-8",
+      "NeedsCompilation": "yes",
+      "Author": "Gregory R. Warnes [aut], Ben Bolker [aut, cre] (<https://orcid.org/0000-0002-2127-0443>), Thomas Lumley [aut], Arni Magnusson [aut], Bill Venables [aut], Genei Ryodan [aut], Steffen Moeller [aut], Ian Wilson [ctb], Mark Davis [ctb], Nitin Jain [ctb], Scott Chamberlain [ctb]",
+      "Maintainer": "Ben Bolker <bolker@mcmaster.ca>",
+      "Repository": "CRAN"
+    },
     "highr": {
       "Package": "highr",
       "Version": "0.11",
@@ -2743,6 +2774,31 @@
       "NeedsCompilation": "yes",
       "Author": "Yihui Xie [aut, cre] (<https://orcid.org/0000-0003-0645-5666>, https://yihui.org), Jeffrey Horner [ctb], Beilei Bian [ctb]",
       "Maintainer": "Yihui Xie <xie@yihui.name>",
+      "Repository": "CRAN"
+    },
+    "mnt": {
+      "Package": "mnt",
+      "Version": "1.3",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "Affine Invariant Tests of Multivariate Normality",
+      "Authors@R": "c(person(\"Lucas\", \"Butsch\", email=\"lucas.butsch@gmail.com\", role=c(\"aut\")), person(\"Bruno\", \"Ebner\", email=\"bruno.ebner@kit.edu\", role = c(\"aut\", \"cre\")), person(\"Jaco\", \"Visagie\", email=\"jaco.visagie@nwu.ac.za\", role=c(\"ctb\")), person(\"Johann\", \"Siemens\", email=\"johann-siemens@web.de\", role=c(\"ctb\")))",
+      "Description": "Various affine invariant multivariate normality tests are provided. It is designed to accompany the survey article Ebner, B. and Henze, N. (2020) <arXiv:2004.07332> titled \"Tests for multivariate normality -- a critical review with emphasis on weighted L^2-statistics\". We implement new and time honoured L^2-type tests of multivariate normality, such as the Baringhaus-Henze-Epps-Pulley (BHEP) test, the Henze-Zirkler test, the test of Henze-Jiménes-Gamero, the test of Henze-Jiménes-Gamero-Meintanis, the test of Henze-Visage, the Dörr-Ebner-Henze test based on harmonic oscillator and the Dörr-Ebner-Henze test based on a double estimation in a PDE. Secondly, we include the measures of multivariate skewness and kurtosis by Mardia, Koziol, Malkovich and Afifi and Móri, Rohatgi and Székely, as well as the associated tests. Thirdly, we include the tests of multivariate normality by Cox and Small, the 'energy' test of Székely and Rizzo, the tests based on spherical harmonics by Manzotti and Quiroz and the test of Pudelko. All the functions and tests need the data to be a n x d matrix where n is the samplesize (number of rows) and d is the dimension (number of columns).",
+      "License": "CC BY 4.0",
+      "Encoding": "UTF-8",
+      "LazyData": "true",
+      "Author": "Lucas Butsch [aut], Bruno Ebner [aut, cre], Jaco Visagie [ctb], Johann Siemens [ctb]",
+      "RoxygenNote": "7.1.0",
+      "Imports": [
+        "MASS",
+        "pracma",
+        "utils"
+      ],
+      "Maintainer": "Bruno Ebner <bruno.ebner@kit.edu>",
+      "Depends": [
+        "R (>= 3.5.0)"
+      ],
+      "NeedsCompilation": "no",
       "Repository": "CRAN"
     },
     "movMF": {

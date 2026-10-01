@@ -27,17 +27,22 @@ The sections below say where each result comes from. The Monte Carlo experiments
 
 ## Simulation study: rejection rates
 
-Each scenario has its own runner. All campaigns used `M=1000` and `B=1000`; the sample sizes, values of β, seeds and derivative method (`score_mc` for scenarios 1–4, `quadrature` for 5–8) of each campaign are in `artifacts/tables/simulation_audit.json`.
+```sh
+bash paper/run_simulations.sh          # all scenarios
+bash paper/run_simulations.sh 5 6      # only some of them
+```
+
+runs the 46 Monte Carlo campaigns behind the table with the settings and seeds of the paper (`M=1000`, `B=1000`). `CORES` sets the cores per campaign (8 by default); the results do not depend on it. The settings of each campaign, as they were run, are also recorded in `artifacts/tables/simulation_audit.json`.
 
 | Scenario | Runner |
 | --- | --- |
-| 1 | `scripts/run_restricted_spiked_normal_covariance_alternatives.R --mean_config=diagonal_100` |
+| 1 | `scripts/run_restricted_spiked_normal_covariance_alternatives.R` |
 | 2 | `scripts/run_normal_sigma_Id_t_pilot.R` |
 | 3 | `scripts/run_logistic_gaussian_dirichlet15_mu_only.R` |
-| 4 | `scripts/run_logistic_gaussian_sigma_shape_scenarios.R --scenario=t4` |
-| 5 | `scripts/run_vmf_mu_only_fixed_kappa_pilot.R --kappa_values=2` |
-| 6 | `scripts/run_vmf_antipodal_fixed_kappa_pilot.R` with `--scenario_type=projected_normal_mean_d` (β=0) and `--scenario_type=projected_normal_2sqrt_d_kappa_2d_beta_half` (β>0) |
-| 7, 8 | `scripts/run_section6_new_scenarios.R --family=hvmf` |
+| 4 | `scripts/run_logistic_gaussian_sigma_shape_scenarios.R` |
+| 5 | `scripts/run_vmf_mu_only_fixed_kappa_pilot.R` |
+| 6 | `scripts/run_vmf_antipodal_fixed_kappa_pilot.R` |
+| 7, 8 | `scripts/run_section6_new_scenarios.R` |
 
 ## Fast versus re-estimated bootstrap
 
