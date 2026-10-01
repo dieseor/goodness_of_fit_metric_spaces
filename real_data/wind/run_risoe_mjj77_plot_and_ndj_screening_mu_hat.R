@@ -95,6 +95,26 @@ make_configs <- function() {
   )
 }
 
+# The two paper windows as saved in paper/artifacts/wind/, in the format that
+# select_noon_all_months() returns. They give the same test input as the full
+# NetCDF; only the count of days dropped for missing values is lost.
+load_paper_wind_samples <- function(
+    cases_dir = file.path(repo_root, "paper", "artifacts", "wind")) {
+  files <- c("may_jun_jul_77m_start4.csv", "nov_dec_jan_77m_start4.csv")
+  samples <- lapply(file.path(cases_dir, files), function(path) {
+    x <- utils::read.csv(path, stringsAsFactors = FALSE)
+    data.frame(
+      datetime = as.POSIXct(x$datetime, tz = "UTC"),
+      year = x$year,
+      month = x$month,
+      day = x$day,
+      ws77 = x$speed,
+      wd77 = x$theta_deg
+    )
+  })
+  do.call(rbind, samples)
+}
+
 build_case_data <- function(selected_df, config, fixed_tz = "UTC") {
   dates <- as.Date(selected_df$datetime, tz = fixed_tz)
 

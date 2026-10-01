@@ -108,7 +108,8 @@ def main(tex_path):
                                        for stat in ("p_value_KS", "p_value_CvM")])
     check_rounded(tables["compositions"], [row[stat] for row in rows("compositions_ks_cvm.csv")
                                                for stat in ("ks_pvalue", "cvm_pvalue")])
-    print("Matched 480 simulation cells, all 80 Table 3 values, and saved GOF p-values in four real-data tables.")
+    check_rounded(tables["compositions"], [row["p_value"] for row in rows("hz_pvalues.csv")])
+    print("Matched 480 simulation cells, all 80 Table 3 values, and saved GOF p-values in four real-data tables, including the BHEP column.")
 
 
 if __name__ == "__main__":

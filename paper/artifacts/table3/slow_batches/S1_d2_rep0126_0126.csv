@@ -1,0 +1,2 @@
+"scenario","d","n","beta","rep","seed_data","seed_bootstrap","status","error_message","warning_message","ks_observed","cvm_observed","ks_pvalue","cvm_pvalue","ks_reject","cvm_reject","effective_bootstrap_method","elapsed_seconds","slurm_job_id"
+"S1",2,100,0,126,323388877,333388896,"ok",NA,NA,1.60801011108262,0.313760697763125,0.025974025974026,0.004995004995005,TRUE,TRUE,"reestimated",382.817,"32436"

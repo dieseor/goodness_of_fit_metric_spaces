@@ -3,7 +3,8 @@
 # with the settings and seeds of the runs used in the paper. Those runs were
 # made in three steps: this script up to step 6 (2026-08-31), the sunspot run
 # with Nderiv = 10000 (2026-09-08) and steps 7-8 (2026-09-08 and 2026-09-16).
-# The wind step needs real_data/wind/risoe_m_all.nc from the DTU Risø archive.
+# The wind step uses the samples in paper/artifacts/wind/, selected from
+# risoe_m_all.nc of the DTU Risø archive.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -160,13 +161,7 @@ source("real_data/wind/run_risoe_mjj77_plot_and_ndj_screening_mu_hat.R")
 out <- Sys.getenv("OUT_WIND")
 dir.create(out, recursive = TRUE, showWarnings = FALSE)
 
-selected_df <- select_noon_all_months(
-  load_risoe_concurrent(
-    file.path(repo_root, "real_data", "wind", "risoe_m_all.nc"),
-    fixed_tz = "UTC"
-  ),
-  fixed_tz = "UTC"
-)
+selected_df <- load_paper_wind_samples()
 configs <- make_configs()
 
 results <- run_case(

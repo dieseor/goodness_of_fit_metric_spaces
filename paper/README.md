@@ -18,13 +18,13 @@ The figure command reads only the small saved inputs in `paper/artifacts/` and w
 | --- | --- |
 | `tab:simulation_scenarios` | Scenario definitions in the manuscript; effective per-campaign settings, result paths and hashes are in `artifacts/tables/simulation_audit.json`. The simulation runners vary by model; `scripts/run_section6_new_scenarios.R` is the main catalogue. |
 | `tab:empirical_null_calibration` | 468 cells in `simulation_audit.json` plus 12 scenario 1, `n=800` cells in `scenario1_n800.csv`. The audit records campaign manifests, raw-result paths, bootstrap methods and 43 file hashes. |
-| `tab:bootstrap_procedure_comparison` | `table3_fast_rates.csv` and `table3_slow_summary.csv`. The fast summary is rebuilt by `paper/summarize_table3_fast.py` from `simulation_results/paper_fast_matched_c3_20260929_024311/fast_batches/`; the slow summary uses `simulation_results/paper_fast_vs_reestimated_n100_beta0/slow_batches/`. Each of the 16 groups has 1,000 distinct, seed-matched replications. All 80 displayed values, including both timing rows and speed-ups, match the manuscript. The raw batches remain local research outputs; the processed summaries are included here. |
+| `tab:bootstrap_procedure_comparison` | `table3_fast_rates.csv` and `table3_slow_summary.csv`, rebuilt by `python3 paper/summarize_table3.py fast paper/artifacts/table3/fast_batches <out.csv>` and `python3 paper/summarize_table3.py slow paper/artifacts/table3/slow_batches <out.csv>` from the raw batches in `artifacts/table3/`. Each of the 16 groups has 1,000 distinct, seed-matched replications; two re-estimated replications failed and were rerun on their own, and only the successful runs are used. All 80 displayed values, including both timing rows and speed-ups, match the manuscript. |
 | `tab:sunspots_cycle23_temporal_models` | `sunspots_gof.csv`, step 1 of `paper/run_real_data.sh`. |
 | `tab:comets-gof` | `comets_c2_sc.csv` and `comets_ub.csv`, steps 2-4, 7 and 8 of `paper/run_real_data.sh`. |
-| `tab:risoe-wind-gof` | `wind_gof.csv`, step 5 of `paper/run_real_data.sh`. |
-| `tab:logistic-gaussian-real-data` | `compositions_ks_cvm.csv`, step 6 of `paper/run_real_data.sh`. The BHEP column comes from `scripts/run_logistic_gaussian_hz_pvalues.R` and is not recomputed by `check_tables.py`. |
+| `tab:risoe-wind-gof` | `wind_gof.csv`, step 5 of `paper/run_real_data.sh`, which reads the two samples in `artifacts/wind/`. |
+| `tab:logistic-gaussian-real-data` | `compositions_ks_cvm.csv`, step 6 of `paper/run_real_data.sh`. The BHEP column is `hz_pvalues.csv`, from `scripts/run_logistic_gaussian_hz_pvalues.R`. |
 
-`python3 paper/check_tables.py "$PAPER_TEX"` compares 480 simulation cells, all 80 values in the bootstrap comparison table, and the stored GOF values in the four real-data tables with the current manuscript. It does not rerun the statistical experiments.
+`python3 paper/check_tables.py "$PAPER_TEX"` compares 480 simulation cells, all 80 values in the bootstrap comparison table, and the stored GOF values in the four real-data tables, including the BHEP column, with the current manuscript. It does not rerun the statistical experiments.
 
 ## Figures
 
@@ -40,4 +40,4 @@ The comparison was against the manuscript image files on 2026-09-30. PDF matchin
 
 ## Source data and scope
 
-The sunspot retained observations and fitted parameters are saved in `artifacts/sunspots/`; the original catalogue and processing code are under `real_data/sunspots/`. Wind samples are derived from the open DTU Risø archive cited in the article. The five simplex inputs are copied from the `compositions` datasets after the same closure used for the article. The vMF files are saved simulation results, not fresh simulations. The complete simulations, cluster logs and large raw data are intentionally separate from the small publication artifacts.
+The sunspot retained observations and fitted parameters are saved in `artifacts/sunspots/`; the original catalogue and processing code are under `real_data/sunspots/`. The wind samples in `artifacts/wind/` were selected from the open DTU Risø archive cited in the article; they are the data used in the test and the figures, so the original NetCDF is only needed to redo the selection. The five simplex inputs are copied from the `compositions` datasets after the same closure used for the article. The vMF files are saved simulation results, not fresh simulations. Apart from the Table 3 batches, the complete simulations, cluster logs and large raw data are kept out of the small publication artifacts.
