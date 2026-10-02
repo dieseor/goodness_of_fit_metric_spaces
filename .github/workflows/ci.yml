@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   build:
     strategy:
@@ -70,4 +74,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           Rscript -e 'if (!requireNamespace("covr", quietly = TRUE)) install.packages("covr")'
-          Rscript -e 'covr::codecov(coverage = covr::package_coverage(type = "tests"))'
+          Rscript -e 'x <- covr::package_coverage(type = "tests"); p <- covr::percent_coverage(x); cat(sprintf("Coverage: %.2f%%\n", p)); if (p < 85) stop("Coverage below 85%"); covr::to_cobertura(x, "coverage.xml")'
+
+      - name: Upload coverage to Codecov
+        if: runner.os == 'Linux'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          use_oidc: true
+          fail_ci_if_error: true
