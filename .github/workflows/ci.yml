@@ -33,13 +33,22 @@ jobs:
             libfontconfig1-dev libfreetype6-dev libharfbuzz-dev libfribidi-dev \
             libpng-dev libjpeg-dev libtiff-dev
 
+      - name: Install NetCDF on macOS
+        if: runner.os == 'macOS'
+        run: brew install netcdf
+
       - name: Restore renv library
         uses: r-lib/actions/setup-renv@v2
 
       - name: Build and check the package
         run: |
           R CMD build .
-          R CMD check --as-cran --no-manual gofmetric_*.tar.gz
+          R CMD check --as-cran --no-manual gofmetric_*.tar.gz || {
+            if [ -f gofmetric.Rcheck/00install.out ]; then
+              tail -n 120 gofmetric.Rcheck/00install.out
+            fi
+            exit 1
+          }
 
       - name: Check installed R and C++ paths
         run: |

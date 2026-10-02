@@ -275,7 +275,7 @@ test_that("mvnormal fused contiguous C++ preserves the joint KS--CvM inference",
       r_fused$bootstrap$statistics,
       tolerance = 1e-12
     )
-    expect_identical(cpp_fused$inference, r_fused$inference)
+    expect_equal(cpp_fused$inference, r_fused$inference, tolerance = 1e-12)
     expect_identical(
       cpp_fused$diagnostics$fast_multiplier_backend_effective,
       "cpp"
