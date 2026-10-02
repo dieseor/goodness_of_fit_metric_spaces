@@ -3,7 +3,12 @@
 \title{Multiplier bootstrap: cardioid}
 \description{Run distance-profile goodness-of-fit tests for the cardioid model.}
 \usage{
-multiplier_bootstrap_cardioid(data, null, k, statistics = c("ks", "cvm"), ks_grid = NULL, B = 5000, alpha = 0.05, multipliers = NULL, n_cores = 1, seed = NULL, bootstrap_method = c("reestimated", "fast_multiplier"), keep = list(observed_process = TRUE, bootstrap_statistics = TRUE, bootstrap_thetas = FALSE), control = list(), distance_type = c("chordal", "geodesic"), unknown_param = "both", distance_profile_backend = c("r", "cpp"))
+multiplier_bootstrap_cardioid(data, null, k, statistics = c("ks", "cvm"),
+  ks_grid = NULL, B = 5000, alpha = 0.05, multipliers = NULL, n_cores = 1,
+  seed = NULL, bootstrap_method = c("reestimated", "fast_multiplier"),
+  keep = list(observed_process = TRUE, bootstrap_statistics = TRUE,
+  bootstrap_thetas = FALSE), control = list(), distance_type = c("chordal",
+  "geodesic"), unknown_param = "both", distance_profile_backend = c("r", "cpp"))
 }
 \arguments{
   \item{data}{
@@ -56,4 +61,4 @@ Parameters estimated under the null.
 }
 }
 \value{A list with \code{observed}, \code{bootstrap}, \code{inference}, \code{grid}, and \code{diagnostics}. Each requested statistic has a p-value, critical value, and rejection flag under \code{inference}.}
-\details{Spherical cardioid data. Supply the positive integer order \code{k}; the model uses only \code{d_sph_car}, \code{p_proj_car_gamma}, and \code{r_sph_car} from the attributed cardioid source. For the shared bootstrap arguments and result structure, see \code{\link{multiplier_bootstrap_gof}}.}
+\details{Data are unit-vector rows. A simple null uses \code{mu}, \code{rho}, and the positive integer order \code{k}. Spherical cardioid data. Supply the positive integer order \code{k}; the model uses only \code{d_sph_car}, \code{p_proj_car_gamma}, and \code{r_sph_car} from the attributed cardioid source. For the shared bootstrap arguments and result structure, see \code{\link{multiplier_bootstrap_gof}}.}

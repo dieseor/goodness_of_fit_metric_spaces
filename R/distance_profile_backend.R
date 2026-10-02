@@ -1,6 +1,6 @@
 # Optional compiled kernels for distance-profile evaluation.
 #
-# When dpgof is installed the kernels come from the package namespace. Research
+# When gofmetric is installed the kernels come from the package namespace. Research
 # scripts that source R/ directly compile src/distance_profile_backend.cpp
 # lazily with Rcpp::sourceCpp(). Nothing is compiled when the default R
 # backend is used.
@@ -110,7 +110,7 @@ source_distance_profile_cpp <- function() {
     "distance_profile_backend.cpp"
   )
   cache_dir <- file.path(
-    tools::R_user_dir("goodness_of_fit_metric_spaces", which = "cache"),
+    tools::R_user_dir("gofmetric", which = "cache"),
     "sourceCpp"
   )
   suppressWarnings(
@@ -128,7 +128,7 @@ source_distance_profile_cpp <- function() {
   } else {
     cache_dir <- file.path(
       tempdir(),
-      "goodness_of_fit_metric_spaces",
+      "gofmetric",
       "sourceCpp"
     )
     dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
@@ -172,18 +172,11 @@ distance_profile_cpp_supports_spec <- function(spec_name) {
   spec_name <- as.character(spec_name)
   length(spec_name) == 1L && !is.na(spec_name) && (
     identical(spec_name, "normal") ||
-      grepl("^small_circle_weighted_mixture2_(chordal|geodesic)$", spec_name) ||
       grepl("^sunspots_joint_time_space_(asymmetric|shared)$", spec_name)
   )
 }
 assert_distance_profile_cpp_spec_available <- function(spec_name) {
   spec_name <- as.character(spec_name)
-  if (length(spec_name) == 1L && !is.na(spec_name) && grepl("^jp_", spec_name)) {
-    stop(
-      "The Jones-Pewsey model is intentionally excluded from the C++ distance-profile backend.",
-      call. = FALSE
-    )
-  }
   if (!distance_profile_cpp_supports_spec(spec_name)) {
     stop(sprintf(
       "The C++ distance-profile backend was not retained for model '%s' because it did not pass the exactness and end-to-end performance gates.",

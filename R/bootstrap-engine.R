@@ -365,26 +365,6 @@ multiplier_bootstrap_gof <- function(data,
                                      control = list(),
                                      distance_profile_backend = c("r", "cpp")) {
   backend <- normalize_distance_profile_backend(distance_profile_backend)
-  spec_name <- as.character(spec$name)
-  is_jones_pewsey <- length(spec_name) == 1L && !is.na(spec_name) && grepl("^jp_", spec_name)
-  if (is_jones_pewsey && identical(backend, "r")) {
-    return(.multiplier_bootstrap_gof_backend_implementation(
-      data = data,
-      spec = spec,
-      null = null,
-      statistics = statistics,
-      ks_grid = ks_grid,
-      B = B,
-      alpha = alpha,
-      multipliers = multipliers,
-      n_cores = n_cores,
-      seed = seed,
-      observed_theta_hat = observed_theta_hat,
-      bootstrap_method = bootstrap_method,
-      keep = keep,
-      control = control
-    ))
-  }
   if (identical(backend, "cpp")) {
     assert_distance_profile_cpp_spec_available(spec$name)
   }

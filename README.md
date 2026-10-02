@@ -1,51 +1,46 @@
-# dpgof
 
-This repository contains the code needed to reproduce the results of the paper [*Goodness-of-fit for distributions on metric spaces*](https://arxiv.org/abs/2609.38158).
+# gofmetric
 
-The tests are built from distance profiles and calibrated with a multiplier bootstrap. There are models for Euclidean, directional, hyperbolic and compositional data.
+[![R CI](https://github.com/dieseor/gofmetric/actions/workflows/ci.yml/badge.svg)](https://github.com/dieseor/gofmetric/actions/workflows/ci.yml) [![Coverage](https://codecov.io/gh/dieseor/gofmetric/branch/main/graph/badge.svg)](https://app.codecov.io/gh/dieseor/gofmetric)
+
+`gofmetric` implements distance-profile Kolmogorov–Smirnov and Cramér–von Mises goodness-of-fit tests for distributions on metric spaces. It accompanies [*Goodness-of-fit for distributions on metric spaces*](https://arxiv.org/abs/2609.38158). The badges become informative when this branch and its CI workflow are published under the new repository name.
 
 ## Install
 
-You need R 4.1 or newer (required by ggplot2). We have run the code with R 4.2.1 and 4.4.2.
+R 4.1 or newer is required. Install the development version from GitHub:
 
-```r
+``` r
 install.packages("remotes")
-remotes::install_github("dieseor/goodness_of_fit_metric_spaces")
+remotes::install_github("dieseor/gofmetric")
 ```
-
-The package versions used to obtain the results of the paper are in `renv.lock`.
 
 ## Example
 
-Test whether a sample is normal, with the mean and variance estimated from the data:
-
-```r
-library(dpgof)
+``` r
+library(gofmetric)
 set.seed(1)
 x <- rnorm(100)
-
-fast <- gof_test(x, h0 = "normal")                           # fast bootstrap
-slow <- gof_test(x, h0 = "normal", bootstrap = "reestimated")  # re-estimates the parameters in each replicate
-
-fast$inference$ks$p_value
-fast$inference$cvm$p_value
+fit <- gof_test(x, h0 = "normal", B = 999)
+fit$inference$ks$p_value
+fit$inference$cvm$p_value
 ```
 
-In the simulations of the paper, the fast bootstrap was on average 438 times faster than the re-estimated one, with almost the same rejection rates. Other null distributions are chosen with `h0`, for example `"vmf"`, `"hvmf"` or `"logistic_gaussian"` (see `?gof_test`).
+The `h0` argument chooses among twelve distribution families and the joint sunspots time-and-location model. See `?gof_test` for their names and each wrapper’s help page for its data format and parameters. For `mvnormal`, pass a matrix even for one-dimensional data: `matrix(x, ncol = 1)`. The joint sunspots model accepts a list with `x` (unit-sphere positions) and `s` (times in `(0, 1)`), or a four-column matrix. It currently supports a fitted composite null with the fast bootstrap.
 
-## Reproducing the paper
+## Reproduce the paper
 
-To reproduce the experiments from the paper, install the package versions we used and run the scripts in `paper/` from the root of the repository:
+The versions used for the paper are recorded in [`renv.lock`](renv.lock). After restoring that environment, run the scripts from the repository root:
 
-```sh
+``` sh
 Rscript -e 'renv::restore()'
 R CMD INSTALL .
-
-bash paper/run_simulations.sh            # simulation study (long, we ran it on a cluster)
-bash paper/run_real_data.sh              # real data
-sh paper/rebuild_figures.sh paper/rendered   # figures
+bash paper/run_simulations.sh   # long cluster campaign
+bash paper/run_real_data.sh
+sh paper/rebuild_figures.sh paper/rendered
 ```
+
+The repository also contains data processing and figure generation code. The simulation campaign is computationally expensive.
 
 ## Citation
 
-If you use this code, please cite the paper: D. Serrano, E. García-Portugués and I. Van Keilegom (2026), *Goodness-of-fit for distributions on metric spaces*, [arXiv:2609.38158](https://arxiv.org/abs/2609.38158).
+Run `citation("gofmetric")` for the versioned software citation and the three-author article citation. The package is distributed under the MIT license.

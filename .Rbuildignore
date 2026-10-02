@@ -10,10 +10,10 @@
 ^real_data$
 ^wind$
 ^scripts$
-^tests$
 ^local_diagnostics$
 ^logs$
 ^paper$
 ^tmp_.*$
 ^LICENSE\.md$
 ^CITATION\.cff$
+^README\.Rmd$

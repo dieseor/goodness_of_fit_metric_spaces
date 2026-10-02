@@ -1,0 +1,14 @@
+citation(auto = meta)
+
+bibentry(
+  bibtype = "Misc",
+  title = "Goodness-of-fit for distributions on metric spaces",
+  author = c(
+    person("Diego", "Serrano"),
+    person("Eduardo", "García-Portugués"),
+    person("Ingrid", "Van Keilegom")
+  ),
+  year = "2026",
+  note = "arXiv:2609.38158",
+  url = "https://arxiv.org/abs/2609.38158"
+)

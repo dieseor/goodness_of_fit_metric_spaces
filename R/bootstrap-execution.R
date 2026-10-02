@@ -727,7 +727,7 @@ run_reestimated_bootstrap_chunks <- function(weight_matrix,
 
   cl <- parallel::makeCluster(n_cores_effective)
   on.exit(parallel::stopCluster(cl), add = TRUE)
-  parallel::clusterEvalQ(cl, { library(dpgof); NULL })
+  parallel::clusterEvalQ(cl, { library(gofmetric); NULL })
 
   worker_symbols <- c(
     "spec",
@@ -763,23 +763,7 @@ run_reestimated_bootstrap_chunks <- function(weight_matrix,
     "normalize_small_circle_data",
     "normalize_small_circle_theta",
     "fit_small_circle_theta",
-    "make_small_circle_spec",
-    "normalize_watson_data",
-    "normalize_watson_theta",
-    "fit_watson_theta",
-    "make_watson_spec",
-    "normalize_small_circle_symmetric_mixture2_data",
-    "normalize_small_circle_symmetric_mixture2_theta",
-    "fit_small_circle_symmetric_mixture2_theta",
-    "make_small_circle_symmetric_mixture2_spec",
-    "normalize_small_circle_weighted_mixture2_data",
-    "normalize_small_circle_weighted_mixture2_theta",
-    "fit_small_circle_weighted_mixture2_theta",
-    "make_small_circle_weighted_mixture2_spec",
-    "normalize_axial_truncnorm_mixture2_data",
-    "normalize_axial_truncnorm_mixture2_theta",
-    "fit_axial_truncnorm_mixture2_theta",
-    "make_axial_truncnorm_mixture2_spec"
+    "make_small_circle_spec"
   )
 
   parallel::clusterExport(cl, worker_symbols, envir = environment())

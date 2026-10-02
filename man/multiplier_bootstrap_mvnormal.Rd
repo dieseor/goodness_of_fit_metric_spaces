@@ -3,7 +3,13 @@
 \title{Multiplier bootstrap: mvnormal}
 \description{Run distance-profile goodness-of-fit tests for the mvnormal model.}
 \usage{
-multiplier_bootstrap_mvnormal(data, null, statistics = c("ks", "cvm"), ks_grid = NULL, B = 5000, alpha = 0.05, multipliers = NULL, n_cores = 1, seed = NULL, bootstrap_method = c("reestimated", "fast_multiplier"), keep = list(observed_process = TRUE, bootstrap_statistics = TRUE, bootstrap_thetas = FALSE), control = list(), unknown_param = "both", distance_profile_backend = c("r", "cpp"), fast_multiplier_backend = c("cpp", "r"), fuse_ks_cvm = TRUE, cache_block_corrections = c("auto", "true", "false"))
+multiplier_bootstrap_mvnormal(data, null, statistics = c("ks", "cvm"), ks_grid = NULL,
+  B = 5000, alpha = 0.05, multipliers = NULL, n_cores = 1, seed = NULL,
+  bootstrap_method = c("reestimated", "fast_multiplier"),
+  keep = list(observed_process = TRUE, bootstrap_statistics = TRUE,
+  bootstrap_thetas = FALSE), control = list(), unknown_param = "both",
+  distance_profile_backend = c("r", "cpp"), fast_multiplier_backend = c("cpp", "r"),
+  fuse_ks_cvm = TRUE, cache_block_corrections = c("auto", "true", "false"))
 }
 \arguments{
   \item{data}{
@@ -59,4 +65,4 @@ Compute KS and CvM together when supported.
 }
 }
 \value{A list with \code{observed}, \code{bootstrap}, \code{inference}, \code{grid}, and \code{diagnostics}. Each requested statistic has a p-value, critical value, and rejection flag under \code{inference}.}
-\details{Multivariate normal data in Euclidean space; observations are rows of \code{data}. For the shared bootstrap arguments and result structure, see \code{\link{multiplier_bootstrap_gof}}.}
+\details{Multivariate normal data in Euclidean space; observations are rows of \code{data}. A dimension-one sample must be an \eqn{n \times 1} matrix: a vector is treated as one multivariate observation. For a simple null use \code{theta = list(mu = ..., Sigma = ...)}. For the shared bootstrap arguments and result structure, see \code{\link{multiplier_bootstrap_gof}}.}

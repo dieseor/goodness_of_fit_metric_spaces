@@ -18,7 +18,6 @@ require_sunspots_joint_spec_dependencies <- function() {
   required <- c(
     "sunspots_joint_validate_data",
     "fit_sunspots_cycle23_joint_time_space",
-    "sunspots_joint_distance",
     "sunspots_joint_time_quadrature",
     "sunspots_joint_conditional_legendre_coefficients",
     "sunspots_joint_profile_block",
@@ -26,14 +25,15 @@ require_sunspots_joint_spec_dependencies <- function() {
     "sunspots_joint_score_matrix",
     "sample_sunspots_joint_time_space"
   )
-  missing <- required[!vapply(required, exists, logical(1L), mode = "function")]
+  missing <- required[!vapply(required, exists, logical(1L), mode = "function",
+                              envir = environment(require_sunspots_joint_spec_dependencies))]
   if (length(missing) > 0L) {
     stop(
       sprintf(
         paste(
           "Sunspots joint model dependencies are missing:",
           "%s.",
-          "Source real_data/sunspots/sunspots_cycle23_joint_time_space.R before constructing this spec."
+          "Install a complete gofmetric package before constructing this spec."
         ),
         paste(missing, collapse = ", ")
       ),

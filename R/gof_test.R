@@ -1,8 +1,8 @@
 gof_test_families <- function() {
-  sub("^multiplier_bootstrap_", "", setdiff(
-    grep("^multiplier_bootstrap_", ls(topenv(environment(gof_test_families))), value = TRUE),
-    "multiplier_bootstrap_gof"
-  ))
+  c("normal", "mvnormal", "restricted_spiked_normal", "normal_sigma_Id",
+    "vmf", "vmf_fixed_kappa", "hvmf", "logistic_gaussian",
+    "logistic_gaussian_ar1", "cardioid", "small_circle",
+    "uniform_beta_mixture", "sunspots_joint_time_space")
 }
 
 gof_test <- function(data,

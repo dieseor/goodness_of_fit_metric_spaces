@@ -57,53 +57,12 @@ run_bootstrap_chunk <- function(weight_chunk,
         # Allow this boundary value only for restricted-spiked bootstrap refits.
         bootstrap_control$restricted_spiked_allow_boundary_lambda_zero <- TRUE
       }
-      if (!is.null(theta_start) && grepl("^jp_", spec$name)) {
-        # JP composite bootstrap refits use a warm-started local re-optimization.
-        # Together with the logic in jp_mle_s2_weighted(), this keeps the refit
-        # on the observed sign branch of psi unless the caller explicitly
-        # overrides it. This is a stabilization device for the JP optimizer, not
-        # the fully unconstrained composite re-fit.
-        bootstrap_control$jp_mle_start_theta <- theta_start
-        bootstrap_control$jp_mle_warm_start_only <- TRUE
-        bootstrap_control$jp_mle_bootstrap_refit <- TRUE
-      } else if (!is.null(theta_start) && grepl("^beta_mixture2_", spec$name)) {
-        bootstrap_control$beta_mixture2_start_theta <- theta_start
-        bootstrap_control$beta_mixture2_warm_start_only <- TRUE
-        bootstrap_control$beta_mixture2_n_starts <- bootstrap_control$beta_mixture2_bootstrap_n_starts %||% 1L
-        bootstrap_control$beta_mixture2_optim_control <- bootstrap_control$beta_mixture2_bootstrap_optim_control %||%
-          list(maxit = 80L, reltol = 1e-6)
-      } else if (!is.null(theta_start) && grepl("^uniform_beta_mixture_", spec$name)) {
+      if (!is.null(theta_start) && grepl("^uniform_beta_mixture_", spec$name)) {
         bootstrap_control$uniform_beta_mixture_start_theta <- theta_start
         bootstrap_control$uniform_beta_mixture_warm_start_only <- TRUE
         bootstrap_control$uniform_beta_mixture_n_starts <- bootstrap_control$uniform_beta_mixture_bootstrap_n_starts %||% 1L
         bootstrap_control$uniform_beta_mixture_optim_control <- bootstrap_control$uniform_beta_mixture_bootstrap_optim_control %||%
           list(maxit = 80L, reltol = 1e-6)
-      } else if (!is.null(theta_start) && grepl("^small_circle_symmetric_mixture2_", spec$name)) {
-        bootstrap_control$small_circle_symmetric_mixture2_start_theta <- theta_start
-        bootstrap_control$small_circle_symmetric_mixture2_warm_start_only <- TRUE
-        bootstrap_control$small_circle_symmetric_mixture2_n_starts <-
-          bootstrap_control$small_circle_symmetric_mixture2_bootstrap_n_starts %||% 1L
-        bootstrap_control$small_circle_symmetric_mixture2_optim_control <-
-          bootstrap_control$small_circle_symmetric_mixture2_bootstrap_optim_control %||%
-          list(maxit = 80L, reltol = 1e-6)
-      } else if (!is.null(theta_start) && grepl("^small_circle_weighted_mixture2_", spec$name)) {
-        bootstrap_control$small_circle_weighted_mixture2_start_theta <- theta_start
-        bootstrap_control$small_circle_weighted_mixture2_warm_start_only <- TRUE
-        bootstrap_control$small_circle_weighted_mixture2_n_starts <-
-          bootstrap_control$small_circle_weighted_mixture2_bootstrap_n_starts %||% 1L
-        bootstrap_control$small_circle_weighted_mixture2_optim_control <-
-          bootstrap_control$small_circle_weighted_mixture2_bootstrap_optim_control %||%
-          list(maxit = 80L, reltol = 1e-6)
-      } else if (!is.null(theta_start) && grepl("^axial_truncnorm_mixture2_", spec$name)) {
-        bootstrap_control$axial_truncnorm_mixture2_start_theta <- theta_start
-        bootstrap_control$axial_truncnorm_mixture2_optim_control <-
-          bootstrap_control$axial_truncnorm_mixture2_bootstrap_optim_control %||%
-          list(maxit = 80L, reltol = 1e-6)
-      } else if (!is.null(theta_start) && grepl("^logitnormal_mixture2_", spec$name)) {
-        bootstrap_control$logitnormal_mixture2_start_theta <- theta_start
-        bootstrap_control$logitnormal_mixture2_warm_start_only <- TRUE
-      } else if (!is.null(theta_start) && is.null(bootstrap_control$jp_mle_start_theta)) {
-        bootstrap_control$jp_mle_start_theta <- theta_start
       }
       theta_star <- tryCatch(
         withCallingHandlers(
@@ -128,34 +87,6 @@ run_bootstrap_chunk <- function(weight_chunk,
       )
       theta_star_loglik <- as.numeric(theta_star$loglik %||% NA_real_)
       theta_star_convergence <- as.integer(theta_star$opt$convergence %||% NA_integer_)
-      if (grepl("^small_circle_symmetric_mixture2_", spec$name) &&
-          (is.null(theta_star) ||
-             any(!is.finite(as.numeric(c(theta_star$mu, theta_star$kappa, theta_star$nu)))))) {
-        bootstrap_fit_warnings <- c(
-          bootstrap_fit_warnings,
-          "Bootstrap MLE returned non-finite theta_star; falling back to observed theta_hat."
-        )
-        theta_star <- theta_start
-        theta_star_loglik <- as.numeric(theta_start$loglik %||% NA_real_)
-        theta_star_convergence <- as.integer(theta_start$opt$convergence %||% NA_integer_)
-      }
-      if (grepl("^axial_truncnorm_mixture2_", spec$name) &&
-          (is.null(theta_star) ||
-             any(!is.finite(as.numeric(c(
-               theta_star$pi,
-               theta_star$kappa1,
-               theta_star$nu1,
-               theta_star$kappa2,
-               theta_star$nu2
-             )))))) {
-        bootstrap_fit_warnings <- c(
-          bootstrap_fit_warnings,
-          "Bootstrap axial MLE returned an invalid theta_star; falling back to observed theta_hat."
-        )
-        theta_star <- theta_start
-        theta_star_loglik <- as.numeric(theta_start$loglik %||% NA_real_)
-        theta_star_convergence <- as.integer(theta_start$opt$convergence %||% NA_integer_)
-      }
       if (!is.null(theta_values)) {
         theta_values[[b]] <- theta_star
       }
@@ -229,15 +160,6 @@ run_bootstrap_chunk <- function(weight_chunk,
     }
 
     if (want_cvm && !isTRUE(fuse_sample_ks_cvm)) {
-      cvm_control <- utils::modifyList(
-        control,
-        list(
-          small_circle_symmetric_mixture2_bootstrap_replicate_index = replicate_index,
-          small_circle_symmetric_mixture2_bootstrap_warnings = bootstrap_fit_warnings,
-          small_circle_symmetric_mixture2_bootstrap_loglik = theta_star_loglik,
-          small_circle_symmetric_mixture2_bootstrap_convergence = theta_star_convergence
-        )
-      )
       cvm_stat_fast <- spec_cvm_bootstrap_stat(
         spec = spec,
         data = data,
@@ -245,7 +167,7 @@ run_bootstrap_chunk <- function(weight_chunk,
         theta_star = theta_star,
         cvm_prep = cvm_prep,
         null = null,
-        control = cvm_control,
+        control = control,
         scale_factor = scale_factor
       )
       if (!is.null(cvm_stat_fast)) {
@@ -266,7 +188,7 @@ run_bootstrap_chunk <- function(weight_chunk,
             data = data,
             distance_matrix = cvm_prep$distance_matrix,
             theta = theta_star,
-            control = cvm_control
+            control = control
           )
           debug_memory_log(
             control,

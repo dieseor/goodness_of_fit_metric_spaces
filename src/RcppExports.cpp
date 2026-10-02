@@ -12,7 +12,7 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 
 // cpp_dp_legendre_matrix
 Rcpp::NumericMatrix cpp_dp_legendre_matrix(Rcpp::NumericVector x, const int l_max);
-RcppExport SEXP _dpgof_cpp_dp_legendre_matrix(SEXP xSEXP, SEXP l_maxSEXP) {
+RcppExport SEXP _gofmetric_cpp_dp_legendre_matrix(SEXP xSEXP, SEXP l_maxSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -24,7 +24,7 @@ END_RCPP
 }
 // cpp_dp_projection_cdf_legendre_matrix
 Rcpp::NumericMatrix cpp_dp_projection_cdf_legendre_matrix(Rcpp::NumericMatrix x_matrix, Rcpp::NumericVector r, Rcpp::NumericVector coefficients, const bool enforce_bounds);
-RcppExport SEXP _dpgof_cpp_dp_projection_cdf_legendre_matrix(SEXP x_matrixSEXP, SEXP rSEXP, SEXP coefficientsSEXP, SEXP enforce_boundsSEXP) {
+RcppExport SEXP _gofmetric_cpp_dp_projection_cdf_legendre_matrix(SEXP x_matrixSEXP, SEXP rSEXP, SEXP coefficientsSEXP, SEXP enforce_boundsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -38,7 +38,7 @@ END_RCPP
 }
 // cpp_dp_normal_profile
 Rcpp::NumericVector cpp_dp_normal_profile(Rcpp::NumericVector omega, Rcpp::NumericVector t_values, const double mu, const double sigma);
-RcppExport SEXP _dpgof_cpp_dp_normal_profile(SEXP omegaSEXP, SEXP t_valuesSEXP, SEXP muSEXP, SEXP sigmaSEXP) {
+RcppExport SEXP _gofmetric_cpp_dp_normal_profile(SEXP omegaSEXP, SEXP t_valuesSEXP, SEXP muSEXP, SEXP sigmaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -52,7 +52,7 @@ END_RCPP
 }
 // cpp_dp_normal_profile_matrix
 Rcpp::NumericMatrix cpp_dp_normal_profile_matrix(Rcpp::NumericVector omega, Rcpp::NumericMatrix t_matrix, const double mu, const double sigma);
-RcppExport SEXP _dpgof_cpp_dp_normal_profile_matrix(SEXP omegaSEXP, SEXP t_matrixSEXP, SEXP muSEXP, SEXP sigmaSEXP) {
+RcppExport SEXP _gofmetric_cpp_dp_normal_profile_matrix(SEXP omegaSEXP, SEXP t_matrixSEXP, SEXP muSEXP, SEXP sigmaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -66,7 +66,7 @@ END_RCPP
 }
 // cpp_dp_weighted_sample_profile_rows
 Rcpp::NumericMatrix cpp_dp_weighted_sample_profile_rows(Rcpp::IntegerMatrix order_matrix, Rcpp::IntegerMatrix rank_matrix, Rcpp::NumericVector normalized_weights);
-RcppExport SEXP _dpgof_cpp_dp_weighted_sample_profile_rows(SEXP order_matrixSEXP, SEXP rank_matrixSEXP, SEXP normalized_weightsSEXP) {
+RcppExport SEXP _gofmetric_cpp_dp_weighted_sample_profile_rows(SEXP order_matrixSEXP, SEXP rank_matrixSEXP, SEXP normalized_weightsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -79,7 +79,7 @@ END_RCPP
 }
 // cpp_dp_weighted_sample_profile_linear
 Rcpp::NumericMatrix cpp_dp_weighted_sample_profile_linear(Rcpp::IntegerMatrix order_matrix, Rcpp::IntegerVector rank_linear_index, Rcpp::NumericVector normalized_weights);
-RcppExport SEXP _dpgof_cpp_dp_weighted_sample_profile_linear(SEXP order_matrixSEXP, SEXP rank_linear_indexSEXP, SEXP normalized_weightsSEXP) {
+RcppExport SEXP _gofmetric_cpp_dp_weighted_sample_profile_linear(SEXP order_matrixSEXP, SEXP rank_linear_indexSEXP, SEXP normalized_weightsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -92,7 +92,7 @@ END_RCPP
 }
 // cpp_profile_lookup_tensor_local_polynomial
 Rcpp::NumericMatrix cpp_profile_lookup_tensor_local_polynomial(Rcpp::NumericMatrix values, Rcpp::NumericVector t_grid, Rcpp::NumericVector geometry_grid, Rcpp::NumericVector kappa_grid, Rcpp::NumericVector t_query, Rcpp::NumericVector geometry_query, Rcpp::NumericVector kappa_query, const int stencil_size);
-RcppExport SEXP _dpgof_cpp_profile_lookup_tensor_local_polynomial(SEXP valuesSEXP, SEXP t_gridSEXP, SEXP geometry_gridSEXP, SEXP kappa_gridSEXP, SEXP t_querySEXP, SEXP geometry_querySEXP, SEXP kappa_querySEXP, SEXP stencil_sizeSEXP) {
+RcppExport SEXP _gofmetric_cpp_profile_lookup_tensor_local_polynomial(SEXP valuesSEXP, SEXP t_gridSEXP, SEXP geometry_gridSEXP, SEXP kappa_gridSEXP, SEXP t_querySEXP, SEXP geometry_querySEXP, SEXP kappa_querySEXP, SEXP stencil_sizeSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -110,7 +110,7 @@ END_RCPP
 }
 // cpp_fast_sample_ks_cvm_stats
 Rcpp::List cpp_fast_sample_ks_cvm_stats(Rcpp::NumericMatrix centered_weights, Rcpp::NumericMatrix score_block, Rcpp::IntegerMatrix obs_order_matrix, Rcpp::IntegerMatrix tie_end_matrix, Rcpp::NumericMatrix correction_matrix, const double scale_factor, const bool compute_ks, const bool compute_cvm);
-RcppExport SEXP _dpgof_cpp_fast_sample_ks_cvm_stats(SEXP centered_weightsSEXP, SEXP score_blockSEXP, SEXP obs_order_matrixSEXP, SEXP tie_end_matrixSEXP, SEXP correction_matrixSEXP, SEXP scale_factorSEXP, SEXP compute_ksSEXP, SEXP compute_cvmSEXP) {
+RcppExport SEXP _gofmetric_cpp_fast_sample_ks_cvm_stats(SEXP centered_weightsSEXP, SEXP score_blockSEXP, SEXP obs_order_matrixSEXP, SEXP tie_end_matrixSEXP, SEXP correction_matrixSEXP, SEXP scale_factorSEXP, SEXP compute_ksSEXP, SEXP compute_cvmSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -128,7 +128,7 @@ END_RCPP
 }
 // cpp_fast_sample_ks_cvm_stats_contiguous_double
 Rcpp::List cpp_fast_sample_ks_cvm_stats_contiguous_double(Rcpp::NumericMatrix centered_weights, Rcpp::NumericMatrix score_block, Rcpp::IntegerMatrix obs_order_matrix, Rcpp::IntegerMatrix tie_end_matrix, Rcpp::NumericMatrix correction_matrix, const double scale_factor, const bool compute_ks, const bool compute_cvm);
-RcppExport SEXP _dpgof_cpp_fast_sample_ks_cvm_stats_contiguous_double(SEXP centered_weightsSEXP, SEXP score_blockSEXP, SEXP obs_order_matrixSEXP, SEXP tie_end_matrixSEXP, SEXP correction_matrixSEXP, SEXP scale_factorSEXP, SEXP compute_ksSEXP, SEXP compute_cvmSEXP) {
+RcppExport SEXP _gofmetric_cpp_fast_sample_ks_cvm_stats_contiguous_double(SEXP centered_weightsSEXP, SEXP score_blockSEXP, SEXP obs_order_matrixSEXP, SEXP tie_end_matrixSEXP, SEXP correction_matrixSEXP, SEXP scale_factorSEXP, SEXP compute_ksSEXP, SEXP compute_cvmSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -146,7 +146,7 @@ END_RCPP
 }
 // cpp_sunspots_joint_profile_block
 Rcpp::NumericMatrix cpp_sunspots_joint_profile_block(Rcpp::NumericMatrix radii, Rcpp::NumericVector rho, Rcpp::NumericVector center_s, Rcpp::NumericVector time_nodes, Rcpp::NumericVector time_weights, Rcpp::NumericMatrix coefficients);
-RcppExport SEXP _dpgof_cpp_sunspots_joint_profile_block(SEXP radiiSEXP, SEXP rhoSEXP, SEXP center_sSEXP, SEXP time_nodesSEXP, SEXP time_weightsSEXP, SEXP coefficientsSEXP) {
+RcppExport SEXP _gofmetric_cpp_sunspots_joint_profile_block(SEXP radiiSEXP, SEXP rhoSEXP, SEXP center_sSEXP, SEXP time_nodesSEXP, SEXP time_weightsSEXP, SEXP coefficientsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -162,7 +162,7 @@ END_RCPP
 }
 // cpp_sunspots_joint_profile_block_sorted
 Rcpp::NumericMatrix cpp_sunspots_joint_profile_block_sorted(Rcpp::NumericMatrix radii, Rcpp::NumericVector rho, Rcpp::NumericVector center_s, Rcpp::NumericVector time_nodes, Rcpp::NumericVector time_weights, Rcpp::NumericMatrix coefficients);
-RcppExport SEXP _dpgof_cpp_sunspots_joint_profile_block_sorted(SEXP radiiSEXP, SEXP rhoSEXP, SEXP center_sSEXP, SEXP time_nodesSEXP, SEXP time_weightsSEXP, SEXP coefficientsSEXP) {
+RcppExport SEXP _gofmetric_cpp_sunspots_joint_profile_block_sorted(SEXP radiiSEXP, SEXP rhoSEXP, SEXP center_sSEXP, SEXP time_nodesSEXP, SEXP time_weightsSEXP, SEXP coefficientsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -178,21 +178,21 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_dpgof_cpp_dp_legendre_matrix", (DL_FUNC) &_dpgof_cpp_dp_legendre_matrix, 2},
-    {"_dpgof_cpp_dp_projection_cdf_legendre_matrix", (DL_FUNC) &_dpgof_cpp_dp_projection_cdf_legendre_matrix, 4},
-    {"_dpgof_cpp_dp_normal_profile", (DL_FUNC) &_dpgof_cpp_dp_normal_profile, 4},
-    {"_dpgof_cpp_dp_normal_profile_matrix", (DL_FUNC) &_dpgof_cpp_dp_normal_profile_matrix, 4},
-    {"_dpgof_cpp_dp_weighted_sample_profile_rows", (DL_FUNC) &_dpgof_cpp_dp_weighted_sample_profile_rows, 3},
-    {"_dpgof_cpp_dp_weighted_sample_profile_linear", (DL_FUNC) &_dpgof_cpp_dp_weighted_sample_profile_linear, 3},
-    {"_dpgof_cpp_profile_lookup_tensor_local_polynomial", (DL_FUNC) &_dpgof_cpp_profile_lookup_tensor_local_polynomial, 8},
-    {"_dpgof_cpp_fast_sample_ks_cvm_stats", (DL_FUNC) &_dpgof_cpp_fast_sample_ks_cvm_stats, 8},
-    {"_dpgof_cpp_fast_sample_ks_cvm_stats_contiguous_double", (DL_FUNC) &_dpgof_cpp_fast_sample_ks_cvm_stats_contiguous_double, 8},
-    {"_dpgof_cpp_sunspots_joint_profile_block", (DL_FUNC) &_dpgof_cpp_sunspots_joint_profile_block, 6},
-    {"_dpgof_cpp_sunspots_joint_profile_block_sorted", (DL_FUNC) &_dpgof_cpp_sunspots_joint_profile_block_sorted, 6},
+    {"_gofmetric_cpp_dp_legendre_matrix", (DL_FUNC) &_gofmetric_cpp_dp_legendre_matrix, 2},
+    {"_gofmetric_cpp_dp_projection_cdf_legendre_matrix", (DL_FUNC) &_gofmetric_cpp_dp_projection_cdf_legendre_matrix, 4},
+    {"_gofmetric_cpp_dp_normal_profile", (DL_FUNC) &_gofmetric_cpp_dp_normal_profile, 4},
+    {"_gofmetric_cpp_dp_normal_profile_matrix", (DL_FUNC) &_gofmetric_cpp_dp_normal_profile_matrix, 4},
+    {"_gofmetric_cpp_dp_weighted_sample_profile_rows", (DL_FUNC) &_gofmetric_cpp_dp_weighted_sample_profile_rows, 3},
+    {"_gofmetric_cpp_dp_weighted_sample_profile_linear", (DL_FUNC) &_gofmetric_cpp_dp_weighted_sample_profile_linear, 3},
+    {"_gofmetric_cpp_profile_lookup_tensor_local_polynomial", (DL_FUNC) &_gofmetric_cpp_profile_lookup_tensor_local_polynomial, 8},
+    {"_gofmetric_cpp_fast_sample_ks_cvm_stats", (DL_FUNC) &_gofmetric_cpp_fast_sample_ks_cvm_stats, 8},
+    {"_gofmetric_cpp_fast_sample_ks_cvm_stats_contiguous_double", (DL_FUNC) &_gofmetric_cpp_fast_sample_ks_cvm_stats_contiguous_double, 8},
+    {"_gofmetric_cpp_sunspots_joint_profile_block", (DL_FUNC) &_gofmetric_cpp_sunspots_joint_profile_block, 6},
+    {"_gofmetric_cpp_sunspots_joint_profile_block_sorted", (DL_FUNC) &_gofmetric_cpp_sunspots_joint_profile_block_sorted, 6},
     {NULL, NULL, 0}
 };
 
-RcppExport void R_init_dpgof(DllInfo *dll) {
+RcppExport void R_init_gofmetric(DllInfo *dll) {
     R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
     R_useDynamicSymbols(dll, FALSE);
 }

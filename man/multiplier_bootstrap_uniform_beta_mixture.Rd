@@ -3,7 +3,12 @@
 \title{Multiplier bootstrap: uniform beta mixture}
 \description{Run distance-profile goodness-of-fit tests for the uniform beta mixture model.}
 \usage{
-multiplier_bootstrap_uniform_beta_mixture(data, null, statistics = c("ks", "cvm"), ks_grid = NULL, B = 5000, alpha = 0.05, multipliers = NULL, n_cores = 1, seed = NULL, bootstrap_method = c("reestimated", "fast_multiplier"), keep = list(observed_process = TRUE, bootstrap_statistics = TRUE, bootstrap_thetas = FALSE), control = list(), distance_type = c("chordal", "geodesic"), distance_profile_backend = c("r", "cpp"))
+multiplier_bootstrap_uniform_beta_mixture(data, null, statistics = c("ks", "cvm"),
+  ks_grid = NULL, B = 5000, alpha = 0.05, multipliers = NULL, n_cores = 1,
+  seed = NULL, bootstrap_method = c("reestimated", "fast_multiplier"),
+  keep = list(observed_process = TRUE, bootstrap_statistics = TRUE,
+  bootstrap_thetas = FALSE), control = list(), distance_type = c("chordal",
+  "geodesic"), distance_profile_backend = c("r", "cpp"))
 }
 \arguments{
   \item{data}{
@@ -50,4 +55,4 @@ Choose \code{"chordal"} or \code{"geodesic"} distance where both are implemented
 }
 }
 \value{A list with \code{observed}, \code{bootstrap}, \code{inference}, \code{grid}, and \code{diagnostics}. Each requested statistic has a p-value, critical value, and rejection flag under \code{inference}.}
-\details{Directional mixture of a uniform law and a beta projection law. For the shared bootstrap arguments and result structure, see \code{\link{multiplier_bootstrap_gof}}. This model has less empirical validation in the associated article.}
+\details{Data are unit-vector rows on the sphere. A simple null supplies axis \code{mu}, uniform-mixture weight \code{weight_uniform}, and beta shapes \code{alpha} and \code{beta}. Directional mixture of a uniform law and a beta projection law. For the shared bootstrap arguments and result structure, see \code{\link{multiplier_bootstrap_gof}}. This model has less empirical validation in the associated article.}

@@ -3,7 +3,12 @@
 \title{Multiplier bootstrap: normal}
 \description{Run distance-profile goodness-of-fit tests for the normal model.}
 \usage{
-multiplier_bootstrap_normal(data, null, statistics = c("ks", "cvm"), ks_grid = NULL, B = 5000, alpha = 0.05, multipliers = NULL, n_cores = 1, seed = NULL, bootstrap_method = c("reestimated", "fast_multiplier"), keep = list(observed_process = TRUE, bootstrap_statistics = TRUE, bootstrap_thetas = FALSE), control = list(), unknown_param = NULL, distance_profile_backend = c("r", "cpp"))
+multiplier_bootstrap_normal(data, null, statistics = c("ks", "cvm"), ks_grid = NULL,
+  B = 5000, alpha = 0.05, multipliers = NULL, n_cores = 1, seed = NULL,
+  bootstrap_method = c("reestimated", "fast_multiplier"),
+  keep = list(observed_process = TRUE, bootstrap_statistics = TRUE,
+  bootstrap_thetas = FALSE), control = list(), unknown_param = NULL,
+  distance_profile_backend = c("r", "cpp"))
 }
 \arguments{
   \item{data}{

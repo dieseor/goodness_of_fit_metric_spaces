@@ -3,7 +3,14 @@
 \title{Multiplier bootstrap: normal sigma Id}
 \description{Run distance-profile goodness-of-fit tests for the normal sigma Id model.}
 \usage{
-multiplier_bootstrap_normal_sigma_Id(data, null, statistics = c("ks", "cvm"), ks_grid = NULL, B = 5000L, alpha = 0.05, multipliers = NULL, n_cores = 1L, seed = NULL, bootstrap_method = c("reestimated", "fast_multiplier"), keep = list(observed_process = TRUE, bootstrap_statistics = TRUE, bootstrap_thetas = FALSE), control = list(), distance_profile_backend = c("r", "cpp"), fast_multiplier_backend = c("cpp", "r"), fast_multiplier_cpp_kernel = c("contiguous_double", "legacy"), fuse_ks_cvm = TRUE, cache_block_corrections = c("auto", "true", "false"))
+multiplier_bootstrap_normal_sigma_Id(data, null, statistics = c("ks", "cvm"),
+  ks_grid = NULL, B = 5000L, alpha = 0.05, multipliers = NULL, n_cores = 1L,
+  seed = NULL, bootstrap_method = c("reestimated", "fast_multiplier"),
+  keep = list(observed_process = TRUE, bootstrap_statistics = TRUE,
+  bootstrap_thetas = FALSE), control = list(), distance_profile_backend = c("r",
+  "cpp"), fast_multiplier_backend = c("cpp", "r"),
+  fast_multiplier_cpp_kernel = c("contiguous_double", "legacy"), fuse_ks_cvm = TRUE,
+  cache_block_corrections = c("auto", "true", "false"))
 }
 \arguments{
   \item{data}{
@@ -59,4 +66,4 @@ Compute KS and CvM together when supported.
 }
 }
 \value{A list with \code{observed}, \code{bootstrap}, \code{inference}, \code{grid}, and \code{diagnostics}. Each requested statistic has a p-value, critical value, and rejection flag under \code{inference}.}
-\details{Multivariate normal model with covariance proportional to the identity. For the shared bootstrap arguments and result structure, see \code{\link{multiplier_bootstrap_gof}}. This model has less empirical validation in the associated article.}
+\details{Data are a numeric matrix with one Euclidean observation per row. A simple null specifies a mean vector \code{mu} and a positive scalar standard deviation \code{sigma}. Multivariate normal model with covariance proportional to the identity. For the shared bootstrap arguments and result structure, see \code{\link{multiplier_bootstrap_gof}}. This model has less empirical validation in the associated article.}

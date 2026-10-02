@@ -3,7 +3,12 @@
 \title{Multiplier bootstrap: logistic gaussian}
 \description{Run distance-profile goodness-of-fit tests for the logistic gaussian model.}
 \usage{
-multiplier_bootstrap_logistic_gaussian(data, null, statistics = c("ks", "cvm"), ks_grid = NULL, B = 5000, alpha = 0.05, multipliers = NULL, n_cores = 1, seed = NULL, bootstrap_method = c("reestimated", "fast_multiplier"), keep = list(observed_process = TRUE, bootstrap_statistics = TRUE, bootstrap_thetas = FALSE), control = list(), unknown_param = "both", distance_profile_backend = c("r", "cpp"))
+multiplier_bootstrap_logistic_gaussian(data, null, statistics = c("ks", "cvm"),
+  ks_grid = NULL, B = 5000, alpha = 0.05, multipliers = NULL, n_cores = 1,
+  seed = NULL, bootstrap_method = c("reestimated", "fast_multiplier"),
+  keep = list(observed_process = TRUE, bootstrap_statistics = TRUE,
+  bootstrap_thetas = FALSE), control = list(), unknown_param = "both",
+  distance_profile_backend = c("r", "cpp"))
 }
 \arguments{
   \item{data}{
@@ -50,4 +55,4 @@ Parameters estimated under the null.
 }
 }
 \value{A list with \code{observed}, \code{bootstrap}, \code{inference}, \code{grid}, and \code{diagnostics}. Each requested statistic has a p-value, critical value, and rejection flag under \code{inference}.}
-\details{Logistic Gaussian data on the simplex; each row is a positive composition. For the shared bootstrap arguments and result structure, see \code{\link{multiplier_bootstrap_gof}}.}
+\details{A simple null uses the mean \code{mu_ilr} and covariance \code{Sigma_ilr} in isometric log-ratio coordinates. Logistic Gaussian data on the simplex; each row is a positive composition. For the shared bootstrap arguments and result structure, see \code{\link{multiplier_bootstrap_gof}}.}

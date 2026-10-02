@@ -8,7 +8,14 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - uses: actions/checkout@v7
@@ -19,6 +26,7 @@ jobs:
           r-version: '4.4.2'
 
       - name: Install system libraries required by renv packages
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install --yes libgsl-dev libnetcdf-dev libglu1-mesa-dev \
@@ -31,33 +39,26 @@ jobs:
       - name: Build and check the package
         run: |
           R CMD build .
-          R CMD check --no-manual dpgof_*.tar.gz
+          R CMD check --as-cran --no-manual gofmetric_*.tar.gz
 
       - name: Check installed R and C++ paths
         run: |
-          R CMD INSTALL dpgof_*.tar.gz
+          R CMD INSTALL gofmetric_*.tar.gz
           Rscript paper/check_package.R
 
       - name: Run the tests used for the paper
         run: |
           for test in \
-            test_gof_test \
-            test_cpp_distance_profile_backend \
-            test_fast_multiplier_cpp_kernel \
-            test_multiplier_bootstrap \
-            test_restricted_spiked_normal_model_spec \
-            test_normal_sigma_Id_model_spec \
-            test_logistic_gaussian_sigma_shape_model_spec \
-            test_vmf_fixed_kappa_model_spec \
-            test_hvmf_hq_model_spec \
             test_section6_new_scenarios \
             test_sunspots_joint_time_space \
-            test_cardioid_model_spec \
             test_small_circle_bootstrap \
             ; do
             echo "== $test"
-            Rscript -e "testthat::test_file('tests/testthat/${test}.R', stop_on_failure = TRUE)"
+            Rscript -e "testthat::test_file('scripts/legacy_testthat/${test}.R', stop_on_failure = TRUE)"
           done
 
-      - name: Check renv status
-        run: Rscript -e 'renv::status()'
+      - name: Measure package coverage
+        if: runner.os == 'Linux'
+        run: |
+          Rscript -e 'if (!requireNamespace("covr", quietly = TRUE)) install.packages("covr")'
+          Rscript -e 'covr::codecov(coverage = covr::package_coverage(type = "tests"))'

@@ -1,16 +1,20 @@
-Package: dpgof
-Title: Distance Profile Goodness-of-Fit Tests
+Package: gofmetric
+Title: Goodness-of-Fit Tests for Distributions on Metric Spaces
 Version: 0.1.0
 Authors@R: person("Diego", "Serrano", role = c("aut", "cre"), email = "dieserra@est-econ.uc3m.es")
-Description: Multiplier bootstrap goodness-of-fit tests based on distance
-    profiles for Euclidean, directional, hyperbolic, and compositional data.
+Description: Implements Kolmogorov-Smirnov and Cramer-von Mises goodness-of-fit
+    tests built from distance profiles on Euclidean, spherical, hyperbolic,
+    compositional, and product spaces. Simple and composite null hypotheses
+    are calibrated by multiplier bootstrap, with fast and re-estimated
+    procedures where supported.
 License: MIT + file LICENSE
-URL: https://github.com/dieseor/goodness_of_fit_metric_spaces
-BugReports: https://github.com/dieseor/goodness_of_fit_metric_spaces/issues
+URL: https://github.com/dieseor/gofmetric
+BugReports: https://github.com/dieseor/gofmetric/issues
 Encoding: UTF-8
 Depends: R (>= 4.1.0)
-Imports: Rcpp, stats, utils, graphics, grDevices, parallel, methods,
-    movMF, sphunif, pracma, rotasym, mvtnorm, gbutils, ggplot2
-Suggests: testthat, OpenMx
+Imports: Rcpp, stats, utils, parallel, movMF, sphunif, pracma, rotasym,
+    mvtnorm, gbutils, CompQuadForm
+Suggests: testthat, numDeriv
 LinkingTo: Rcpp
 NeedsCompilation: yes
+Config/testthat/edition: 3

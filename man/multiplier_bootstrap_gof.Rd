@@ -3,7 +3,12 @@
 \title{Multiplier bootstrap: gof}
 \description{Run a distance-profile multiplier bootstrap test with an explicit model specification.}
 \usage{
-multiplier_bootstrap_gof(data, spec, null, statistics = c("ks", "cvm"), ks_grid = NULL, B = 5000, alpha = 0.05, multipliers = NULL, n_cores = 1, seed = NULL, observed_theta_hat = NULL, bootstrap_method = c("reestimated", "fast_multiplier"), keep = list(observed_process = TRUE, bootstrap_statistics = TRUE, bootstrap_thetas = FALSE), control = list(), distance_profile_backend = c("r", "cpp"))
+multiplier_bootstrap_gof(data, spec, null, statistics = c("ks", "cvm"),
+  ks_grid = NULL, B = 5000, alpha = 0.05, multipliers = NULL, n_cores = 1,
+  seed = NULL, observed_theta_hat = NULL, bootstrap_method = c("reestimated",
+  "fast_multiplier"), keep = list(observed_process = TRUE,
+  bootstrap_statistics = TRUE, bootstrap_thetas = FALSE), control = list(),
+  distance_profile_backend = c("r", "cpp"))
 }
 \arguments{
   \item{data}{

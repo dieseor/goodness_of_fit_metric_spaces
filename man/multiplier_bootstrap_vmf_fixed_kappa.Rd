@@ -3,7 +3,15 @@
 \title{Multiplier bootstrap: vmf fixed kappa}
 \description{Run distance-profile goodness-of-fit tests for the vmf fixed kappa model.}
 \usage{
-multiplier_bootstrap_vmf_fixed_kappa(data, kappa, null = list(type = "composite"), statistics = c("ks", "cvm"), ks_grid = NULL, B = 5000L, alpha = 0.05, multipliers = NULL, n_cores = 1L, seed = NULL, bootstrap_method = c("reestimated", "fast_multiplier"), keep = list(observed_process = FALSE, bootstrap_statistics = FALSE, bootstrap_thetas = FALSE), control = list(), distance_type = c("chordal", "geodesic"), distance_profile_backend = c("r", "cpp"), fast_multiplier_backend = c("cpp", "r"), fast_multiplier_cpp_kernel = c("contiguous_double", "legacy"), fuse_ks_cvm = TRUE, cache_block_corrections = c("auto", "true", "false"))
+multiplier_bootstrap_vmf_fixed_kappa(data, kappa, null = list(type = "composite"),
+  statistics = c("ks", "cvm"), ks_grid = NULL, B = 5000L, alpha = 0.05,
+  multipliers = NULL, n_cores = 1L, seed = NULL, bootstrap_method = c("reestimated",
+  "fast_multiplier"), keep = list(observed_process = FALSE,
+  bootstrap_statistics = FALSE, bootstrap_thetas = FALSE), control = list(),
+  distance_type = c("chordal", "geodesic"), distance_profile_backend = c("r", "cpp"),
+  fast_multiplier_backend = c("cpp", "r"),
+  fast_multiplier_cpp_kernel = c("contiguous_double", "legacy"), fuse_ks_cvm = TRUE,
+  cache_block_corrections = c("auto", "true", "false"))
 }
 \arguments{
   \item{data}{
@@ -65,4 +73,4 @@ Compute KS and CvM together when supported.
 }
 }
 \value{A list with \code{observed}, \code{bootstrap}, \code{inference}, \code{grid}, and \code{diagnostics}. Each requested statistic has a p-value, critical value, and rejection flag under \code{inference}.}
-\details{von Mises--Fisher data on the sphere with concentration supplied in \code{kappa}. For the shared bootstrap arguments and result structure, see \code{\link{multiplier_bootstrap_gof}}. This model has less empirical validation in the associated article.}
+\details{Supply the fixed concentration through \code{kappa}; the null direction is the unit vector \code{mu}. von Mises--Fisher data on the sphere with concentration supplied in \code{kappa}. For the shared bootstrap arguments and result structure, see \code{\link{multiplier_bootstrap_gof}}. This model has less empirical validation in the associated article.}

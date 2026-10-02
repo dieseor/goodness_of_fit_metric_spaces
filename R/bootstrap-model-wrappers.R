@@ -232,42 +232,6 @@ multiplier_bootstrap_vmf <- function(data,
   }
   result
 }
-multiplier_bootstrap_jp <- function(data,
-                                    null,
-                                    statistics = c("ks", "cvm"),
-                                    ks_grid = NULL,
-                                    B = 5000,
-                                    alpha = 0.05,
-                                    multipliers = NULL,
-                                    n_cores = 1,
-                                    seed = NULL,
-                                    bootstrap_method = c("reestimated", "fast_multiplier"),
-                                    keep = list(
-                                      observed_process = TRUE,
-                                      bootstrap_statistics = TRUE,
-                                      bootstrap_thetas = FALSE
-                                    ),
-                                    control = list(),
-                                    distance_type = c("chordal", "geodesic")) {
-  distance_type <- match.arg(distance_type)
-  spec <- make_jp_spec(distance_type = distance_type)
-
-  multiplier_bootstrap_gof(
-    data = data,
-    spec = spec,
-    null = null,
-    statistics = statistics,
-    ks_grid = ks_grid,
-    B = B,
-    alpha = alpha,
-    multipliers = multipliers,
-    n_cores = n_cores,
-    seed = seed,
-    bootstrap_method = bootstrap_method,
-    keep = keep,
-    control = control
-  )
-}
 multiplier_bootstrap_hvmf <- function(data,
                                       null,
                                       statistics = c("ks", "cvm"),
@@ -432,44 +396,6 @@ multiplier_bootstrap_logistic_gaussian <- function(data,
   result$diagnostics$derivative_method_selection_source <- selection_source
   result
 }
-multiplier_bootstrap_beta_mixture2 <- function(data,
-                                                          null,
-                                                          statistics = c("ks", "cvm"),
-                                                          ks_grid = NULL,
-                                                          B = 5000,
-                                                          alpha = 0.05,
-                                                          multipliers = NULL,
-                                                          n_cores = 1,
-                                                          seed = NULL,
-                                                          bootstrap_method = c("reestimated", "fast_multiplier"),
-                                                          keep = list(
-                                                            observed_process = TRUE,
-                                                            bootstrap_statistics = TRUE,
-                                                            bootstrap_thetas = FALSE
-                                                          ),
-                                                          control = list(),
-                                                          distance_type = c("chordal", "geodesic"),
-                                                          distance_profile_backend = c("r", "cpp")) {
-  distance_type <- match.arg(distance_type)
-  spec <- make_beta_mixture2_spec(distance_type = distance_type)
-
-  multiplier_bootstrap_gof(
-    data = data,
-    spec = spec,
-    null = null,
-    statistics = statistics,
-    ks_grid = ks_grid,
-    B = B,
-    alpha = alpha,
-    multipliers = multipliers,
-    n_cores = n_cores,
-    seed = seed,
-    bootstrap_method = bootstrap_method,
-    keep = keep,
-    control = control,
-    distance_profile_backend = distance_profile_backend
-  )
-}
 multiplier_bootstrap_uniform_beta_mixture <- function(data,
                                                       null,
                                                       statistics = c("ks", "cvm"),
@@ -490,44 +416,6 @@ multiplier_bootstrap_uniform_beta_mixture <- function(data,
                                                       distance_profile_backend = c("r", "cpp")) {
   distance_type <- match.arg(distance_type)
   spec <- make_uniform_beta_mixture_spec(distance_type = distance_type)
-
-  multiplier_bootstrap_gof(
-    data = data,
-    spec = spec,
-    null = null,
-    statistics = statistics,
-    ks_grid = ks_grid,
-    B = B,
-    alpha = alpha,
-    multipliers = multipliers,
-    n_cores = n_cores,
-    seed = seed,
-    bootstrap_method = bootstrap_method,
-    keep = keep,
-    control = control,
-    distance_profile_backend = distance_profile_backend
-  )
-}
-multiplier_bootstrap_logitnormal_mixture2 <- function(data,
-                                                                 null,
-                                                                 statistics = c("ks", "cvm"),
-                                                                 ks_grid = NULL,
-                                                                 B = 5000,
-                                                                 alpha = 0.05,
-                                                                 multipliers = NULL,
-                                                                 n_cores = 1,
-                                                                 seed = NULL,
-                                                                 bootstrap_method = c("reestimated", "fast_multiplier"),
-                                                                 keep = list(
-                                                                   observed_process = TRUE,
-                                                                   bootstrap_statistics = TRUE,
-                                                                   bootstrap_thetas = FALSE
-                                                                   ),
-                                                                   control = list(),
-                                                                   distance_type = c("chordal", "geodesic"),
-                                                                   distance_profile_backend = c("r", "cpp")) {
-  distance_type <- match.arg(distance_type)
-  spec <- make_logitnormal_mixture2_spec(distance_type = distance_type)
 
   multiplier_bootstrap_gof(
     data = data,
@@ -590,44 +478,6 @@ multiplier_bootstrap_cardioid <- function(data,
     distance_profile_backend = distance_profile_backend
   )
 }
-multiplier_bootstrap_spherical_cauchy <- function(data,
-                                                  null,
-                                                  statistics = c("ks", "cvm"),
-                                                  ks_grid = NULL,
-                                                  B = 5000,
-                                                  alpha = 0.05,
-                                                  multipliers = NULL,
-                                                  n_cores = 1,
-                                                  seed = NULL,
-                                                  bootstrap_method = c("reestimated", "fast_multiplier"),
-                                                  keep = list(
-                                                    observed_process = TRUE,
-                                                    bootstrap_statistics = TRUE,
-                                                    bootstrap_thetas = FALSE
-                                                    ),
-                                                    control = list(),
-                                                    distance_type = c("chordal", "geodesic"),
-                                                    distance_profile_backend = c("r", "cpp")) {
-  distance_type <- match.arg(distance_type)
-  spec <- make_spherical_cauchy_spec(distance_type = distance_type)
-
-  multiplier_bootstrap_gof(
-    data = data,
-    spec = spec,
-    null = null,
-    statistics = statistics,
-    ks_grid = ks_grid,
-    B = B,
-    alpha = alpha,
-    multipliers = multipliers,
-    n_cores = n_cores,
-    seed = seed,
-    bootstrap_method = bootstrap_method,
-    keep = keep,
-    control = control,
-    distance_profile_backend = distance_profile_backend
-  )
-}
 multiplier_bootstrap_small_circle <- function(data,
                                               null,
                                               statistics = c("ks", "cvm"),
@@ -661,151 +511,6 @@ multiplier_bootstrap_small_circle <- function(data,
     n_cores = n_cores,
     seed = seed,
     bootstrap_method = bootstrap_method,
-    keep = keep,
-    control = control,
-    distance_profile_backend = distance_profile_backend
-  )
-}
-multiplier_bootstrap_watson <- function(data,
-                                        null,
-                                        statistics = c("ks", "cvm"),
-                                        ks_grid = NULL,
-                                        B = 5000,
-                                        alpha = 0.05,
-                                        multipliers = NULL,
-                                        n_cores = 1,
-                                        seed = NULL,
-                                        bootstrap_method = c("reestimated", "fast_multiplier"),
-                                        keep = list(
-                                          observed_process = TRUE,
-                                          bootstrap_statistics = TRUE,
-                                          bootstrap_thetas = FALSE
-                                          ),
-                                          control = list(),
-                                          distance_type = c("chordal", "geodesic"),
-                                          distance_profile_backend = c("r", "cpp")) {
-  distance_type <- match.arg(distance_type)
-  multiplier_bootstrap_gof(
-    data = data,
-    spec = make_watson_spec(distance_type = distance_type),
-    null = null,
-    statistics = statistics,
-    ks_grid = ks_grid,
-    B = B,
-    alpha = alpha,
-    multipliers = multipliers,
-    n_cores = n_cores,
-    seed = seed,
-    bootstrap_method = bootstrap_method,
-    keep = keep,
-    control = control,
-    distance_profile_backend = distance_profile_backend
-  )
-}
-multiplier_bootstrap_small_circle_symmetric_mixture2 <- function(data,
-                                                                 null,
-                                                                 statistics = c("ks", "cvm"),
-                                                                 ks_grid = NULL,
-                                                                 B = 5000,
-                                                                 alpha = 0.05,
-                                                                 multipliers = NULL,
-                                                                 n_cores = 1,
-                                                                 seed = NULL,
-                                                                 bootstrap_method = c("reestimated", "fast_multiplier"),
-                                                                 keep = list(
-                                                                   observed_process = TRUE,
-                                                                   bootstrap_statistics = TRUE,
-                                                                   bootstrap_thetas = FALSE
-                                                                   ),
-                                                                   control = list(),
-                                                                   distance_type = c("chordal", "geodesic"),
-                                                                   distance_profile_backend = c("r", "cpp")) {
-  distance_type <- match.arg(distance_type)
-  spec <- make_small_circle_symmetric_mixture2_spec(distance_type = distance_type)
-
-  multiplier_bootstrap_gof(
-    data = data,
-    spec = spec,
-    null = null,
-    statistics = statistics,
-    ks_grid = ks_grid,
-    B = B,
-    alpha = alpha,
-    multipliers = multipliers,
-    n_cores = n_cores,
-    seed = seed,
-    bootstrap_method = bootstrap_method,
-    keep = keep,
-    control = control,
-    distance_profile_backend = distance_profile_backend
-  )
-}
-multiplier_bootstrap_small_circle_weighted_mixture2 <- function(data,
-                                                                 null,
-                                                                 statistics = c("ks", "cvm"),
-                                                                ks_grid = NULL,
-                                                                B = 5000,
-                                                                alpha = 0.05,
-                                                                multipliers = NULL,
-                                                                n_cores = 1,
-                                                                seed = NULL,
-                                                                bootstrap_method = c("reestimated", "fast_multiplier"),
-                                                                keep = list(
-                                                                  observed_process = TRUE,
-                                                                  bootstrap_statistics = TRUE,
-                                                                  bootstrap_thetas = FALSE
-                                                                  ),
-                                                                  control = list(),
-                                                                  distance_type = c("chordal", "geodesic"),
-                                                                  distance_profile_backend = c("r", "cpp")) {
-  distance_type <- match.arg(distance_type)
-  spec <- make_small_circle_weighted_mixture2_spec(distance_type = distance_type)
-
-  multiplier_bootstrap_gof(
-    data = data,
-    spec = spec,
-    null = null,
-    statistics = statistics,
-    ks_grid = ks_grid,
-    B = B,
-    alpha = alpha,
-    multipliers = multipliers,
-    n_cores = n_cores,
-    seed = seed,
-    bootstrap_method = bootstrap_method,
-    keep = keep,
-    control = control,
-    distance_profile_backend = distance_profile_backend
-  )
-}
-multiplier_bootstrap_axial_truncnorm_mixture2 <- function(data,
-                                                           null,
-                                                           statistics = c("ks", "cvm"),
-                                                           ks_grid = NULL,
-                                                           B = 5000,
-                                                           alpha = 0.05,
-                                                           multipliers = NULL,
-                                                           n_cores = 1,
-                                                           seed = NULL,
-                                                           keep = list(
-                                                             observed_process = TRUE,
-                                                             bootstrap_statistics = TRUE,
-                                                             bootstrap_thetas = FALSE
-                                                           ),
-                                                           control = list(),
-                                                           distance_profile_backend = c("r", "cpp")) {
-  spec <- make_axial_truncnorm_mixture2_spec(distance_type = "euclidean")
-  multiplier_bootstrap_gof(
-    data = data,
-    spec = spec,
-    null = null,
-    statistics = statistics,
-    ks_grid = ks_grid,
-    B = B,
-    alpha = alpha,
-    multipliers = multipliers,
-    n_cores = n_cores,
-    seed = seed,
     keep = keep,
     control = control,
     distance_profile_backend = distance_profile_backend

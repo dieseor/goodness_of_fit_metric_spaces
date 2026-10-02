@@ -141,7 +141,12 @@ mvnormal_quadform_capture <- function(fun) {
   list(value = value, warnings = unique(warnings))
 }
 mvnormal_quadform_backend_call <- function(method, ...) {
-  do.call(getExportedValue("CompQuadForm", method), list(...))
+  switch(method,
+    farebrother = CompQuadForm::farebrother(...),
+    imhof = CompQuadForm::imhof(...),
+    davies = CompQuadForm::davies(...),
+    stop("Unknown quadratic-form method: ", method)
+  )
 }
 mvnormal_quadform_raw_cdf <- function(captured) {
   if (inherits(captured$value, "error") || is.null(captured$value$Qq)) return(NA_real_)

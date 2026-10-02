@@ -1,5 +1,5 @@
 # Loader for research scripts and tests that call source("utils.R") instead of
-# installing dpgof. It sources every file in R/ in package collation order;
+# installing gofmetric. It sources every file in R/ in package collation order;
 # the compiled kernels are then built lazily from src/ with Rcpp::sourceCpp().
 if (!exists("multiplier_bootstrap_gof", mode = "function")) {
   utils_roots <- c(".", "..", "../..")
@@ -15,6 +15,8 @@ if (!exists("multiplier_bootstrap_gof", mode = "function")) {
   for (r_file in setdiff(r_files, "RcppExports.R")) {
     source(file.path(utils_root, "R", r_file), local = environment())
   }
+  source(file.path(utils_root, "scripts", "research_only_helpers.R"),
+         local = environment())
   rm(utils_roots, utils_root, pkg, r_files, r_file)
   cat("Utility functions loaded successfully!\n")
 }
