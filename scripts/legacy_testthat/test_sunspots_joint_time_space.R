@@ -142,7 +142,8 @@ test_that("temporal information criteria and boundary diagnostics use the fixed 
 
 test_that("the product metric and joint profile have the required endpoint and reduction properties", {
   omega <- c(0.3, -0.4, sqrt(0.75))
-  expect_equal(sunspots_joint_distance(rbind(omega, omega), c(0.4, 0.4), omega, 0.4), c(0, 0), tolerance = 1e-14)
+  # Near 1, acos turns a roundoff error of order eps into order sqrt(eps).
+  expect_equal(sunspots_joint_distance(rbind(omega, omega), c(0.4, 0.4), omega, 0.4), c(0, 0), tolerance = sqrt(.Machine$double.eps))
   expect_equal(sunspots_joint_distance(rbind(c(0, 0, -1)), 0, c(0, 0, 1), 1), 1, tolerance = 1e-14)
 
   fit <- joint_test_fit(shared = TRUE)
