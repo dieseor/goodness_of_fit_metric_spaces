@@ -136,6 +136,14 @@ source_distance_profile_cpp <- function() {
 
   exports <- new.env(parent = globalenv())
   source_cpp <- function(rebuild) {
+    if (.Platform$OS.type == "windows") {
+      previous_pkg_libs <- Sys.getenv("PKG_LIBS", unset = NA_character_)
+      on.exit({
+        if (is.na(previous_pkg_libs)) Sys.unsetenv("PKG_LIBS")
+        else Sys.setenv(PKG_LIBS = previous_pkg_libs)
+      }, add = TRUE)
+      Sys.setenv(PKG_LIBS = paste(Sys.getenv("PKG_LIBS"), "$(BLAS_LIBS) $(FLIBS)"))
+    }
     Rcpp::sourceCpp(
       file = source_file,
       env = exports,
