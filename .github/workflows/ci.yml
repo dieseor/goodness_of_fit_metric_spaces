@@ -101,10 +101,11 @@ jobs:
           use-public-rspm: true
       - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-tinytex@v2
-      - name: Install Courier font for the PDF manual
+      - name: Install PDF manual tools
         run: |
-          tlmgr install courier
+          tlmgr install courier makeindex
           kpsewhich pcrr8t.tfm
+          command -v makeindex
       - name: Install HTML validator
         run: sudo apt-get install --yes tidy
       - uses: r-lib/actions/setup-r-dependencies@v2
