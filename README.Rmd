@@ -13,7 +13,7 @@ output:
 
 ## Install
 
-The declared minimum is R 4.4.0 with compatible older dependencies; CI checks R 4.4.0 and 4.4.2 using [`renv.lock`](renv.lock). For a fresh install with current CRAN dependencies, use R 4.5 or newer: the current `gsl` version, required indirectly through `sphunif`, needs R 4.5. An ordinary install does not restore the historical dependencies. Install the development version from GitHub:
+The package declares R 4.1.0 or newer. CI has verified R 4.4.0 and 4.4.2 on Windows, macOS, and Linux with the dependencies in [`renv.lock`](renv.lock); R 4.1--4.3 have not been tested. For a fresh install with current CRAN dependencies, use R 4.5 or newer: the current `gsl` version, required indirectly through `sphunif`, needs R 4.5. An ordinary install does not restore the historical dependencies. Install the development version from GitHub:
 
 ```{r eval=FALSE}
 install.packages("remotes")
