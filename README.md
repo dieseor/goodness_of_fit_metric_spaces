@@ -7,7 +7,7 @@
 
 ## Install
 
-R 4.1 or newer is required. Install the development version from GitHub:
+For a fresh install with current CRAN dependencies, use R 4.5 or newer. The current `gsl` version, required indirectly through `sphunif`, needs R 4.5. The `R (>= 4.1.0)` field in `DESCRIPTION` permits older R with compatible older dependency versions; it does not ensure that those versions remain available through an ordinary CRAN install. Install the development version from GitHub:
 
 ``` r
 install.packages("remotes")
@@ -29,7 +29,7 @@ The `h0` argument chooses among twelve distribution families and the joint sunsp
 
 ## Reproduce the paper
 
-The versions used for the paper are recorded in [`renv.lock`](renv.lock). After restoring that environment, run the scripts from the repository root:
+The historical project environment is recorded in [`renv.lock`](renv.lock) and is kept separate from the current-dependency installation checks. It uses R 4.4.2. Individual saved runs can have different package versions: for example, the [sunspots run’s `sessionInfo.txt`](real_data/reruns/paper_main_realdata_B1000_3cores_20260831_113532/sunspots/sessionInfo.txt) records `sphunif` 1.4.3, while the lockfile records 1.4.2. Consult each run’s session information when checking its exact provenance. After restoring the lockfile environment, run the scripts from the repository root:
 
 ``` sh
 Rscript -e 'renv::restore()'
