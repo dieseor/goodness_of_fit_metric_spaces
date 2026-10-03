@@ -7,7 +7,7 @@
 
 ## Install
 
-For a fresh install with current CRAN dependencies, use R 4.5 or newer. The current `gsl` version, required indirectly through `sphunif`, needs R 4.5. The `R (>= 4.1.0)` field in `DESCRIPTION` permits older R with compatible older dependency versions; it does not ensure that those versions remain available through an ordinary CRAN install. Install the development version from GitHub:
+The declared minimum is R 4.4.0 with compatible older dependencies; CI checks R 4.4.0 and 4.4.2 using [`renv.lock`](renv.lock). For a fresh install with current CRAN dependencies, use R 4.5 or newer: the current `gsl` version, required indirectly through `sphunif`, needs R 4.5. An ordinary install does not restore the historical dependencies. Install the development version from GitHub:
 
 ``` r
 install.packages("remotes")
