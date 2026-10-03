@@ -111,7 +111,10 @@ jobs:
           R CMD build .
           R CMD check --as-cran gofmetric_*.tar.gz || {
             for log in gofmetric.Rcheck/gofmetric-manual.log gofmetric.Rcheck/Rdlatex.log; do
-              if [ -f "$log" ]; then tail -n 100 "$log"; fi
+              if [ -f "$log" ]; then
+                grep -n -B 4 -A 4 -m 8 '^!' "$log" || true
+                tail -n 40 "$log"
+              fi
             done
             exit 1
           }
