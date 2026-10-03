@@ -113,7 +113,8 @@ jobs:
       - name: Build and check the full tarball
         run: |
           R CMD build .
-          R CMD check --as-cran gofmetric_*.tar.gz || {
+          R CMD check --as-cran gofmetric_*.tar.gz || check_failed=1
+          if [ "${check_failed:-0}" -ne 0 ] || grep -Eq 'Status:.*(WARNING|ERROR)' gofmetric.Rcheck/00check.log; then
             for log in gofmetric.Rcheck/gofmetric-manual.log gofmetric.Rcheck/Rdlatex.log; do
               if [ -f "$log" ]; then
                 grep -n -B 4 -A 4 -m 8 '^!' "$log" || true
@@ -121,4 +122,4 @@ jobs:
               fi
             done
             exit 1
-          }
+          fi
