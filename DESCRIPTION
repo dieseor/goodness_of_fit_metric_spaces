@@ -11,7 +11,7 @@ License: MIT + file LICENSE
 URL: https://github.com/dieseor/gofmetric
 BugReports: https://github.com/dieseor/gofmetric/issues
 Encoding: UTF-8
-Depends: R (>= 4.4.0)
+Depends: R (>= 4.1.0)
 Imports: Rcpp, stats, utils, parallel, movMF, sphunif, pracma, rotasym,
     mvtnorm, gbutils, CompQuadForm
 Suggests: testthat, numDeriv
