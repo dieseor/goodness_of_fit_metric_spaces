@@ -101,8 +101,17 @@ jobs:
           use-public-rspm: true
       - uses: r-lib/actions/setup-pandoc@v2
       - uses: r-lib/actions/setup-tinytex@v2
+      - name: Install HTML validator
+        run: sudo apt-get install --yes tidy
       - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::V8
       - name: Build and check the full tarball
         run: |
           R CMD build .
-          R CMD check --as-cran gofmetric_*.tar.gz
+          R CMD check --as-cran gofmetric_*.tar.gz || {
+            for log in gofmetric.Rcheck/gofmetric-manual.log gofmetric.Rcheck/Rdlatex.log; do
+              if [ -f "$log" ]; then tail -n 100 "$log"; fi
+            done
+            exit 1
+          }
