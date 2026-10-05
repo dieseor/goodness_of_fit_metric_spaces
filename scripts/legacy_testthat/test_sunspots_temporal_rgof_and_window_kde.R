@@ -1,0 +1,85 @@
+library(testthat)
+
+oldwd <- setwd(normalizePath(file.path("..", "..")))
+on.exit(setwd(oldwd), add = TRUE)
+
+source(file.path("real_data", "sunspots", "run_sunspots_cycle23_joint_spatial_window_kde_plots.R"))
+
+make_joint_theta_for_tests <- function() {
+  list(a_N = 0.55, b_N = -0.18, a_S = 0.50, b_S = -0.15, c = 14)
+}
+
+test_that("spatial windows use the requested non-cumulative rank bins", {
+  s <- seq(0.01, 0.99, length.out = 20L)
+  windows <- sunspots_joint_spatial_rank_windows(s)
+  expect_equal(windows$summary$lower_rank_level, c(0, 0.10, 0.20, 0.40, 0.60))
+  expect_equal(windows$summary$upper_rank_level, c(0.10, 0.20, 0.40, 0.60, 0.80))
+  expect_equal(windows$summary$center_rank_level, c(0.05, 0.15, 0.30, 0.50, 0.70))
+  expect_equal(windows$summary$n, c(2L, 2L, 4L, 4L, 4L))
+})
+
+test_that("parametric window density is conditional-only and finite", {
+  theta <- make_joint_theta_for_tests()
+  x <- jp_normalize_unit_matrix(matrix(c(
+    0, 1, 0,
+    0.2, 0.3, sqrt(1 - 0.2^2 - 0.3^2),
+    -0.4, 0.1, sqrt(1 - 0.4^2 - 0.1^2)
+  ), ncol = 3, byrow = TRUE), arg_name = "`x`", min_ncol = 3L)
+  center_s <- 0.42
+  from_helper <- sunspots_joint_parametric_conditional_density(x, center_s, theta)
+  direct <- exp(sunspots_time_varying_log_density(x = x, u = rep(center_s, nrow(x)), theta = theta))
+  expect_equal(from_helper, direct, tolerance = 1e-13)
+  expect_true(all(is.finite(from_helper)))
+})
+
+test_that("HDR thresholds are monotone in credibility level", {
+  density_values <- c(0.9, 0.8, 0.2, 0.1)
+  area_weights <- c(0.1, 0.2, 0.3, 0.4)
+  hdr <- sunspots_joint_hdr_thresholds(density_values, area_weights, levels = c(0.5, 0.8, 0.95))
+  expect_true(all(diff(hdr$threshold) <= 0))
+})
+
+test_that("DirStats KDE integral is finite and close to one on S2", {
+  skip_if_not_installed("DirStats")
+  set.seed(1)
+  x_window <- matrix(rnorm(120L), ncol = 3L)
+  x_window <- x_window / sqrt(rowSums(x_window^2))
+  bw <- sunspots_joint_select_bandwidth_lcv_emi(x_window = x_window, bandwidth_seed = 7L)
+  integral <- sunspots_joint_lebedev_integral(function(x_eval) {
+    DirStats::kde_dir(x = x_eval, data = x_window, h = bw$h, L = NULL)
+  })
+  expect_true(is.finite(integral))
+  expect_equal(integral, 1, tolerance = 0.08)
+})
+
+
+test_that("orthographic sphere projection preserves the unit-sphere identity", {
+  camera <- sunspots_joint_sphere_camera(theta = 35, phi = 18)
+  basis <- rbind(camera$right, camera$up, camera$view)
+  expect_equal(basis %*% t(basis), diag(3), tolerance = 1e-12)
+
+  xyz <- sunspots_joint_xyz_from_lon_lat(
+    lon_deg = c(-170, -20, 40, 135),
+    lat_deg = c(-60, -10, 25, 70)
+  )
+  projected <- sunspots_joint_project_sphere_xyz(xyz, camera)
+  expect_equal(
+    projected$x^2 + projected$y^2 + projected$depth^2,
+    rep(1, nrow(xyz)),
+    tolerance = 1e-12
+  )
+  expect_true(all(projected$x^2 + projected$y^2 <= 1 + 1e-12))
+})
+
+test_that("rear and front curve runs are separated by projected depth", {
+  depth <- c(-1, -0.5, 0.2, 0.8, -0.1, -0.2)
+  expect_equal(
+    sunspots_joint_visibility_runs(depth, front = FALSE),
+    list(1:2, 5:6)
+  )
+  expect_equal(
+    sunspots_joint_visibility_runs(depth, front = TRUE),
+    list(3:4)
+  )
+})
+

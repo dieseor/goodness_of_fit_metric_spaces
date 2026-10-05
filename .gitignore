@@ -1,0 +1,91 @@
+# R
+.Rhistory
+.RData
+.Rproj.user/
+.Rproj.user
+.Ruserdata
+
+# RStudio
+.Rhistory
+.RData
+.Rproj.user/
+.Rproj.user
+.Rstudio-*
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Project artifacts
+output/
+/tmp/
+
+# Cache and large generated files
+*.rds
+*.Rds
+*.RData
+*.csv
+
+# Ignore environment files
+.Renviron
+.renv/
+renv/library/
+renv/python-virtualenv/
+renv/staging/
+renv/cache/
+
+# Ignore logs
+*.log
+
+# Ignore compiled artifacts and packages
+*.so
+*.dll
+src/*.o
+*/packrat/
+
+# Small, reviewed inputs needed to recreate article figures and tables
+!paper/artifacts/**/*.rds
+!paper/artifacts/**/*.csv
+!real_data/wind/month_diagnostics/nov_dec_77m_ks_cvm_b5000/fast_sampleks_strict_step4/risoe_77m_nov_dec_fast_sampleks_ks_cvm_b5000.csv
+!real_data/sunspots/output/
+real_data/sunspots/output/*
+!real_data/sunspots/output/sunspots_cycle23_s2_all.csv
+
+# Ignore large debug files
+debug_*.csv
+
+# Ignore big dataset
+wind/risoe_m_all.nc
+real_data/wind/risoe_m_all.nc
+
+# Local research outputs kept out of the public repository
+/real_data/bootstrap_audit/
+/real_data/hvmf_realdata_screening/
+/real_data/comets/jp/
+/real_data/comets/spherical_cauchy/
+/real_data/comets/watson/
+/real_data/comets/projected_axis_diagnostics/
+/real_data/comets/diagnostics/
+/real_data/comets/cardioid/
+/real_data/comets/mixture/
+/real_data/comets/small_circle/
+/real_data/logistic_gaussian/screening/
+/real_data/wind/results/
+/real_data/wind/processed/
+/real_data/wind/month_diagnostics/**
+!/real_data/wind/month_diagnostics/nov_dec_77m_ks_cvm_b5000/
+!/real_data/wind/month_diagnostics/nov_dec_77m_ks_cvm_b5000/fast_sampleks_strict_step4/
+
+# Research outputs and editor settings kept out of the repository
+simulation_results/
+real_data/wind/risoe_m_concurent.nc
+.vscode/
+
+# Kept locally for now
+CITATION.cff
+
+# Local diagnostics are never published.
+/local_diagnostics/
